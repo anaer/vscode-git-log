@@ -533,32 +533,38 @@ select:focus-visible,
   background: var(--vscode-list-hoverBackground);
 }
 
-.ref-folder-chevron {
-  width: 10px;
-  flex: 0 0 auto;
-  color: var(--vscode-descriptionForeground);
-  text-align: center;
-}
-
-.ref-folder-icon {
+.ref-tree-directory {
   position: relative;
-  width: 14px;
-  height: 10px;
-  flex: 0 0 auto;
-  border: 1px solid var(--vscode-descriptionForeground);
-  border-radius: 2px;
 }
 
-.ref-folder-icon::before {
-  position: absolute;
-  top: -4px;
-  left: 1px;
-  width: 6px;
-  height: 3px;
-  border: 1px solid var(--vscode-descriptionForeground);
-  border-bottom: 0;
-  border-radius: 2px 2px 0 0;
+.ref-tree-directory::before {
   content: '';
+  position: absolute;
+  left: calc(var(--indent-guide-left, 0px) + 8px);
+  top: 26px;
+  bottom: 0;
+  width: 1px;
+  background: var(--vscode-tree-inactiveIndentGuidesStroke, rgba(128, 128, 128, 0.3));
+}
+
+.ref-folder-row,
+.ref-item {
+  position: relative;
+}
+
+.ref-folder-chevron {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ref-folder-chevron svg {
+  width: 16px;
+  height: 16px;
 }
 
 .ref-icon {

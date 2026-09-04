@@ -2,6 +2,18 @@
 
 All notable changes to Git Log are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Redesigned the Branches panel tree to match VS Code's native TreeView look: collapsible groups and folders now use 16px inline SVG chevron icons instead of Unicode arrows, and indentation guides show as vertical lines aligned with each folder's expand icon.
+- Increased the per-level indent of the Branches tree and reserved an invisible placeholder before leaf branch/tag names so their text aligns with nested folders. Only the current `HEAD` branch keeps a badge icon.
+
+### Fixed
+
+- Fixed the Branches tree's vertical indentation-guide line not appearing under nested folders.
+- Removed the stray horizontal guide strokes and the legacy folder/symbol icons from branch, tag, and remote tree rows.
+
 ## 0.0.9
 
 ### Added

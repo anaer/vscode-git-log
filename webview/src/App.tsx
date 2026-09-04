@@ -302,6 +302,18 @@ function FileTreeNodes({
   );
 }
 
+const ChevronRight = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const ChevronDown = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
 function RefTreeNodes({
   nodes,
   depth,
@@ -332,6 +344,7 @@ function RefTreeNodes({
       return (
         <div
           className="ref-tree-directory"
+          style={{ '--indent-guide-left': `${16 + depth * 20}px` } as React.CSSProperties}
           role="group"
           aria-label={
             group.kind === 'remote' && depth === 0
@@ -343,7 +356,7 @@ function RefTreeNodes({
           <button
             type="button"
             className="ref-folder-row"
-            style={{ paddingLeft: 25 + depth * 14 }}
+            style={{ paddingLeft: 16 + depth * 20 }}
             aria-expanded={!collapsed}
             aria-label={
               forceExpanded
@@ -354,9 +367,8 @@ function RefTreeNodes({
             onClick={() => onToggleFolder(folderKey)}
           >
             <span className="ref-folder-chevron" aria-hidden="true">
-              {collapsed ? '›' : '⌄'}
+              {collapsed ? ChevronRight : ChevronDown}
             </span>
-            <span className="ref-folder-icon" aria-hidden="true" />
             <span className="ref-name">{node.name}</span>
           </button>
           {!collapsed ? (
@@ -382,7 +394,7 @@ function RefTreeNodes({
       <button
         type="button"
         className={`ref-item${ref.isCurrent ? ' current-ref' : ''}`}
-        style={{ paddingLeft: 25 + depth * 14 }}
+        style={{ paddingLeft: 16 + depth * 20, '--indent-guide-left': `${16 + depth * 20}px` } as React.CSSProperties}
         key={ref.fullName}
         title={ref.fullName}
         data-ref-item="true"
@@ -394,9 +406,6 @@ function RefTreeNodes({
         }}
       >
         <span className="ref-folder-chevron" aria-hidden="true" />
-        <span className="ref-icon" aria-hidden="true">
-          {ref.kind === 'tag' ? '◆' : '⌁'}
-        </span>
         <span className="ref-name">{node.name}</span>
         {ref.ahead || ref.behind ? (
           <span className="tracking">
@@ -2726,8 +2735,8 @@ export function App() {
                 disabled={refSearchActive}
                 onClick={() => toggleRefGroup('head')}
               >
-                <span aria-hidden="true">
-                  {!refSearchActive && collapsedRefGroups.has('head') ? '›' : '⌄'}
+                <span className="ref-folder-chevron" aria-hidden="true">
+                  {!refSearchActive && collapsedRefGroups.has('head') ? ChevronRight : ChevronDown}
                 </span>
                 <span>HEAD</span>
               </button>
@@ -2781,7 +2790,9 @@ export function App() {
                     disabled={refSearchActive}
                     onClick={() => toggleRefGroup(group.kind)}
                   >
-                    <span aria-hidden="true">{collapsed ? '›' : '⌄'}</span>
+                    <span className="ref-folder-chevron" aria-hidden="true">
+                      {collapsed ? ChevronRight : ChevronDown}
+                    </span>
                     <span>{group.label}</span>
                     <span className="ref-count">{refs.length}</span>
                   </button>
