@@ -221,12 +221,14 @@ function readScrollTopByRepository(value: unknown): Record<string, number> {
 function ChangedFileRow({
   file,
   depth = 0,
+  inTree = false,
   onOpen,
   onSelect,
   onContextMenu,
 }: {
   file: ChangedFile;
   depth?: number;
+  inTree?: boolean;
   onOpen(file: ChangedFile): void;
   onSelect(file: ChangedFile): void;
   onContextMenu(file: ChangedFile, x: number, y: number): void;
@@ -235,7 +237,7 @@ function ChangedFileRow({
     <button
       type="button"
       className="file-row"
-      style={{ paddingLeft: 10 + depth * 14 }}
+      style={{ paddingLeft: 10 + depth * (inTree ? 20 : 14) }}
       title={file.binary ? `${file.path} is binary` : file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
       onClick={() => onSelect(file)}
       onDoubleClick={() => onOpen(file)}
@@ -248,7 +250,7 @@ function ChangedFileRow({
         if (event.key === 'Enter') onOpen(file);
       }}
     >
-      <span className={`file-status status-${file.status}`}>{file.status}</span>
+      {inTree ? <span className="folder-chevron" aria-hidden="true" /> : null}
       <span className="file-path">{file.path.split('/').at(-1)}</span>
       {file.additions !== undefined || file.deletions !== undefined ? (
         <span className="file-stats">
@@ -260,6 +262,7 @@ function ChangedFileRow({
           ) : null}
         </span>
       ) : null}
+      <span className={`file-status status-${file.status}`}>{file.status}</span>
     </button>
   );
 }
@@ -267,32 +270,56 @@ function ChangedFileRow({
 function FileTreeNodes({
   nodes,
   depth,
+  collapsedDirectories,
+  onToggleDirectory,
   onOpen,
   onSelect,
   onContextMenu,
 }: {
   nodes: FileTreeNode[];
   depth: number;
+  collapsedDirectories: ReadonlySet<string>;
+  onToggleDirectory(key: string): void;
   onOpen(file: ChangedFile): void;
   onSelect(file: ChangedFile): void;
   onContextMenu(file: ChangedFile, x: number, y: number): void;
 }) {
   return nodes.map((node) =>
     node.type === 'directory' ? (
-      <details className="file-directory" open key={node.path}>
-        <summary style={{ paddingLeft: 8 + depth * 14 }}>{node.name}</summary>
-        <FileTreeNodes
-          nodes={node.children}
-          depth={depth + 1}
-          onOpen={onOpen}
-          onSelect={onSelect}
-          onContextMenu={onContextMenu}
-        />
-      </details>
+      <div
+        className="file-tree-directory"
+        style={{ '--indent-guide-left': `${8 + depth * 20}px` } as React.CSSProperties}
+        key={node.path}
+      >
+        <button
+          type="button"
+          className="file-folder-row"
+          style={{ paddingLeft: 8 + depth * 20 }}
+          aria-expanded={!collapsedDirectories.has(node.path)}
+          onClick={() => onToggleDirectory(node.path)}
+        >
+          <span className="folder-chevron" aria-hidden="true">
+            {collapsedDirectories.has(node.path) ? ChevronRight : ChevronDown}
+          </span>
+          <span className="file-folder-name">{node.name}</span>
+        </button>
+        {!collapsedDirectories.has(node.path) ? (
+          <FileTreeNodes
+            nodes={node.children}
+            depth={depth + 1}
+            collapsedDirectories={collapsedDirectories}
+            onToggleDirectory={onToggleDirectory}
+            onOpen={onOpen}
+            onSelect={onSelect}
+            onContextMenu={onContextMenu}
+          />
+        ) : null}
+      </div>
     ) : (
       <ChangedFileRow
         file={node.file}
         depth={depth}
+        inTree
         onOpen={onOpen}
         onSelect={onSelect}
         onContextMenu={onContextMenu}
@@ -496,6 +523,7 @@ export function App() {
   >();
   const [collapsedRefGroups, setCollapsedRefGroups] = useState<Set<string>>(new Set());
   const [collapsedRefFolders, setCollapsedRefFolders] = useState<Set<string>>(new Set());
+  const [collapsedFileDirectories, setCollapsedFileDirectories] = useState<Set<string>>(new Set());
   const [responsiveCollapse, setResponsiveCollapse] = useState(() => ({
     files: window.matchMedia?.('(max-width: 900px)').matches ?? false,
     refs: window.matchMedia?.('(max-width: 680px)').matches ?? false,
@@ -1633,6 +1661,15 @@ export function App() {
       const next = new Set(current);
       if (next.has(folder)) next.delete(folder);
       else next.add(folder);
+      return next;
+    });
+  };
+
+  const toggleFileDirectory = (directory: string): void => {
+    setCollapsedFileDirectories((current) => {
+      const next = new Set(current);
+      if (next.has(directory)) next.delete(directory);
+      else next.add(directory);
       return next;
     });
   };
@@ -3125,6 +3162,8 @@ export function App() {
                   <FileTreeNodes
                     nodes={fileTree}
                     depth={0}
+                    collapsedDirectories={collapsedFileDirectories}
+                    onToggleDirectory={toggleFileDirectory}
                     onOpen={openDiff}
                     onSelect={(file) => setState((current) => ({ ...current, selectedFile: file }))}
                     onContextMenu={(file, x, y) => {

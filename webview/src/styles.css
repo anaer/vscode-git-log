@@ -1191,7 +1191,7 @@ select:focus-visible,
 }
 
 .file-list-content {
-  min-width: max-content;
+  width: 100%;
 }
 
 .file-preview {
@@ -1205,24 +1205,65 @@ select:focus-visible,
   font-size: 11px;
 }
 
-.file-directory > summary {
-  display: flex;
-  align-items: center;
-  height: var(--explorer-row-height);
-  list-style-position: inside;
-  color: var(--vscode-foreground);
-  cursor: default;
-  user-select: none;
+.file-tree-directory {
+  position: relative;
 }
 
-.file-directory > summary:hover {
+.file-tree-directory::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--indent-guide-left, 0px) + 8px);
+  top: var(--explorer-row-height);
+  bottom: 0;
+  width: 1px;
+  background: var(--vscode-tree-inactiveIndentGuidesStroke, rgba(128, 128, 128, 0.3));
+}
+
+.file-folder-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--explorer-row-height);
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.file-folder-row:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+.folder-chevron {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+.folder-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+.file-folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-row {
   display: flex;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   height: var(--explorer-row-height);
   align-items: center;
   gap: 8px;
@@ -1231,6 +1272,7 @@ select:focus-visible,
   border: 0;
   background: transparent;
   text-align: left;
+  box-sizing: border-box;
 }
 
 .file-row:hover {
@@ -1238,7 +1280,8 @@ select:focus-visible,
 }
 
 .file-status {
-  width: 16px;
+  flex: 0 0 auto;
+  margin-left: auto;
   font-weight: 700;
 }
 
@@ -1257,7 +1300,10 @@ select:focus-visible,
 }
 
 .file-path {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
