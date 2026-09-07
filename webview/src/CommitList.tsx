@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GraphLayoutResult } from '../../src/graph/layoutCommitGraph';
+import type { GraphLayoutResult } from '../../src/shared/layoutCommitGraph';
 import type { CommitSummary, HistoryEntry } from '../../src/shared/models';
 import { CommitGraphCell } from './CommitGraphCell';
 import { formatCommitDate } from './formatCommitDate';

@@ -1,7 +1,7 @@
 import {
   layoutCommitGraph,
   type GraphContinuationState,
-} from '../../src/graph/layoutCommitGraph';
+} from '../../src/shared/layoutCommitGraph';
 import type { CommitSummary } from '../../src/shared/models';
 
 export interface CommitWindowState {
@@ -30,6 +30,9 @@ export function advanceCommitWindow(
     };
   }
 
+  // Incremental checkpoint: when the window evicts its oldest commits, replay
+  // only the evicted prefix through layoutCommitGraph to advance the lane-state
+  // continuation to the retained commits, rather than re-laying-out the whole list.
   const accumulated = [...current.commits, ...accepted];
   const droppedCount = Math.max(0, accumulated.length - capacity);
   const graphContinuation = droppedCount

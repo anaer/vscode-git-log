@@ -220,8 +220,15 @@ export function activate(context: vscode.ExtensionContext): void {
       now: () => Date.now(),
     },
   );
+  // Single debounce point for every blame-refresh trigger: editor switch,
+  // cursor move, document edit, repository/config change. All call sites route
+  // through this one timer, so a burst of events coalesces into at most one
+  // `refresh()` — the hot path never keeps more than one pending timer.
+  const BLAME_REFRESH_IMMEDIATE_MS = 0;
+  const BLAME_REFRESH_DEBOUNCE_MS = 150;
+  const BLAME_REFRESH_EDIT_DEBOUNCE_MS = 300;
   let lineBlameTimer: ReturnType<typeof setTimeout> | undefined;
-  const scheduleLineBlame = (delayMs = 150): void => {
+  const scheduleLineBlame = (delayMs = BLAME_REFRESH_DEBOUNCE_MS): void => {
     if (lineBlameTimer) clearTimeout(lineBlameTimer);
     lineBlameTimer = setTimeout(() => {
       lineBlameTimer = undefined;
@@ -245,7 +252,7 @@ export function activate(context: vscode.ExtensionContext): void {
       repository.state.onDidChange(() => {
         lineBlameService.invalidate();
         currentLineBlame.invalidate();
-        scheduleLineBlame(0);
+        scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
       }),
     );
   };
@@ -263,14 +270,14 @@ export function activate(context: vscode.ExtensionContext): void {
           attachGitRepository(repository);
           lineBlameService.invalidate();
           currentLineBlame.invalidate();
-          scheduleLineBlame(0);
+          scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
         }),
         api.onDidCloseRepository((repository) => {
           gitRepositorySubscriptions.get(repository)?.dispose();
           gitRepositorySubscriptions.delete(repository);
           lineBlameService.invalidate();
           currentLineBlame.invalidate();
-          scheduleLineBlame(0);
+          scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
         }),
       );
     })().catch((error: unknown) => {
@@ -468,7 +475,7 @@ export function activate(context: vscode.ExtensionContext): void {
           event.document.offsetAt(finalLine.rangeIncludingLineBreak.end) >
           MAX_DIRTY_BLAME_CHARACTERS
         ) {
-          if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(0);
+          if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
           return;
         }
         const documentKey = event.document.uri.toString();
@@ -484,7 +491,7 @@ export function activate(context: vscode.ExtensionContext): void {
             : {}),
         });
         persistLineEditTimes();
-        if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(300);
+        if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(BLAME_REFRESH_EDIT_DEBOUNCE_MS);
       }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
@@ -496,11 +503,11 @@ export function activate(context: vscode.ExtensionContext): void {
         if (customLineBlameEnabled()) {
           ensureGitStateSubscriptions();
         }
-        scheduleLineBlame(0);
+        scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
       }
     }),
   );
-  scheduleLineBlame(0);
+  scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
 }
 
 export async function deactivate(): Promise<void> {

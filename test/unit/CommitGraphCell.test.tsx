@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { GraphRow } from '../../src/graph/layoutCommitGraph';
+import type { GraphRow } from '../../src/shared/layoutCommitGraph';
 
 afterEach(cleanup);
 

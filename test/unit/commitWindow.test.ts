@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutCommitGraph } from '../../src/graph/layoutCommitGraph';
+import { layoutCommitGraph } from '../../src/shared/layoutCommitGraph';
 import type { CommitSummary } from '../../src/shared/models';
 import { advanceCommitWindow } from '../../webview/src/commitWindow';
 

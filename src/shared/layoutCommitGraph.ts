@@ -1,4 +1,7 @@
-import type { CommitSummary } from '../shared/models';
+// Shared webview <-> extension contract: pure commit-graph layout. Lives under
+// `src/shared/` so the webview bundle can depend on it without reaching into
+// extension-internal modules. Type-only dependency on `./models`.
+import type { CommitSummary } from './models';
 
 export interface GraphLane {
   id: number;

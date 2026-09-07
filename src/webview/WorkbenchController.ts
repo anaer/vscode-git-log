@@ -9,7 +9,7 @@ import {
   type OperationConfirmation,
 } from '../git/GitOperationService';
 import { EMPTY_LOG_FILTERS } from '../git/logQuery';
-import type { GraphContinuationState } from '../graph/layoutCommitGraph';
+import type { GraphContinuationState } from '../shared/layoutCommitGraph';
 import type {
   ErrorRecoveryAction,
   ExtensionToWebviewMessage,

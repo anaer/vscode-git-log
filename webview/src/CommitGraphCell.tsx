@@ -1,4 +1,4 @@
-import type { GraphConnection, GraphRow } from '../../src/graph/layoutCommitGraph';
+import type { GraphConnection, GraphRow } from '../../src/shared/layoutCommitGraph';
 
 const ROW_HEIGHT = 28;
 const NODE_Y = ROW_HEIGHT / 2;

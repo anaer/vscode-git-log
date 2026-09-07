@@ -8,7 +8,7 @@ import type {
   RepositorySummary,
   StashEntry,
 } from '../shared/models';
-import type { GraphContinuationState } from '../graph/layoutCommitGraph';
+import type { GraphContinuationState } from '../shared/layoutCommitGraph';
 
 const MAX_IDENTIFIER_LENGTH = 512;
 const MAX_FILTER_TEXT_LENGTH = 2000;

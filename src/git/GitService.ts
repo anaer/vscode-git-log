@@ -7,6 +7,7 @@ import { parseCommitDetails } from './parsers/parseCommitDetails';
 import { applyNumstat, parseNameStatus } from './parsers/parseChangedFiles';
 import { parseLog, parseSearchableLog } from './parsers/parseLog';
 import { parseRefs } from './parsers/parseRefs';
+import { LruCache } from './LruCache';
 import type { LogFilters } from '../protocol/messages';
 import type {
   ChangedFile,
@@ -24,7 +25,7 @@ const COMMIT_HASH_PATTERN = /^[0-9a-f]{4,64}$/iu;
 const TEXT_SCAN_PAGE_SIZE = 5000;
 const TEXT_SCAN_MAX_STDOUT_BYTES = 64 * 1024 * 1024;
 const MAX_RETAINED_TEXT_MATCHES = 10_000;
-const MAX_TEXT_SEARCH_CACHES = 2;
+const MAX_TEXT_SEARCH_CACHES = 4;
 const FULL_FILE_DIFF_CONTEXT_LINES = 2_147_483_647;
 const WEBVIEW_FILE_PATCH_MAX_STDOUT_BYTES = 8 * 1024 * 1024;
 const WEBVIEW_FILE_PATCH_MAX_LINES = 50_000;
@@ -87,7 +88,9 @@ interface TextSearchCacheEntry {
 }
 
 export class GitService {
-  private readonly textSearchCaches = new Map<string, TextSearchCacheEntry>();
+  private readonly textSearchCaches = new LruCache<string, TextSearchCacheEntry>(
+    MAX_TEXT_SEARCH_CACHES,
+  );
 
   constructor(private readonly runner: GitRunner) {}
 
@@ -120,11 +123,7 @@ export class GitService {
       filters.dateTo ?? null,
     ]);
     const existing = this.textSearchCaches.get(key);
-    if (existing) {
-      this.textSearchCaches.delete(key);
-      this.textSearchCaches.set(key, existing);
-      return existing;
-    }
+    if (existing) return existing;
     const created: TextSearchCacheEntry = {
       cwd,
       scannedCommits: 0,
@@ -133,11 +132,6 @@ export class GitService {
       exhausted: false,
     };
     this.textSearchCaches.set(key, created);
-    while (this.textSearchCaches.size > MAX_TEXT_SEARCH_CACHES) {
-      const oldestKey = this.textSearchCaches.keys().next().value as string | undefined;
-      if (!oldestKey) break;
-      this.textSearchCaches.delete(oldestKey);
-    }
     return created;
   }
 
@@ -146,9 +140,11 @@ export class GitService {
       this.textSearchCaches.clear();
       return;
     }
-    for (const [key, entry] of this.textSearchCaches) {
-      if (entry.cwd === cwd) this.textSearchCaches.delete(key);
-    }
+    const keysToDelete: string[] = [];
+    this.textSearchCaches.forEach((entry, key) => {
+      if (entry.cwd === cwd) keysToDelete.push(key);
+    });
+    for (const key of keysToDelete) this.textSearchCaches.delete(key);
   }
 
   async getVersion(cwd: string): Promise<string> {

@@ -9,13 +9,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import {
-  layoutCommitGraph,
-  type GraphContinuationState,
-} from '../../src/graph/layoutCommitGraph';
+import { layoutCommitGraph, type GraphContinuationState } from '../../src/shared/layoutCommitGraph';
 import {
   parseWebviewMessage,
-  type ErrorRecoveryAction,
   type ExtensionToWebviewMessage,
   type GitOperationRequest,
   type LogFilters,
@@ -24,29 +20,40 @@ import {
 } from '../../src/protocol/messages';
 import type {
   ChangedFile,
-  CommitDetails,
   CommitSummary,
-  HistoryEntry,
-  RefKind,
   RefLabel,
-  RepositorySummary,
   StashEntry,
 } from '../../src/shared/models';
 import { getVsCodeApi } from './vscodeApi';
-import { buildFileTree, type FileTreeNode } from './buildFileTree';
-import { buildRefTree, type RefTreeNode } from './buildRefTree';
 import { advanceCommitWindow } from './commitWindow';
 import { CommitList } from './CommitList';
-import { formatCommitDate } from './formatCommitDate';
 import { requestId } from './webviewUtils';
+import {
+  emptyCommitSelection,
+  isContiguousSelection,
+  nextCommitSelection,
+  type CommitSelection,
+} from './commitSelection';
 import { ContextMenu } from './ContextMenu';
 import { Dialogs } from './Dialogs';
-
-const refGroups: readonly { label: string; kind: RefKind }[] = [
-  { label: 'Local', kind: 'local' },
-  { label: 'Remote', kind: 'remote' },
-  { label: 'Tags', kind: 'tag' },
-];
+import { RefsPane } from './RefsPane';
+import { FilesPane } from './FilesPane';
+import { DetailsPane } from './DetailsPane';
+import {
+  CommitToolbar,
+  GlobalToolbar,
+  type FilterPopupKind,
+} from './Toolbars';
+import {
+  createWorkbenchStore,
+  defaultFilters,
+  EMPTY_GRAPH_LAYOUT_CACHE,
+  useSetWorkbenchState,
+  useWorkbenchState,
+  WorkbenchStoreContext,
+  type GraphLayoutCache,
+  type WorkbenchState,
+} from './workbenchStore';
 
 export type ContextMenuState =
   | {
@@ -94,24 +101,6 @@ export interface AmendDialogState {
   message: string;
 }
 
-const defaultLayout: WorkbenchLayout = {
-  refsWidth: 220,
-  filesWidth: 320,
-  detailsHeight: 156,
-  detailsPlacement: 'bottom',
-  filesViewMode: 'tree',
-  refsColumnWidth: 150,
-  authorColumnWidth: 130,
-  dateColumnWidth: 125,
-};
-
-const defaultFilters: LogFilters = {
-  text: '',
-  branches: [],
-  authors: [],
-  paths: [],
-};
-
 function filtersEqual(left: LogFilters, right: LogFilters): boolean {
   const sameItems = (leftItems: readonly string[], rightItems: readonly string[]): boolean =>
     leftItems.length === rightItems.length &&
@@ -124,51 +113,6 @@ function filtersEqual(left: LogFilters, right: LogFilters): boolean {
     sameItems(left.authors, right.authors) &&
     sameItems(left.paths, right.paths)
   );
-}
-
-interface WorkbenchState {
-  repositories: RepositorySummary[];
-  selectedRepositoryId: string | undefined;
-  refs: RefLabel[];
-  commits: CommitSummary[];
-  commitListRevision: number;
-  selectedHash: string | undefined;
-  details: CommitDetails | undefined;
-  detailsRepositoryId: string | undefined;
-  selectedParent: string | undefined;
-  files: ChangedFile[];
-  selectedFile: ChangedFile | undefined;
-  hasMore: boolean;
-  pageSize: number;
-  maxCachedCommits: number;
-  nextLogOffset: number;
-  startLogOffset: number;
-  graphContinuation: GraphContinuationState | undefined;
-  windowAnchorReady: boolean;
-  operationRepositoryIds: ReadonlySet<string>;
-  layout: WorkbenchLayout;
-  filters: LogFilters;
-  loading: Extract<ExtensionToWebviewMessage, { type: 'loading' }>['scope'] | undefined;
-  error: string | undefined;
-  errorRecovery: { repositoryId: string; action: ErrorRecoveryAction } | undefined;
-  history:
-    | {
-        repositoryId: string;
-        kind: 'line' | 'file';
-        path: string;
-        startLine?: number;
-        endLine?: number;
-        entries: HistoryEntry[];
-        hasMore: boolean;
-        notice?: string;
-      }
-    | undefined;
-  folderHistory:
-    | {
-        repositoryId: string;
-        path: string;
-      }
-    | undefined;
 }
 
 type WorkbenchRequestScope = 'repositories' | 'log' | 'selection' | 'operation';
@@ -192,49 +136,6 @@ function requestScopeForMessage(message: WebviewToExtensionMessage): WorkbenchRe
   }
 }
 
-const initialState: WorkbenchState = {
-  repositories: [],
-  selectedRepositoryId: undefined,
-  refs: [],
-  commits: [],
-  commitListRevision: 0,
-  selectedHash: undefined,
-  details: undefined,
-  detailsRepositoryId: undefined,
-  selectedParent: undefined,
-  files: [],
-  selectedFile: undefined,
-  hasMore: false,
-  pageSize: 500,
-  maxCachedCommits: 5000,
-  nextLogOffset: 0,
-  startLogOffset: 0,
-  graphContinuation: undefined,
-  windowAnchorReady: false,
-  operationRepositoryIds: new Set(),
-  layout: defaultLayout,
-  filters: defaultFilters,
-  loading: undefined,
-  error: undefined,
-  errorRecovery: undefined,
-  history: undefined,
-  folderHistory: undefined,
-};
-
-function changedFileStatusLabel(status: ChangedFile['status']): string {
-  return (
-    {
-      A: 'Added',
-      M: 'Modified',
-      D: 'Deleted',
-      R: 'Renamed',
-      C: 'Copied',
-      T: 'Type changed',
-      U: 'Unmerged',
-    } as const
-  )[status];
-}
-
 function readScrollTopByRepository(value: unknown): Record<string, number> {
   if (
     value &&
@@ -248,242 +149,75 @@ function readScrollTopByRepository(value: unknown): Record<string, number> {
   return {};
 }
 
-function ChangedFileRow({
-  file,
-  depth = 0,
-  inTree = false,
-  onOpen,
-  onSelect,
-  onContextMenu,
-}: {
-  file: ChangedFile;
-  depth?: number;
-  inTree?: boolean;
-  onOpen(file: ChangedFile): void;
-  onSelect(file: ChangedFile): void;
-  onContextMenu(file: ChangedFile, x: number, y: number): void;
-}) {
-  return (
-    <button
-      type="button"
-      className="file-row"
-      style={{ paddingLeft: 10 + depth * (inTree ? 20 : 14) }}
-      title={file.binary ? `${file.path} is binary` : file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-      onClick={() => onSelect(file)}
-      onDoubleClick={() => onOpen(file)}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onSelect(file);
-        onContextMenu(file, event.clientX, event.clientY);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') onOpen(file);
-      }}
-    >
-      {inTree ? <span className="folder-chevron" aria-hidden="true" /> : null}
-      <span className="file-path">{file.path.split('/').at(-1)}</span>
-      {file.additions !== undefined || file.deletions !== undefined ? (
-        <span className="file-stats">
-          {file.additions !== undefined ? (
-            <span className="file-stat-additions">+{String(file.additions)}</span>
-          ) : null}
-          {file.deletions !== undefined ? (
-            <span className="file-stat-deletions">−{String(file.deletions)}</span>
-          ) : null}
-        </span>
-      ) : null}
-      <span className={`file-status status-${file.status}`}>{file.status}</span>
-    </button>
-  );
-}
-
-function FileTreeNodes({
-  nodes,
-  depth,
-  collapsedDirectories,
-  onToggleDirectory,
-  onOpen,
-  onSelect,
-  onContextMenu,
-}: {
-  nodes: FileTreeNode[];
-  depth: number;
-  collapsedDirectories: ReadonlySet<string>;
-  onToggleDirectory(key: string): void;
-  onOpen(file: ChangedFile): void;
-  onSelect(file: ChangedFile): void;
-  onContextMenu(file: ChangedFile, x: number, y: number): void;
-}) {
-  return nodes.map((node) =>
-    node.type === 'directory' ? (
-      <div
-        className="file-tree-directory"
-        style={{ '--indent-guide-left': `${8 + depth * 20}px` } as React.CSSProperties}
-        key={node.path}
-      >
-        <button
-          type="button"
-          className="file-folder-row"
-          style={{ paddingLeft: 8 + depth * 20 }}
-          aria-expanded={!collapsedDirectories.has(node.path)}
-          onClick={() => onToggleDirectory(node.path)}
-        >
-          <span className="folder-chevron" aria-hidden="true">
-            {collapsedDirectories.has(node.path) ? ChevronRight : ChevronDown}
-          </span>
-          <span className="file-folder-name">{node.name}</span>
-        </button>
-        {!collapsedDirectories.has(node.path) ? (
-          <FileTreeNodes
-            nodes={node.children}
-            depth={depth + 1}
-            collapsedDirectories={collapsedDirectories}
-            onToggleDirectory={onToggleDirectory}
-            onOpen={onOpen}
-            onSelect={onSelect}
-            onContextMenu={onContextMenu}
-          />
-        ) : null}
-      </div>
-    ) : (
-      <ChangedFileRow
-        file={node.file}
-        depth={depth}
-        inTree
-        onOpen={onOpen}
-        onSelect={onSelect}
-        onContextMenu={onContextMenu}
-        key={node.path}
-      />
-    ),
-  );
-}
-
-const ChevronRight = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);
-
-const ChevronDown = (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);
-
-function RefTreeNodes({
-  nodes,
-  depth,
-  group,
-  folderKeyPrefix,
-  collapsedFolders,
-  forceExpanded,
-  onToggleFolder,
-  onSelect,
-  onKeyDown,
-  onContextMenu,
-}: {
-  nodes: RefTreeNode[];
-  depth: number;
-  group: (typeof refGroups)[number];
-  folderKeyPrefix: string;
-  collapsedFolders: ReadonlySet<string>;
-  forceExpanded: boolean;
-  onToggleFolder(key: string): void;
-  onSelect(ref: RefLabel): void;
-  onKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, ref: RefLabel): void;
-  onContextMenu(ref: RefLabel, x: number, y: number): void;
-}) {
-  return nodes.map((node) => {
-    if (node.type === 'directory') {
-      const folderKey = `${folderKeyPrefix}:${node.id}`;
-      const collapsed = !forceExpanded && collapsedFolders.has(folderKey);
-      return (
-        <div
-          className="ref-tree-directory"
-          style={{ '--indent-guide-left': `${16 + depth * 20}px` } as React.CSSProperties}
-          role="group"
-          aria-label={
-            group.kind === 'remote' && depth === 0
-              ? `Remote ${node.name}`
-              : `${group.label} folder ${node.path}`
-          }
-          key={node.id}
-        >
-          <button
-            type="button"
-            className="ref-folder-row"
-            style={{ paddingLeft: 16 + depth * 20 }}
-            aria-expanded={!collapsed}
-            aria-label={
-              forceExpanded
-                ? `${group.label} folder ${node.path} (expanded while filtering)`
-                : `${collapsed ? 'Expand' : 'Collapse'} ${group.label} folder ${node.path}`
-            }
-            disabled={forceExpanded}
-            onClick={() => onToggleFolder(folderKey)}
-          >
-            <span className="ref-folder-chevron" aria-hidden="true">
-              {collapsed ? ChevronRight : ChevronDown}
-            </span>
-            <span className="ref-name">{node.name}</span>
-          </button>
-          {!collapsed ? (
-            <RefTreeNodes
-              nodes={node.children}
-              depth={depth + 1}
-              group={group}
-              folderKeyPrefix={folderKeyPrefix}
-              collapsedFolders={collapsedFolders}
-              forceExpanded={forceExpanded}
-              onToggleFolder={onToggleFolder}
-              onSelect={onSelect}
-              onKeyDown={onKeyDown}
-              onContextMenu={onContextMenu}
-            />
-          ) : null}
-        </div>
-      );
-    }
-
-    const ref = node.ref;
-    return (
-      <button
-        type="button"
-        className={`ref-item${ref.isCurrent ? ' current-ref' : ''}`}
-        style={{ paddingLeft: 16 + depth * 20, '--indent-guide-left': `${16 + depth * 20}px` } as React.CSSProperties}
-        key={ref.fullName}
-        title={ref.fullName}
-        data-ref-item="true"
-        onClick={() => onSelect(ref)}
-        onKeyDown={(event) => onKeyDown(event, ref)}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onContextMenu(ref, event.clientX, event.clientY);
-        }}
-      >
-        <span className="ref-folder-chevron" aria-hidden="true" />
-        <span className="ref-name">{node.name}</span>
-        {ref.ahead || ref.behind ? (
-          <span className="tracking">
-            {ref.ahead ? `↑${String(ref.ahead)}` : ''}
-            {ref.behind ? ` ↓${String(ref.behind)}` : ''}
-          </span>
-        ) : null}
-      </button>
-    );
-  });
+// Incrementally compute the commit-graph layout. The `previous` cache is the
+// layout already in WorkbenchState; when the new commits merely append to the
+// previously laid-out prefix we lay out only the tail and splice the rows, which
+// is O(appended) instead of O(commits). Any other change (replace, evict, history
+// view) falls back to a from-scratch layout, so the output is always identical to
+// `layoutCommitGraph(commits, graphContinuation)` for the commit list, or to a
+// layout of the history entries when `history` is set.
+function computeGraphLayout(
+  commits: CommitSummary[],
+  graphContinuation: GraphContinuationState | undefined,
+  history: WorkbenchState['history'],
+  previous: GraphLayoutCache | undefined,
+): GraphLayoutCache {
+  if (history) {
+    const visibleHashes = new Set(history.entries.map((entry) => entry.hash));
+    return {
+      mode: 'history',
+      commits,
+      result: layoutCommitGraph(
+        history.entries.map((entry) => ({
+          hash: entry.hash,
+          parents: entry.parents.filter((parent) => visibleHashes.has(parent)),
+        })),
+      ),
+    };
+  }
+  if (
+    previous?.mode === 'commits' &&
+    commits.length > previous.commits.length &&
+    commits.slice(0, previous.commits.length).every((commit, index) => commit === previous.commits[index])
+  ) {
+    const appended = commits.slice(previous.commits.length);
+    const appendedLayout = layoutCommitGraph(appended, previous.result.continuation);
+    return {
+      mode: 'commits',
+      commits,
+      result: {
+        rows: [...previous.result.rows, ...appendedLayout.rows],
+        continuation: appendedLayout.continuation,
+        maxLaneCount: Math.max(previous.result.maxLaneCount, appendedLayout.maxLaneCount),
+      },
+    };
+  }
+  return {
+    mode: 'commits',
+    commits,
+    result: layoutCommitGraph(commits, graphContinuation),
+  };
 }
 
 export function App() {
+  const [store] = useState(createWorkbenchStore);
+  return (
+    <WorkbenchStoreContext.Provider value={store}>
+      <Workbench />
+    </WorkbenchStoreContext.Provider>
+  );
+}
+
+function Workbench() {
   const vscode = useMemo(() => getVsCodeApi(), []);
-  const [state, setState] = useState<WorkbenchState>(initialState);
-  const [selectedCommitHashes, setSelectedCommitHashes] = useState<string[]>([]);
+  const state = useWorkbenchState();
+  const setState = useSetWorkbenchState();
+  const [commitSelection, setCommitSelection] = useState<CommitSelection>(emptyCommitSelection);
   const [refSearch, setRefSearch] = useState('');
   const [scrollTopByRepository, setScrollTopByRepository] = useState<Record<string, number>>(() =>
     readScrollTopByRepository(vscode.getState()),
   );
-  const [filterPopup, setFilterPopup] = useState<'branch' | 'user' | 'date' | 'paths' | undefined>();
+  const [filterPopup, setFilterPopup] = useState<FilterPopupKind | undefined>();
   const [filterPopoverPosition, setFilterPopoverPosition] = useState<
     { top: number; right: number } | undefined
   >();
@@ -514,7 +248,6 @@ export function App() {
   >();
   const [collapsedRefGroups, setCollapsedRefGroups] = useState<Set<string>>(new Set());
   const [collapsedRefFolders, setCollapsedRefFolders] = useState<Set<string>>(new Set());
-  const [collapsedFileDirectories, setCollapsedFileDirectories] = useState<Set<string>>(new Set());
   const [responsiveCollapse, setResponsiveCollapse] = useState(() => ({
     files: window.matchMedia?.('(max-width: 900px)').matches ?? false,
     refs: window.matchMedia?.('(max-width: 680px)').matches ?? false,
@@ -560,7 +293,6 @@ export function App() {
   } | undefined>(undefined);
   const activeCommitMessagesRequest = useRef<string | undefined>(undefined);
   const stashDialogRepository = useRef<string | undefined>(undefined);
-  const commitSelectionAnchor = useRef<string | undefined>(undefined);
   const commitRevealSequence = useRef(0);
   const selectedRepository = state.repositories.find(
     (repository) => repository.id === state.selectedRepositoryId,
@@ -570,31 +302,6 @@ export function App() {
       ? commitRevealTarget
       : undefined;
   const refSearchActive = Boolean(refSearch.trim());
-  const visibleRefs = useMemo(() => {
-    const query = refSearch.trim().toLocaleLowerCase();
-    if (!query) return state.refs;
-    return state.refs.filter((ref) =>
-      [ref.shortName, ref.fullName, ref.remote]
-        .filter((value): value is string => Boolean(value))
-        .some((value) => value.toLocaleLowerCase().includes(query)),
-    );
-  }, [refSearch, state.refs]);
-  const refGroupTrees = useMemo(
-    () =>
-      refGroups.map((group) => {
-        const refs = visibleRefs.filter((ref) => ref.kind === group.kind);
-        return { group, refs, tree: buildRefTree(refs) };
-      }),
-    [visibleRefs],
-  );
-  const fileTree = useMemo(() => buildFileTree(state.files), [state.files]);
-  const headMatchesRefSearch = useMemo(() => {
-    const query = refSearch.trim().toLocaleLowerCase();
-    if (!query) return true;
-    return [selectedRepository?.currentBranch, selectedRepository?.head]
-      .filter((value): value is string => Boolean(value))
-      .some((value) => value.toLocaleLowerCase().includes(query));
-  }, [refSearch, selectedRepository?.currentBranch, selectedRepository?.head]);
   const authorFilterOptions = useMemo(() => {
     const userName = selectedRepository?.userName?.trim();
     const userEmail = selectedRepository?.userEmail?.trim();
@@ -622,29 +329,23 @@ export function App() {
       ...[...authors.entries()].map(([key, name]) => ({ key: `author-${key}`, label: name, value: name })),
     ];
   }, [selectedRepository?.userEmail, selectedRepository?.userName, state.commits]);
-  const graphLayout = useMemo(() => {
-    if (!state.history) return layoutCommitGraph(state.commits, state.graphContinuation);
-    const visibleHashes = new Set(state.history.entries.map((entry) => entry.hash));
-    return layoutCommitGraph(
-      state.history.entries.map((entry) => ({
-        hash: entry.hash,
-        parents: entry.parents.filter((parent) => visibleHashes.has(parent)),
-      })),
-    );
-  }, [state.commits, state.graphContinuation, state.history]);
+  // Incremental commit-graph layout. A full DAG layout is O(commits); on the
+  // common append-only page-load path we only lay out the newly appended commits
+  // and reuse the cached rows, falling back to a full recompute whenever the list
+  // is replaced, evicted, or in history mode — so the result is identical to a
+  // from-scratch layout, just cheaper. The `previous` cache is the layout already
+  // stored in WorkbenchState (updated by the data handlers below), so this stays
+  // pure and is never read/written during render.
   const selectedCommitHashSet = useMemo(
-    () => new Set(selectedCommitHashes),
-    [selectedCommitHashes],
+    () => new Set(commitSelection.hashes),
+    [commitSelection.hashes],
   );
   const hasContiguousCommitRange =
     contextMenu?.kind === 'commit' &&
-    contextMenu.commits.length >= 2 &&
-    contextMenu.commits.every((commit, index) => {
-      const firstIndex = state.commits.findIndex(
-        (candidate) => candidate.hash === contextMenu.commits[0]?.hash,
-      );
-      return firstIndex >= 0 && state.commits[firstIndex + index]?.hash === commit.hash;
-    });
+    isContiguousSelection(
+      contextMenu.commits.map((commit) => commit.hash),
+      state.commits,
+    );
   const selectedOperationInFlight = state.selectedRepositoryId
     ? state.operationRepositoryIds.has(state.selectedRepositoryId)
     : false;
@@ -777,7 +478,7 @@ export function App() {
       );
     }, 5_000);
     return () => window.clearTimeout(timer);
-  }, [state.error, state.errorRecovery]);
+  }, [setState, state.error, state.errorRecovery]);
 
   useEffect(() => {
     const repositoryId = state.selectedRepositoryId;
@@ -837,8 +538,7 @@ export function App() {
           requestScopeById.current.delete(message.requestId);
           activeSelectionRequest.current = undefined;
           activeCommitMessagesRequest.current = undefined;
-          commitSelectionAnchor.current = undefined;
-          setSelectedCommitHashes([]);
+          setCommitSelection(emptyCommitSelection);
           setSquashOperation(undefined);
           setStashDialog(undefined);
           setAmendDialog(undefined);
@@ -861,6 +561,7 @@ export function App() {
             nextLogOffset: 0,
             startLogOffset: 0,
             graphContinuation: undefined,
+            graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
             windowAnchorReady: false,
             operationRepositoryIds: new Set(),
             layout: message.layout,
@@ -942,20 +643,18 @@ export function App() {
               hash: selectedHash,
             };
             if (message.selectedHashes) {
-              commitSelectionAnchor.current = selectedHash;
-              setSelectedCommitHashes(message.selectedHashes);
+              setCommitSelection({ hashes: message.selectedHashes, anchor: selectedHash });
             } else {
-              setSelectedCommitHashes((current) => {
-                const selectedIndexes = current.map((hash) =>
+              setCommitSelection((current) => {
+                const selectedIndexes = current.hashes.map((hash) =>
                   message.commits.findIndex((commit) => commit.hash === hash),
                 );
                 const keepsSelection =
-                  current.length > 1 &&
-                  current.includes(selectedHash) &&
+                  current.hashes.length > 1 &&
+                  current.hashes.includes(selectedHash) &&
                   selectedIndexes.every((index) => index >= 0);
                 if (keepsSelection) return current;
-                commitSelectionAnchor.current = selectedHash;
-                return [selectedHash];
+                return { hashes: [selectedHash], anchor: selectedHash };
               });
             }
           }
@@ -979,9 +678,16 @@ export function App() {
               !message.replace ||
               (current.selectedHash !== undefined &&
                 commitWindow.commits.some((commit) => commit.hash === current.selectedHash));
+            const graphLayout = computeGraphLayout(
+              commitWindow.commits,
+              commitWindow.graphContinuation,
+              current.history,
+              message.replace ? undefined : current.graphLayout,
+            );
             return {
               ...current,
               selectedRepositoryId: message.repositoryId,
+              graphLayout,
               refs: message.refs,
               filters: preservesPendingFilters ? current.filters : message.filters,
               commits: commitWindow.commits,
@@ -1035,6 +741,7 @@ export function App() {
                 nextLogOffset: 0,
                 startLogOffset: 0,
                 graphContinuation: undefined,
+                graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
                 windowAnchorReady: false,
                 selectedHash: undefined,
                 details: undefined,
@@ -1077,9 +784,8 @@ export function App() {
         case 'historyOpened':
           if (message.replace) historyParentChoices.current.clear();
           setHistoryParentPicker(undefined);
-          setState((current) => ({
-            ...current,
-            history: {
+          setState((current) => {
+            const history = {
               repositoryId: message.repositoryId,
               kind: message.kind,
               path: message.path,
@@ -1090,11 +796,21 @@ export function App() {
                 : [...(current.history?.entries ?? []), ...message.entries],
               hasMore: message.hasMore,
               ...(message.notice ? { notice: message.notice } : {}),
-            },
-            loading: undefined,
-            error: undefined,
-            errorRecovery: undefined,
-          }));
+            };
+            return {
+              ...current,
+              history,
+              graphLayout: computeGraphLayout(
+                current.commits,
+                current.graphContinuation,
+                history,
+                current.graphLayout,
+              ),
+              loading: undefined,
+              error: undefined,
+              errorRecovery: undefined,
+            };
+          });
           break;
         case 'historyClosed':
           historyParentChoices.current.clear();
@@ -1104,6 +820,12 @@ export function App() {
               ? {
                   ...current,
                   history: undefined,
+                  graphLayout: computeGraphLayout(
+                    current.commits,
+                    current.graphContinuation,
+                    undefined,
+                    current.graphLayout,
+                  ),
                   ...(message.reason
                     ? { error: message.reason, errorRecovery: undefined }
                     : {}),
@@ -1129,6 +851,7 @@ export function App() {
               selectedRepositoryId: message.repositoryId,
               refs: [],
               commits: [],
+              graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
               commitListRevision: current.commitListRevision + 1,
               selectedHash: undefined,
               details: undefined,
@@ -1151,8 +874,7 @@ export function App() {
             selectedRepositoryIdRef.current = message.selectedRepositoryId;
           }
           activeSelectionRequest.current = undefined;
-          commitSelectionAnchor.current = undefined;
-          setSelectedCommitHashes([]);
+          setCommitSelection(emptyCommitSelection);
           setState((current) =>
             current.folderHistory?.repositoryId === message.repositoryId
               ? {
@@ -1170,6 +892,7 @@ export function App() {
                         selectedRepositoryId: message.selectedRepositoryId,
                         refs: [],
                         commits: [],
+                        graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
                         commitListRevision: current.commitListRevision + 1,
                       }
                     : {}),
@@ -1353,7 +1076,7 @@ export function App() {
         window.clearTimeout(detailsHashCopyTimer.current);
       }
     };
-  }, [vscode]);
+  }, [setState, vscode]);
 
   const send = (message: WebviewToExtensionMessage): void => {
     const scope = requestScopeForMessage(message);
@@ -1425,6 +1148,7 @@ export function App() {
         startLogOffset: 0,
         nextLogOffset: 0,
         graphContinuation: undefined,
+        graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
         windowAnchorReady: true,
       }));
       const filterRequestId = requestId('filters');
@@ -1470,8 +1194,7 @@ export function App() {
     setRefSearch('');
     activeSelectionRequest.current = undefined;
     activeCommitMessagesRequest.current = undefined;
-    commitSelectionAnchor.current = undefined;
-    setSelectedCommitHashes([]);
+    setCommitSelection(emptyCommitSelection);
     setSquashOperation(undefined);
     setStashDialog(undefined);
     setAmendDialog(undefined);
@@ -1487,6 +1210,7 @@ export function App() {
       nextLogOffset: 0,
       startLogOffset: 0,
       graphContinuation: undefined,
+      graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
       windowAnchorReady: false,
       selectedHash: undefined,
       details: undefined,
@@ -1525,58 +1249,24 @@ export function App() {
       return;
     }
     if (!state.selectedRepositoryId) return;
-    let nextSelectedCommitHashes: string[];
-    let focusedCommit = commit;
-    if (toggle) {
-      const nextSelection = new Set(selectedCommitHashes);
-      if (nextSelection.has(commit.hash)) {
-        if (nextSelection.size === 1) return;
-        nextSelection.delete(commit.hash);
-        nextSelectedCommitHashes = state.commits
-          .filter((candidate) => nextSelection.has(candidate.hash))
-          .map((candidate) => candidate.hash);
-        const focusedHash =
-          state.selectedHash && nextSelection.has(state.selectedHash)
-            ? state.selectedHash
-            : nextSelectedCommitHashes[0];
-        focusedCommit =
-          state.commits.find((candidate) => candidate.hash === focusedHash) ?? commit;
-      } else {
-        nextSelection.add(commit.hash);
-        nextSelectedCommitHashes = state.commits
-          .filter((candidate) => nextSelection.has(candidate.hash))
-          .map((candidate) => candidate.hash);
-      }
-      commitSelectionAnchor.current = focusedCommit.hash;
-    } else if (extend && commitSelectionAnchor.current) {
-      const anchorIndex = state.commits.findIndex(
-        (candidate) => candidate.hash === commitSelectionAnchor.current,
-      );
-      const targetIndex = state.commits.findIndex((candidate) => candidate.hash === commit.hash);
-      if (anchorIndex >= 0 && targetIndex >= 0) {
-        const start = Math.min(anchorIndex, targetIndex);
-        const end = Math.max(anchorIndex, targetIndex);
-        nextSelectedCommitHashes = state.commits
-          .slice(start, end + 1)
-          .map((candidate) => candidate.hash);
-      } else {
-        commitSelectionAnchor.current = commit.hash;
-        nextSelectedCommitHashes = [commit.hash];
-      }
-    } else {
-      commitSelectionAnchor.current = commit.hash;
-      nextSelectedCommitHashes = [commit.hash];
-    }
-    setSelectedCommitHashes(nextSelectedCommitHashes);
+    const next = nextCommitSelection(commitSelection, state.commits, commit.hash, {
+      extend,
+      toggle,
+      ...(state.selectedHash !== undefined ? { selectedHash: state.selectedHash } : {}),
+    });
+    if (!next) return;
+    const nextSelectedCommitHashes = next.selection.hashes;
+    const focusedHash = next.focusedHash;
+    setCommitSelection(next.selection);
     const selectionRequestId = requestId('selection');
     activeSelectionRequest.current = {
       requestId: selectionRequestId,
       repositoryId: state.selectedRepositoryId,
-      hash: focusedCommit.hash,
+      hash: focusedHash,
     };
     setState((current) => ({
       ...current,
-      selectedHash: focusedCommit.hash,
+      selectedHash: focusedHash,
       details: undefined,
       detailsRepositoryId: undefined,
       selectedParent: undefined,
@@ -1587,7 +1277,7 @@ export function App() {
       type: 'selectCommit',
       requestId: selectionRequestId,
       repositoryId: state.selectedRepositoryId,
-      hash: focusedCommit.hash,
+      hash: focusedHash,
       hashes: nextSelectedCommitHashes,
     });
   };
@@ -1599,8 +1289,7 @@ export function App() {
       selectCommit(commit);
       return;
     }
-    commitSelectionAnchor.current = hash;
-    setSelectedCommitHashes([hash]);
+    setCommitSelection({ hashes: [hash], anchor: hash });
     setState((current) => ({
       ...current,
       selectedHash: hash,
@@ -1652,15 +1341,6 @@ export function App() {
       const next = new Set(current);
       if (next.has(folder)) next.delete(folder);
       else next.add(folder);
-      return next;
-    });
-  };
-
-  const toggleFileDirectory = (directory: string): void => {
-    setCollapsedFileDirectories((current) => {
-      const next = new Set(current);
-      if (next.has(directory)) next.delete(directory);
-      else next.add(directory);
       return next;
     });
   };
@@ -2022,607 +1702,171 @@ export function App() {
     }
   };
 
+  const openStashDialog = (): void => {
+    const repositoryId = state.selectedRepositoryId;
+    if (!repositoryId) return;
+    setStashDialog({
+      repositoryId,
+      stashes: [],
+      loading: true,
+      stashMessage: '',
+      includeUntracked: false,
+    });
+    stashDialogRepository.current = repositoryId;
+    send({ type: 'requestStashState', requestId: requestId('stash-state'), repositoryId });
+  };
   const commitToolbar = (
-      <header
-        className={`filter-bar${state.history || state.folderHistory ? ' history-active' : ''}`}
-        role="toolbar"
-        aria-label="Git log filters"
-      >
-        {state.history ? (
-          <div className="history-toolbar">
-            <strong>
-              {state.history.kind === 'file' ? 'File History' : 'Line History'} · {state.history.path}
-              {state.history.startLine !== undefined
-                ? ` : ${String(state.history.startLine)}–${String(state.history.endLine ?? state.history.startLine)}`
-                : ''}
-            </strong>
-            {state.history.notice && state.history.entries.length ? (
-              <span className="history-notice">{state.history.notice}</span>
-            ) : null}
-            {state.history.kind === 'line' ? (
-              <button
-                type="button"
-                aria-label="Show file history"
-                title="Show complete file history"
-                onClick={() =>
-                  send({
-                    type: 'switchHistoryToFile',
-                    requestId: requestId('history-file'),
-                    repositoryId: state.history?.repositoryId ?? '',
-                  })
-                }
-              >
-                File History
-              </button>
-            ) : null}
-            <button
-              type="button"
-              aria-label="Back to log"
-              title="Return to the Git log"
-              onClick={() =>
-                send({
-                  type: 'closeHistory',
-                  requestId: requestId('history-back'),
-                  repositoryId: state.history?.repositoryId ?? '',
-                })
-              }
-            >
-              Back
-            </button>
-            <button
-              type="button"
-              aria-label="Close history"
-              title="Close history and return to the Git log"
-              onClick={() =>
-                send({
-                  type: 'closeHistory',
-                  requestId: requestId('history-close'),
-                  repositoryId: state.history?.repositoryId ?? '',
-                })
-              }
-            >
-              Close
-            </button>
-          </div>
-        ) : null}
-        {state.folderHistory ? (
-          <div className="history-toolbar">
-            <strong>
-              Folder History ·{' '}
-              {state.folderHistory.path === '.' ? 'Repository Root' : state.folderHistory.path}
-            </strong>
-            <button
-              className="history-toolbar-close"
-              type="button"
-              aria-label="Close folder history"
-              title="Restore the previous Git log filters"
-              onClick={() =>
-                send({
-                  type: 'closeFolderHistory',
-                  requestId: requestId('folder-history-back'),
-                  repositoryId: state.folderHistory?.repositoryId ?? '',
-                })
-              }
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          </div>
-        ) : null}
-        {state.repositories.length > 1 ? (
-          <label className="field repository-field">
-            <span className="sr-only">Repository</span>
-            <select
-              aria-label="Repository"
-              value={state.selectedRepositoryId ?? ''}
-              onChange={(event) => selectRepository(event.target.value)}
-            >
-              <option value="" disabled>
-                Select repository
-              </option>
-              {state.repositories.map((repository) => (
-                <option value={repository.id} key={repository.id}>
-                  {repository.displayName}{repository.operationState ? ` · ${repository.operationState}` : ''}
-                </option>
-              ))}
-            </select>
-            {selectedRepository?.operationState ? (
-              <span className="operation-badge">{selectedRepository.operationState}</span>
-            ) : null}
-          </label>
-        ) : selectedRepository?.operationState ? (
-          <span className="operation-badge">{selectedRepository.operationState}</span>
-        ) : null}
-        <label className="field search-field">
-          <input
-            ref={searchRef}
-            type="search"
-            aria-label="Text or hash"
-            placeholder="Text or hash"
-            value={state.filters.text}
-            onChange={(event) => applyFilters({ ...state.filters, text: event.target.value }, true)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              event.preventDefault();
-              event.stopPropagation();
-              if (state.filters.text) {
-                applyFilters({ ...state.filters, text: '' });
-              } else {
-                logRef.current?.focus();
-              }
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          data-popup-trigger="true"
-          className={state.filters.branches.length ? 'filter-active' : ''}
-          onClick={() => {
-            setContextMenu(undefined);
-            setFilterPopup((current) => (current === 'branch' ? undefined : 'branch'));
-          }}
-        >
-          Branch{state.filters.branches.length ? ` (${String(state.filters.branches.length)})` : ''}
-        </button>
-        <button
-          type="button"
-          data-popup-trigger="true"
-          className={state.filters.authors.length ? 'filter-active' : ''}
-          onClick={() => {
-            setContextMenu(undefined);
-            setFilterPopup((current) => (current === 'user' ? undefined : 'user'));
-          }}
-        >
-          User{state.filters.authors.length ? ` (${String(state.filters.authors.length)})` : ''}
-        </button>
-        <button
-          type="button"
-          data-popup-trigger="true"
-          className={state.filters.dateFrom || state.filters.dateTo ? 'filter-active' : ''}
-          onClick={() => {
-            setContextMenu(undefined);
-            setFilterPopup((current) => (current === 'date' ? undefined : 'date'));
-          }}
-        >
-          Date
-        </button>
-        <button
-          type="button"
-          data-popup-trigger="true"
-          className={state.filters.paths.length ? 'filter-active' : ''}
-          onClick={() => {
-            setContextMenu(undefined);
-            setFilterPopup((current) => (current === 'paths' ? undefined : 'paths'));
-          }}
-        >
-          Paths{state.filters.paths.length ? ` (${String(state.filters.paths.length)})` : ''}
-        </button>
-        {filterPopup ? (
-          <div
-            className={`filter-popover filter-${filterPopup}`}
-            role="dialog"
-            aria-label={`${filterPopup} filter`}
-            style={filterPopoverPosition}
-          >
-            {filterPopup === 'branch' ? (
-              <>
-                <div className="filter-popover-title">Branches</div>
-                {state.refs.length ? (
-                  state.refs.map((ref) => (
-                    <label className="filter-option" key={ref.fullName}>
-                      <input
-                        type="checkbox"
-                        checked={state.filters.branches.includes(ref.fullName)}
-                        onChange={() => {
-                          const branches = state.filters.branches.includes(ref.fullName)
-                            ? state.filters.branches.filter((branch) => branch !== ref.fullName)
-                            : [...state.filters.branches, ref.fullName];
-                          applyFilters({ ...state.filters, branches });
-                        }}
-                      />
-                      <span>{ref.shortName}</span>
-                    </label>
-                  ))
-                ) : (
-                  <span className="filter-empty">No refs loaded</span>
-                )}
-              </>
-            ) : null}
-            {filterPopup === 'user' ? (
-              <>
-                <div className="filter-popover-title">Authors</div>
-                {authorFilterOptions.map((author) => (
-                  <label className="filter-option" key={author.key}>
-                    <input
-                      type="checkbox"
-                      checked={state.filters.authors.includes(author.value)}
-                      onChange={() => {
-                        const authors = state.filters.authors.includes(author.value)
-                          ? state.filters.authors.filter((candidate) => candidate !== author.value)
-                          : [...state.filters.authors, author.value];
-                        applyFilters({ ...state.filters, authors });
-                      }}
-                    />
-                    <span>{author.label}</span>
-                  </label>
-                ))}
-              </>
-            ) : null}
-            {filterPopup === 'date' ? (
-              <div className="date-options">
-                {[
-                  { label: 'All time', kind: 'all' },
-                  { label: 'Today', kind: 'today' },
-                  { label: 'Yesterday', kind: 'yesterday' },
-                  { label: 'Last 7 days', kind: 'days', days: 7 },
-                  { label: 'Last 30 days', kind: 'days', days: 30 },
-                ].map((option) => (
-                  <button
-                    type="button"
-                    key={option.label}
-                    onClick={() => {
-                      const now = new Date();
-                      const today = new Date(
-                        now.getFullYear(),
-                        now.getMonth(),
-                        now.getDate(),
-                      ).getTime() / 1000;
-                      if (option.kind === 'all') applyDateRange();
-                      else if (option.kind === 'today') applyDateRange(today, today + 24 * 60 * 60);
-                      else if (option.kind === 'yesterday') {
-                        applyDateRange(today - 24 * 60 * 60, today);
-                      } else {
-                        applyDateRange(
-                          Math.floor(Date.now() / 1000) - (option.days ?? 0) * 24 * 60 * 60,
-                        );
-                      }
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-                <div className="custom-date-range">
-                  <label>
-                    <span>From</span>
-                    <input
-                      type="date"
-                      aria-label="Custom date from"
-                      value={customDateFrom}
-                      onChange={(event) => setCustomDateFrom(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <span>To</span>
-                    <input
-                      type="date"
-                      aria-label="Custom date to"
-                      value={customDateTo}
-                      onChange={(event) => setCustomDateTo(event.target.value)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={!customDateFrom && !customDateTo}
-                    onClick={() =>
-                      applyDateRange(
-                        customDateFrom
-                          ? Math.floor(new Date(`${customDateFrom}T00:00:00`).getTime() / 1000)
-                          : undefined,
-                        customDateTo
-                          ? Math.floor(new Date(`${customDateTo}T23:59:59`).getTime() / 1000)
-                          : undefined,
-                      )
-                    }
-                  >
-                    Apply custom range
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            {filterPopup === 'paths' ? (
-              <label className="path-filter-field">
-                <span>Git path</span>
-                <input
-                  aria-label="Git path filter"
-                  value={state.filters.paths[0] ?? ''}
-                  placeholder="src/ or src/app.ts"
-                  onChange={(event) =>
-                    applyFilters(
-                      {
-                        ...state.filters,
-                        paths: event.target.value ? [event.target.value] : [],
-                      },
-                      true,
-                    )
-                  }
-                />
-              </label>
-            ) : null}
-            <button
-              type="button"
-              className="reset-filters"
-              onClick={() => {
-                applyFilters(defaultFilters);
-                setFilterPopup(undefined);
-              }}
-            >
-              Reset filters
-            </button>
-          </div>
-        ) : null}
-      </header>
+    <CommitToolbar
+      history={
+        state.history
+          ? {
+              kind: state.history.kind,
+              path: state.history.path,
+              ...(state.history.startLine !== undefined
+                ? { startLine: state.history.startLine }
+                : {}),
+              ...(state.history.endLine !== undefined ? { endLine: state.history.endLine } : {}),
+              ...(state.history.notice !== undefined ? { notice: state.history.notice } : {}),
+              entryCount: state.history.entries.length,
+            }
+          : undefined
+      }
+      folderHistory={
+        state.folderHistory ? { path: state.folderHistory.path } : undefined
+      }
+      repositories={state.repositories}
+      selectedRepositoryId={state.selectedRepositoryId}
+      selectedRepositoryOperationState={selectedRepository?.operationState}
+      refs={state.refs}
+      filters={state.filters}
+      filterPopup={filterPopup}
+      filterPopoverPosition={filterPopoverPosition}
+      authorFilterOptions={authorFilterOptions}
+      customDateFrom={customDateFrom}
+      customDateTo={customDateTo}
+      searchRef={searchRef}
+      onSelectRepository={selectRepository}
+      onApplyFilters={applyFilters}
+      onApplyDateRange={applyDateRange}
+      onFilterPopupChange={(popup) => {
+        setContextMenu(undefined);
+        setFilterPopup(popup === undefined ? undefined : popup);
+      }}
+      onCustomDateFromChange={setCustomDateFrom}
+      onCustomDateToChange={setCustomDateTo}
+      onFocusLog={() => logRef.current?.focus()}
+      onSwitchHistoryToFile={() =>
+        send({
+          type: 'switchHistoryToFile',
+          requestId: requestId('history-file'),
+          repositoryId: state.history?.repositoryId ?? '',
+        })
+      }
+      onBackToLog={() =>
+        send({
+          type: 'closeHistory',
+          requestId: requestId('history-back'),
+          repositoryId: state.history?.repositoryId ?? '',
+        })
+      }
+      onCloseHistory={() =>
+        send({
+          type: 'closeHistory',
+          requestId: requestId('history-close'),
+          repositoryId: state.history?.repositoryId ?? '',
+        })
+      }
+      onCloseFolderHistory={() =>
+        send({
+          type: 'closeFolderHistory',
+          requestId: requestId('folder-history-back'),
+          repositoryId: state.folderHistory?.repositoryId ?? '',
+        })
+      }
+      onResetFilters={() => applyFilters(defaultFilters)}
+    />
   );
 
   const globalToolbar = (
-    <header className="global-toolbar" role="toolbar" aria-label="Global Git actions">
-        <button
-          type="button"
-          aria-label="Refresh log"
-          title="Refresh local repository state"
-          onClick={() =>
-            send({
-              type: 'refresh',
-              requestId: requestId('refresh'),
-              ...(state.selectedRepositoryId ? { repositoryId: state.selectedRepositoryId } : {}),
-            })
-          }
-        >
-          ↻
-        </button>
-        <button
-          type="button"
-          aria-label="Go to HEAD"
-          title="Locate the current HEAD commit"
-          disabled={!selectedRepository?.head}
-          onClick={goToHead}
-        >
-          ◎
-        </button>
-        <button
-          type="button"
-          aria-label="Fetch remotes"
-          title="Fetch from remotes"
-          disabled={!state.selectedRepositoryId || selectedRepository?.isBare || selectedOperationInFlight}
-          onClick={() => runOperation({ kind: 'fetch' })}
-        >
-          ⇣
-        </button>
-        <button
-          type="button"
-          aria-label="Manage stashes"
-          title="Create, inspect, apply, pop, or drop stashes"
-          disabled={!state.selectedRepositoryId || selectedRepository?.isBare}
-          onClick={() => {
-            const repositoryId = state.selectedRepositoryId;
-            if (!repositoryId) return;
-            setStashDialog({
-              repositoryId,
-              stashes: [],
-              loading: true,
-              stashMessage: '',
-              includeUntracked: false,
-            });
-            stashDialogRepository.current = repositoryId;
-            send({
-              type: 'requestStashState',
-              requestId: requestId('stash-state'),
-              repositoryId,
-            });
-          }}
-        >
-          ◫
-        </button>
-        <button
-          type="button"
-          aria-label={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
-          title={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
-          onClick={() => toggleResponsivePane('refs')}
-        >
-          ⇤
-        </button>
-        <button
-          type="button"
-          aria-label={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
-          title={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
-          onClick={() => toggleResponsivePane('files')}
-        >
-          ⇥
-        </button>
-        <button
-          type="button"
-          data-popup-trigger="true"
-          aria-label="More actions"
-          title="More Git actions"
-          aria-haspopup="menu"
-          aria-expanded={contextMenu?.kind === 'toolbar'}
-          disabled={!state.selectedRepositoryId || selectedRepository?.isBare}
-          onClick={(event) => {
-            const bounds = event.currentTarget.getBoundingClientRect();
-            if (!state.selectedRepositoryId) return;
-            setFilterPopup(undefined);
-            setContextMenu((current) =>
-              current?.kind === 'toolbar'
-                ? undefined
-                : {
-                    kind: 'toolbar',
-                    repositoryId: state.selectedRepositoryId as string,
-                    x: bounds.right,
-                    y: bounds.bottom + 2,
-                  },
-            );
-          }}
-        >
-          ⋮
-        </button>
-    </header>
-  );
-
-  const detailsPlacementLabel = detailsInChanges
-    ? 'Move commit details to bottom'
-    : 'Move commit details below changed files';
-  const detailsPlacementButton = (
-    <button
-      type="button"
-      className="details-placement-button"
-      aria-label={detailsPlacementLabel}
-      title={detailsPlacementLabel}
-      onClick={toggleDetailsPlacement}
-    >
-      <span
-        className={`details-placement-icon${detailsInChanges ? ' to-bottom' : ''}`}
-        aria-hidden="true"
-      >
-        ⇥
-      </span>
-    </button>
-  );
-  const commitDetailsResizer = (
-    <div
-      className="pane-resizer horizontal details-resizer"
-      style={detailsInChanges ? { gridRow: 5 } : undefined}
-      role="separator"
-      aria-label="Resize commit details pane"
-      aria-orientation="horizontal"
-      aria-valuemin={100}
-      aria-valuenow={state.layout.detailsHeight}
-      tabIndex={0}
-      onPointerDown={(event) => beginResize('detailsHeight', event)}
-      onKeyDown={(event) => {
-        if (event.key === 'ArrowUp') resizeLayout('detailsHeight', 10);
-        if (event.key === 'ArrowDown') resizeLayout('detailsHeight', -10);
+    <GlobalToolbar
+      hasHead={Boolean(selectedRepository?.head)}
+      canRunOperations={Boolean(state.selectedRepositoryId) && !selectedRepository?.isBare}
+      operationInFlight={selectedOperationInFlight}
+      refsCollapsed={refsCollapsed}
+      filesCollapsed={filesCollapsed}
+      moreActionsExpanded={contextMenu?.kind === 'toolbar'}
+      onRefresh={() =>
+        send({
+          type: 'refresh',
+          requestId: requestId('refresh'),
+          ...(state.selectedRepositoryId ? { repositoryId: state.selectedRepositoryId } : {}),
+        })
+      }
+      onGoToHead={goToHead}
+      onFetch={() => runOperation({ kind: 'fetch' })}
+      onManageStashes={openStashDialog}
+      onToggleRefsPane={() => toggleResponsivePane('refs')}
+      onToggleFilesPane={() => toggleResponsivePane('files')}
+      onToggleMoreActions={(anchor) => {
+        if (!state.selectedRepositoryId) return;
+        setFilterPopup(undefined);
+        setContextMenu((current) =>
+          current?.kind === 'toolbar'
+            ? undefined
+            : {
+                kind: 'toolbar',
+                repositoryId: state.selectedRepositoryId as string,
+                x: anchor.right,
+                y: anchor.bottom,
+              },
+        );
       }}
     />
   );
+
+  const copyDetailsHash = (): void => {
+    const copyRequestId = requestId('copy-hash');
+    detailsHashCopyRequest.current = copyRequestId;
+    if (detailsHashCopyTimer.current !== undefined) {
+      window.clearTimeout(detailsHashCopyTimer.current);
+      detailsHashCopyTimer.current = undefined;
+    }
+    setDetailsHashCopyState('copying');
+    send({ type: 'copyToClipboard', requestId: copyRequestId, text: state.details?.hash ?? '' });
+  };
+  const selectParent = (parent: string, hash: string): void => {
+    setState((current) => ({ ...current, selectedParent: parent }));
+    if (!state.detailsRepositoryId) return;
+    const parentRequestId = requestId('parent');
+    activeSelectionRequest.current = {
+      requestId: parentRequestId,
+      repositoryId: state.detailsRepositoryId,
+      hash,
+    };
+    send({
+      type: 'selectParent',
+      requestId: parentRequestId,
+      repositoryId: state.detailsRepositoryId,
+      hash,
+      parent,
+    });
+  };
   const commitDetailsPane = (
-    <section
-      className="details-pane pane"
-      style={detailsInChanges ? { gridRow: 6 } : undefined}
-      role="region"
-      aria-label="Commit details"
-      tabIndex={-1}
-    >
-      {state.details ? (
-        <div className="details-content">
-          <div className="details-heading-row">
-            <div className="details-message">{state.details.subject}</div>
-            <div className="details-actions" role="toolbar" aria-label="Commit actions">
-              {detailsPlacementButton}
-              <button
-                type="button"
-                aria-label="Cherry-pick selected commit"
-                disabled={
-                  selectedRepository?.isBare ||
-                  Boolean(selectedRepository?.operationState) ||
-                  selectedOperationInFlight
-                }
-                onClick={() =>
-                  runOperation(
-                    { kind: 'cherryPick', hash: state.details?.hash ?? '' },
-                    state.detailsRepositoryId,
-                  )
-                }
-              >
-                Cherry-pick
-              </button>
-              <button
-                type="button"
-                aria-label="Revert selected commit"
-                disabled={
-                  selectedRepository?.isBare ||
-                  Boolean(selectedRepository?.operationState) ||
-                  selectedOperationInFlight
-                }
-                onClick={() =>
-                  runOperation(
-                    { kind: 'revert', hash: state.details?.hash ?? '' },
-                    state.detailsRepositoryId,
-                  )
-                }
-              >
-                Revert
-              </button>
-            </div>
-          </div>
-          <div className="details-meta">
-            <span>Author: {state.details.authorName} &lt;{state.details.authorEmail}&gt;</span>
-            <span>Authored: {formatCommitDate(state.details.authorTime)}</span>
-            <span>
-              Committer: {state.details.committerName} &lt;{state.details.committerEmail}&gt;
-            </span>
-            <span>Committed: {formatCommitDate(state.details.commitTime)}</span>
-            <span className="details-hash">
-              <code>{state.details.hash}</code>
-              <button
-                type="button"
-                aria-label="Copy full commit hash"
-                disabled={detailsHashCopyState === 'copying'}
-                onClick={() => {
-                  const copyRequestId = requestId('copy-hash');
-                  detailsHashCopyRequest.current = copyRequestId;
-                  if (detailsHashCopyTimer.current !== undefined) {
-                    window.clearTimeout(detailsHashCopyTimer.current);
-                    detailsHashCopyTimer.current = undefined;
-                  }
-                  setDetailsHashCopyState('copying');
-                  send({
-                    type: 'copyToClipboard',
-                    requestId: copyRequestId,
-                    text: state.details?.hash ?? '',
-                  });
-                }}
-              >
-                {detailsHashCopyState === 'copying'
-                  ? 'Copying…'
-                  : detailsHashCopyState === 'copied'
-                    ? 'Copied'
-                    : 'Copy'}
-              </button>
-            </span>
-            {state.details.parents.length ? (
-              <span className="details-parents">
-                Parents:{' '}
-                {state.details.parents.map((parent) => (
-                  <button
-                    type="button"
-                    aria-label={`Parent ${parent}`}
-                    title={parent}
-                    key={parent}
-                    onClick={() => selectHash(parent, 'parent')}
-                  >
-                    {parent.slice(0, 8)}
-                  </button>
-                ))}
-              </span>
-            ) : (
-              <span>Parents: root commit</span>
-            )}
-            {state.details.refs.length ? (
-              <span className="details-refs">
-                Refs: {state.details.refs.map((ref) => <span key={ref.fullName}>{ref.shortName}</span>)}
-              </span>
-            ) : null}
-            <span>Signature: {state.details.signature}</span>
-          </div>
-          <div className="details-body">
-            {state.details.body
-              .split(/\r?\n/u)
-              .filter((line, index) => index > 0 && line.length > 0)
-              .map((line, index) => (
-                <p key={`${String(index)}:${line}`}>{line}</p>
-              ))}
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="details-heading-row">
-            <div className="details-message">Commit Details</div>
-            <div className="details-actions" role="toolbar" aria-label="Commit actions">
-              {detailsPlacementButton}
-            </div>
-          </div>
-          <div className="details-placeholder">Select a commit to view its message and metadata.</div>
-        </>
-      )}
-    </section>
+    <DetailsPane
+      details={state.details}
+      detailsInChanges={detailsInChanges}
+      detailsHeight={state.layout.detailsHeight}
+      detailsRepositoryId={state.detailsRepositoryId}
+      onCopyHash={copyDetailsHash}
+      detailsHashCopyState={detailsHashCopyState}
+      onTogglePlacement={toggleDetailsPlacement}
+      onSelectHash={selectHash}
+      onResizeStart={(event) => beginResize('detailsHeight', event)}
+      onResizeKeyDown={(delta) => resizeLayout('detailsHeight', delta)}
+      runOperation={runOperation}
+      selectedRepository={selectedRepository}
+      selectedOperationInFlight={selectedOperationInFlight}
+    />
   );
 
   return (
@@ -2725,142 +1969,43 @@ export function App() {
           }px`,
         }}
       >
-        <nav
-          className="refs-pane pane"
-          aria-label="Git references"
-          hidden={refsCollapsed}
-        >
-          <div className="refs-toolbar">
-            <label className="refs-search-bar field">
-              <input
-                type="search"
-                aria-label="Filter branches"
-                placeholder="Filter branches"
-                value={refSearch}
-                onChange={(event) => setRefSearch(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Escape' || !refSearch) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setRefSearch('');
-                }}
-              />
-            </label>
-          </div>
-          <div className="pane-heading">Branches</div>
-          <div className="refs-scroll">
-            <section className="ref-group">
-              <button
-                type="button"
-                className="ref-group-heading"
-                aria-expanded={refSearchActive || !collapsedRefGroups.has('head')}
-                disabled={refSearchActive}
-                onClick={() => toggleRefGroup('head')}
-              >
-                <span className="ref-folder-chevron" aria-hidden="true">
-                  {!refSearchActive && collapsedRefGroups.has('head') ? ChevronRight : ChevronDown}
-                </span>
-                <span>HEAD</span>
-              </button>
-              {selectedRepository?.head &&
-              headMatchesRefSearch &&
-              (refSearchActive || !collapsedRefGroups.has('head')) ? (
-                <button
-                  type="button"
-                  className="ref-item current-ref"
-                  title={selectedRepository.head}
-                  data-ref-item="true"
-                  onClick={() => {
-                    const headRef: RefLabel = {
-                      fullName: 'HEAD',
-                      shortName: selectedRepository.currentBranch ?? selectedRepository.head?.slice(0, 8) ?? 'HEAD',
-                      kind: 'local',
-                      target: selectedRepository.head ?? '',
-                      ahead: 0,
-                      behind: 0,
-                      isCurrent: true,
-                    };
-                    selectRef(headRef);
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    if (!state.selectedRepositoryId || !selectedRepository.head) return;
-                    setContextMenu({
-                      kind: 'head',
-                      repositoryId: state.selectedRepositoryId,
-                      hash: selectedRepository.head,
-                      x: event.clientX,
-                      y: event.clientY,
-                    });
-                  }}
-                >
-                  <span className="ref-icon" aria-hidden="true">
-                    ●
-                  </span>
-                  <span>{selectedRepository.currentBranch ?? selectedRepository.head.slice(0, 8)}</span>
-                </button>
-              ) : null}
-            </section>
-            {refGroupTrees.map(({ group, refs, tree }) => {
-              const collapsed = !refSearchActive && collapsedRefGroups.has(group.kind);
-              return (
-                <section className="ref-group" key={group.kind}>
-                  <button
-                    type="button"
-                    className="ref-group-heading"
-                    aria-expanded={!collapsed}
-                    disabled={refSearchActive}
-                    onClick={() => toggleRefGroup(group.kind)}
-                  >
-                    <span className="ref-folder-chevron" aria-hidden="true">
-                      {collapsed ? ChevronRight : ChevronDown}
-                    </span>
-                    <span>{group.label}</span>
-                    <span className="ref-count">{refs.length}</span>
-                  </button>
-                  {!collapsed ? (
-                    <RefTreeNodes
-                      nodes={tree}
-                      depth={0}
-                      group={group}
-                      folderKeyPrefix={`${state.selectedRepositoryId ?? ''}:${group.kind}`}
-                      collapsedFolders={collapsedRefFolders}
-                      forceExpanded={refSearchActive}
-                      onToggleFolder={toggleRefFolder}
-                      onSelect={selectRef}
-                      onKeyDown={handleRefKeyDown}
-                      onContextMenu={(ref, x, y) => {
-                        if (!state.selectedRepositoryId) return;
-                        setContextMenu({
-                          kind: 'ref',
-                          repositoryId: state.selectedRepositoryId,
-                          ref,
-                          x,
-                          y,
-                        });
-                      }}
-                    />
-                  ) : null}
-                </section>
-              );
-            })}
-          </div>
-        </nav>
-
-        <div
-          className="pane-resizer vertical refs-resizer"
-          role="separator"
-          aria-label="Resize references pane"
-          aria-orientation="vertical"
-          aria-valuemin={160}
-          aria-valuenow={state.layout.refsWidth}
-          hidden={refsCollapsed}
-          tabIndex={0}
-          onPointerDown={(event) => beginResize('refsWidth', event)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowLeft') resizeLayout('refsWidth', -10);
-            if (event.key === 'ArrowRight') resizeLayout('refsWidth', 10);
+        <RefsPane
+          refs={state.refs}
+          selectedRepository={selectedRepository}
+          selectedRepositoryId={state.selectedRepositoryId}
+          refSearch={refSearch}
+          onRefSearchChange={setRefSearch}
+          refSearchActive={refSearchActive}
+          collapsedRefGroups={collapsedRefGroups}
+          onToggleRefGroup={toggleRefGroup}
+          collapsedRefFolders={collapsedRefFolders}
+          onToggleRefFolder={toggleRefFolder}
+          onSelectRef={selectRef}
+          onRefKeyDown={handleRefKeyDown}
+          onOpenHeadContextMenu={(x, y) => {
+            if (!state.selectedRepositoryId || !selectedRepository?.head) return;
+            setContextMenu({
+              kind: 'head',
+              repositoryId: state.selectedRepositoryId,
+              hash: selectedRepository.head,
+              x,
+              y,
+            });
           }}
+          onOpenRefContextMenu={(ref, x, y) => {
+            if (!state.selectedRepositoryId) return;
+            setContextMenu({
+              kind: 'ref',
+              repositoryId: state.selectedRepositoryId,
+              ref,
+              x,
+              y,
+            });
+          }}
+          hidden={refsCollapsed}
+          refsWidth={state.layout.refsWidth}
+          onResizeStart={(event) => beginResize('refsWidth', event)}
+          onResizeKeyDown={(delta) => resizeLayout('refsWidth', delta)}
         />
 
         <section
@@ -2979,7 +2124,7 @@ export function App() {
                   : `log:${state.selectedRepositoryId ?? ''}`
               }
               commits={state.history?.entries ?? state.commits}
-              graphLayout={graphLayout}
+              graphLayout={state.graphLayout.result}
               selectedHashes={selectedCommitHashSet}
               headHash={selectedRepository?.head}
               hasMore={state.history?.hasMore ?? state.hasMore}
@@ -3057,159 +2202,35 @@ export function App() {
           )}
         </section>
 
-        <div
-          className="pane-resizer vertical files-resizer"
-          role="separator"
-          aria-label="Resize changed files pane"
-          aria-orientation="vertical"
-          aria-valuemin={220}
-          aria-valuenow={state.layout.filesWidth}
+        <FilesPane
+          files={state.files}
+          details={state.details}
+          filesViewMode={state.layout.filesViewMode}
+          loading={state.loading}
+          filesWidth={state.layout.filesWidth}
           hidden={filesCollapsed}
-          tabIndex={0}
-          onPointerDown={(event) => beginResize('filesWidth', event)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowLeft') resizeLayout('filesWidth', 10);
-            if (event.key === 'ArrowRight') resizeLayout('filesWidth', -10);
+          detailsInChanges={detailsInChanges}
+          detailsHeight={state.layout.detailsHeight}
+          selectedParent={state.selectedParent}
+          {...(detailsInChanges ? { detailsContent: commitDetailsPane } : {})}
+          {...(state.selectedFile ? { selectedFile: state.selectedFile } : {})}
+          onSelectParent={selectParent}
+          onUpdateFilesViewMode={updateFilesViewMode}
+          onResizeStart={(event) => beginResize('filesWidth', event)}
+          onResizeKeyDown={(delta) => resizeLayout('filesWidth', delta)}
+          onOpenDiff={openDiff}
+          onSelectFile={(file) => setState((current) => ({ ...current, selectedFile: file }))}
+          onFileContextMenu={(file, x, y) => {
+            if (!state.detailsRepositoryId) return;
+            setContextMenu({
+              kind: 'file',
+              repositoryId: state.detailsRepositoryId,
+              file,
+              x,
+              y,
+            });
           }}
         />
-
-        <section
-          className={`files-pane pane${detailsInChanges ? ' with-details' : ''}`}
-          role="region"
-          aria-label="Changed files"
-          hidden={filesCollapsed}
-          style={
-            detailsInChanges
-              ? {
-                  gridTemplateRows: `38px 30px minmax(0, 1fr) auto 4px ${state.layout.detailsHeight}px`,
-                }
-              : undefined
-          }
-        >
-          <div className="global-toolbar-spacer" aria-hidden="true" />
-          <div className="pane-heading files-heading">
-            <span>Changed Files</span>
-            {state.details && state.details.parents.length > 1 ? (
-              <select
-                className="parent-selector"
-                aria-label="Diff parent"
-                value={state.selectedParent ?? ''}
-                onChange={(event) => {
-                  const parent = event.target.value;
-                  setState((current) => ({ ...current, selectedParent: parent }));
-                  if (state.detailsRepositoryId && state.details) {
-                    const parentRequestId = requestId('parent');
-                    activeSelectionRequest.current = {
-                      requestId: parentRequestId,
-                      repositoryId: state.detailsRepositoryId,
-                      hash: state.details.hash,
-                    };
-                    send({
-                      type: 'selectParent',
-                      requestId: parentRequestId,
-                      repositoryId: state.detailsRepositoryId,
-                      hash: state.details.hash,
-                      parent,
-                    });
-                  }
-                }}
-              >
-                {state.details.parents.map((parent, index) => (
-                  <option value={parent} key={parent}>
-                    Parent {String(index + 1)} · {parent.slice(0, 8)}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            <span className="segmented-control" aria-label="Changed files display mode">
-              <button
-                type="button"
-                aria-pressed={state.layout.filesViewMode === 'tree'}
-                title="Tree view"
-                onClick={() => updateFilesViewMode('tree')}
-              >
-                Tree
-              </button>
-              <button
-                type="button"
-                aria-pressed={state.layout.filesViewMode === 'list'}
-                title="List view"
-                onClick={() => updateFilesViewMode('list')}
-              >
-                List
-              </button>
-            </span>
-          </div>
-          {state.files.length ? (
-            <div className="file-list">
-              <div className="file-list-content">
-                {state.layout.filesViewMode === 'tree' ? (
-                  <FileTreeNodes
-                    nodes={fileTree}
-                    depth={0}
-                    collapsedDirectories={collapsedFileDirectories}
-                    onToggleDirectory={toggleFileDirectory}
-                    onOpen={openDiff}
-                    onSelect={(file) => setState((current) => ({ ...current, selectedFile: file }))}
-                    onContextMenu={(file, x, y) => {
-                      if (!state.detailsRepositoryId) return;
-                      setContextMenu({
-                        kind: 'file',
-                        repositoryId: state.detailsRepositoryId,
-                        file,
-                        x,
-                        y,
-                      });
-                    }}
-                  />
-                ) : (
-                  state.files.map((file) => (
-                    <ChangedFileRow
-                      file={file}
-                      onOpen={openDiff}
-                      onSelect={(selectedFile) =>
-                        setState((current) => ({ ...current, selectedFile }))
-                      }
-                      onContextMenu={(selectedFile, x, y) => {
-                        if (!state.detailsRepositoryId) return;
-                        setContextMenu({
-                          kind: 'file',
-                          repositoryId: state.detailsRepositoryId,
-                          file: selectedFile,
-                          x,
-                          y,
-                        });
-                      }}
-                      key={`${file.oldPath ?? ''}:${file.path}`}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="empty-pane">
-              {state.loading === 'selection' ? 'Loading changed files…' : 'Select a commit to inspect its files.'}
-            </div>
-          )}
-          {state.selectedFile ? (
-            <div className="file-preview" role="status" aria-label="Changed file preview">
-              <span>{state.selectedFile.path}</span>
-              <span> · {changedFileStatusLabel(state.selectedFile.status)}</span>
-              {state.selectedFile.additions !== undefined ? (
-                <span className="file-stat-additions">
-                  {' '}· +{String(state.selectedFile.additions)}
-                </span>
-              ) : null}
-              {state.selectedFile.deletions !== undefined ? (
-                <span className="file-stat-deletions">
-                  {' '}−{String(state.selectedFile.deletions)}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          {detailsInChanges ? commitDetailsResizer : null}
-          {detailsInChanges ? commitDetailsPane : null}
-        </section>
       </section>
 
       {selectedOperationInFlight ? (
@@ -3218,7 +2239,6 @@ export function App() {
         </div>
       ) : null}
 
-      {!detailsInChanges ? commitDetailsResizer : null}
       {!detailsInChanges ? commitDetailsPane : null}
 
       {contextMenu ? (
