@@ -144,7 +144,7 @@
         {
           "id": "gitLogWorkbench",
           "title": "Git Log",
-          "icon": "media/git-log.png"
+          "icon": "$(git-branch)"
         }
       ]
     },
