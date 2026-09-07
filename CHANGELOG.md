@@ -16,6 +16,10 @@ All notable changes to Git Log are documented in this file.
 - Fixed the Branches tree's vertical indentation-guide line not appearing under nested folders.
 - Removed the stray horizontal guide strokes and the legacy folder/symbol icons from branch, tag, and remote tree rows.
 
+### Internal
+
+- Split the context menu and the stash, amend, squash, named-operation, and history-parent-picker dialogs out of the monolithic `App.tsx` into dedicated components (`ContextMenu.tsx`, `Dialogs.tsx`), with shared helpers moved to `webviewUtils.ts`. No user-visible behavior change; the codebase refactor follows ADR-0003 (Zustand + incremental split).
+
 ## 0.0.9
 
 ### Added

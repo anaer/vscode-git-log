@@ -38,12 +38,61 @@ import { buildRefTree, type RefTreeNode } from './buildRefTree';
 import { advanceCommitWindow } from './commitWindow';
 import { CommitList } from './CommitList';
 import { formatCommitDate } from './formatCommitDate';
+import { requestId } from './webviewUtils';
+import { ContextMenu } from './ContextMenu';
+import { Dialogs } from './Dialogs';
 
 const refGroups: readonly { label: string; kind: RefKind }[] = [
   { label: 'Local', kind: 'local' },
   { label: 'Remote', kind: 'remote' },
   { label: 'Tags', kind: 'tag' },
 ];
+
+export type ContextMenuState =
+  | {
+      kind: 'commit';
+      repositoryId: string;
+      commit: CommitSummary;
+      commits: CommitSummary[];
+      x: number;
+      y: number;
+    }
+  | { kind: 'ref'; repositoryId: string; ref: RefLabel; x: number; y: number }
+  | { kind: 'file'; repositoryId: string; file: ChangedFile; x: number; y: number }
+  | { kind: 'toolbar'; repositoryId: string; x: number; y: number }
+  | { kind: 'head'; repositoryId: string; hash: string; x: number; y: number };
+
+export interface SquashOperationState {
+  repositoryId: string;
+  hashes: string[];
+  requestId: string;
+  message: string;
+  loading: boolean;
+}
+
+export type NamedOperationState =
+  | { kind: 'createBranch'; repositoryId: string; target: string; value: string }
+  | { kind: 'createTag'; repositoryId: string; target: string; value: string }
+  | { kind: 'renameBranch'; repositoryId: string; oldName: string; value: string }
+  | { kind: 'checkoutRemote'; repositoryId: string; startPoint: string; value: string };
+
+export interface HistoryParentPickerState {
+  repositoryId: string;
+  commit: CommitSummary;
+}
+
+export interface StashDialogState {
+  repositoryId: string;
+  stashes: StashEntry[];
+  loading: boolean;
+  stashMessage: string;
+  includeUntracked: boolean;
+}
+
+export interface AmendDialogState {
+  repositoryId: string;
+  message: string;
+}
 
 const defaultLayout: WorkbenchLayout = {
   refsWidth: 220,
@@ -171,25 +220,6 @@ const initialState: WorkbenchState = {
   history: undefined,
   folderHistory: undefined,
 };
-
-function requestId(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID()}`;
-}
-
-function contextMenuPosition(x: number, y: number): CSSProperties {
-  const margin = 4;
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-  const horizontal =
-    x > viewportWidth / 2
-      ? { right: Math.max(margin, viewportWidth - x) }
-      : { left: Math.max(margin, x) };
-  const vertical =
-    y > viewportHeight / 2
-      ? { bottom: Math.max(margin, viewportHeight - y) }
-      : { top: Math.max(margin, y) };
-  return { ...horizontal, ...vertical };
-}
 
 function changedFileStatusLabel(status: ChangedFile['status']): string {
   return (
@@ -457,57 +487,18 @@ export function App() {
   const [filterPopoverPosition, setFilterPopoverPosition] = useState<
     { top: number; right: number } | undefined
   >();
-  const [contextMenu, setContextMenu] = useState<
-    | {
-        kind: 'commit';
-        repositoryId: string;
-        commit: CommitSummary;
-        commits: CommitSummary[];
-        x: number;
-        y: number;
-      }
-    | { kind: 'ref'; repositoryId: string; ref: RefLabel; x: number; y: number }
-    | { kind: 'file'; repositoryId: string; file: ChangedFile; x: number; y: number }
-    | { kind: 'toolbar'; repositoryId: string; x: number; y: number }
-    | { kind: 'head'; repositoryId: string; hash: string; x: number; y: number }
-    | undefined
-  >();
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>();
   const [measuredContextMenuPosition, setMeasuredContextMenuPosition] = useState<
     CSSProperties | undefined
   >();
-  const [squashOperation, setSquashOperation] = useState<
-    | {
-        repositoryId: string;
-        hashes: string[];
-        requestId: string;
-        message: string;
-        loading: boolean;
-      }
-    | undefined
-  >();
-  const [namedOperation, setNamedOperation] = useState<
-    | { kind: 'createBranch'; repositoryId: string; target: string; value: string }
-    | { kind: 'createTag'; repositoryId: string; target: string; value: string }
-    | { kind: 'renameBranch'; repositoryId: string; oldName: string; value: string }
-    | { kind: 'checkoutRemote'; repositoryId: string; startPoint: string; value: string }
-    | undefined
-  >();
-  const [historyParentPicker, setHistoryParentPicker] = useState<
-    { repositoryId: string; commit: CommitSummary } | undefined
-  >();
-  const [stashDialog, setStashDialog] = useState<
-    | {
-        repositoryId: string;
-        stashes: StashEntry[];
-        loading: boolean;
-        stashMessage: string;
-        includeUntracked: boolean;
-      }
-    | undefined
-  >();
-  const [amendDialog, setAmendDialog] = useState<
-    { repositoryId: string; message: string } | undefined
-  >();
+  const [squashOperation, setSquashOperation] = useState<SquashOperationState>();
+
+  const [namedOperation, setNamedOperation] = useState<NamedOperationState>();
+
+  const [historyParentPicker, setHistoryParentPicker] = useState<HistoryParentPickerState>();
+
+  const [stashDialog, setStashDialog] = useState<StashDialogState>();
+  const [amendDialog, setAmendDialog] = useState<AmendDialogState>();
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
   const [detailsHashCopyState, setDetailsHashCopyState] = useState<
@@ -2142,9 +2133,6 @@ export function App() {
           <span className="operation-badge">{selectedRepository.operationState}</span>
         ) : null}
         <label className="field search-field">
-          <span className="search-icon" aria-hidden="true">
-            ⌕
-          </span>
           <input
             ref={searchRef}
             type="search"
@@ -2744,9 +2732,6 @@ export function App() {
         >
           <div className="refs-toolbar">
             <label className="refs-search-bar field">
-              <span className="search-icon" aria-hidden="true">
-                ⌕
-              </span>
               <input
                 type="search"
                 aria-label="Filter branches"
@@ -3237,1071 +3222,49 @@ export function App() {
       {!detailsInChanges ? commitDetailsPane : null}
 
       {contextMenu ? (
-        <div
-          ref={contextMenuRef}
-          className="context-menu"
-          role="menu"
-          aria-label={`${contextMenu.kind} actions`}
-          style={
-            measuredContextMenuPosition ?? contextMenuPosition(contextMenu.x, contextMenu.y)
-          }
-          onClick={(event) => {
-            const target = event.target;
-            if (!(target instanceof Element)) return;
-            const menuItem = target.closest<HTMLButtonElement>('button[role="menuitem"]');
-            if (menuItem && !menuItem.disabled) setContextMenu(undefined);
-          }}
-        >
-          {contextMenu.kind === 'toolbar' ? (
-            selectedRepository?.operationState ? (
-              <span className="menu-note">
-                Git {selectedRepository.operationState} is in progress. Finish or abort it first.
-              </span>
-            ) : selectedRepository?.isBare ? (
-              <span className="menu-note">Bare repositories are read-only.</span>
-            ) : (
-              <>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!selectedRepository?.currentBranch}
-                onClick={() => runOperation({ kind: 'pull' }, contextMenu.repositoryId)}
-              >
-                Pull
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!selectedRepository?.currentBranch}
-                onClick={() => runOperation({ kind: 'push' }, contextMenu.repositoryId)}
-              >
-                Push
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!selectedRepository?.currentBranch}
-                onClick={() =>
-                  runOperation({ kind: 'push', forceWithLease: true }, contextMenu.repositoryId)
-                }
-              >
-                Force Push with Lease…
-              </button>
-              </>
-            )
-          ) : null}
-          {contextMenu.kind === 'commit' ? (
-            <>
-              {hasContiguousCommitRange &&
-              !selectedRepository?.isBare &&
-              !selectedRepository?.operationState ? (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={
-                      !selectedRepository?.currentBranch ||
-                      selectedOperationInFlight ||
-                      contextMenu.commits.length > 100
-                    }
-                    title={
-                      contextMenu.commits.length > 100
-                        ? 'Select no more than 100 commits'
-                        : undefined
-                    }
-                    onClick={() =>
-                      runOperation(
-                        {
-                          kind: 'dropCommits',
-                          hashes: contextMenu.commits.map((commit) => commit.hash),
-                        },
-                        contextMenu.repositoryId,
-                      )
-                    }
-                  >
-                    Drop commits…
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={
-                      !selectedRepository?.currentBranch ||
-                      selectedOperationInFlight ||
-                      contextMenu.commits.length > 100
-                    }
-                    title={
-                      contextMenu.commits.length > 100
-                        ? 'Select no more than 100 commits'
-                        : undefined
-                    }
-                    onClick={() => {
-                      const hashes = contextMenu.commits.map((commit) => commit.hash);
-                      const messageRequestId = requestId('commit-messages');
-                      activeCommitMessagesRequest.current = messageRequestId;
-                      setSquashOperation({
-                        repositoryId: contextMenu.repositoryId,
-                        hashes,
-                        requestId: messageRequestId,
-                        message: '',
-                        loading: true,
-                      });
-                      send({
-                        type: 'requestCommitMessages',
-                        requestId: messageRequestId,
-                        repositoryId: contextMenu.repositoryId,
-                        hashes,
-                      });
-                      setContextMenu(undefined);
-                    }}
-                  >
-                    Squash commits…
-                  </button>
-                </>
-              ) : null}
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!contextMenu.commit.parents[0]}
-                title={contextMenu.commit.parents[0] ? 'Open all changed text files' : 'Root commit has no parent'}
-                onClick={() =>
-                  openCommitComparison(
-                    contextMenu.commit.hash,
-                    'parent',
-                    contextMenu.commit.parents[0],
-                  )
-                }
-              >
-                Compare with Parent
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!selectedRepository?.head || selectedRepository.head === contextMenu.commit.hash}
-                title="Compare this commit with the current HEAD"
-                onClick={() => openCommitComparison(contextMenu.commit.hash, 'current')}
-              >
-                Compare with Current
-              </button>
-              {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
-                <>
-              {contextMenu.commits.length === 1 ? (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={selectedOperationInFlight}
-                    title="Check out this commit in detached HEAD state"
-                    onClick={() =>
-                      runOperation(
-                        { kind: 'checkout', ref: contextMenu.commit.hash },
-                        contextMenu.repositoryId,
-                      )
-                    }
-                  >
-                    Checkout Revision
-                  </button>
-                  {selectedRepository?.head === contextMenu.commit.hash &&
-                  selectedRepository.currentBranch ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={selectedOperationInFlight}
-                      onClick={() => {
-                        setAmendDialog({
-                          repositoryId: contextMenu.repositoryId,
-                          message: contextMenu.commit.subject,
-                        });
-                        setContextMenu(undefined);
-                      }}
-                    >
-                      Amend HEAD…
-                    </button>
-                  ) : null}
-                </>
-              ) : null}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setNamedOperation({
-                    kind: 'createBranch',
-                    repositoryId: contextMenu.repositoryId,
-                    target: contextMenu.commit.hash,
-                    value: '',
-                  });
-                  setContextMenu(undefined);
-                }}
-              >
-                New Branch…
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setNamedOperation({
-                    kind: 'createTag',
-                    repositoryId: contextMenu.repositoryId,
-                    target: contextMenu.commit.hash,
-                    value: '',
-                  });
-                  setContextMenu(undefined);
-                }}
-              >
-                New Tag…
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() =>
-                  runOperation(
-                    { kind: 'cherryPick', hash: contextMenu.commit.hash },
-                    contextMenu.repositoryId,
-                  )
-                }
-              >
-                Cherry-pick
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() =>
-                  runOperation(
-                    { kind: 'revert', hash: contextMenu.commit.hash },
-                    contextMenu.repositoryId,
-                  )
-                }
-              >
-                Revert
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={
-                  !selectedRepository?.currentBranch ||
-                  selectedRepository.head === contextMenu.commit.hash
-                }
-                onClick={() =>
-                  runOperation(
-                    { kind: 'merge', ref: contextMenu.commit.hash },
-                    contextMenu.repositoryId,
-                  )
-                }
-              >
-                Merge into Current
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={
-                  !selectedRepository?.currentBranch ||
-                  selectedRepository.head === contextMenu.commit.hash
-                }
-                onClick={() =>
-                  runOperation(
-                    { kind: 'rebase', ref: contextMenu.commit.hash },
-                    contextMenu.repositoryId,
-                  )
-                }
-              >
-                Rebase Current onto This
-              </button>
-              {selectedRepository?.currentBranch
-                ? (
-                  <>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() =>
-                        runOperation(
-                          { kind: 'reset', mode: 'soft', hash: contextMenu.commit.hash },
-                          contextMenu.repositoryId,
-                        )
-                      }
-                    >
-                      Soft Reset
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() =>
-                        runOperation(
-                          { kind: 'reset', mode: 'mixed', hash: contextMenu.commit.hash },
-                          contextMenu.repositoryId,
-                        )
-                      }
-                    >
-                      Mixed Reset
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() =>
-                        runOperation(
-                          { kind: 'reset', mode: 'hard', hash: contextMenu.commit.hash },
-                          contextMenu.repositoryId,
-                        )
-                      }
-                    >
-                      Hard Reset…
-                    </button>
-                  </>
-                )
-                : null}
-                </>
-              ) : null}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() =>
-                  send({
-                    type: 'copyToClipboard',
-                    requestId: requestId('copy-hash'),
-                    text: contextMenu.commit.hash,
-                  })
-                }
-              >
-                Copy Hash
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() =>
-                  send({
-                    type: 'copyToClipboard',
-                    requestId: requestId('copy-subject'),
-                    text: contextMenu.commit.subject,
-                  })
-                }
-              >
-                Copy Subject
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={state.details?.hash !== contextMenu.commit.hash}
-                title={
-                  state.details?.hash === contextMenu.commit.hash
-                    ? 'Copy the complete commit message'
-                    : 'Select the commit first to load the full message'
-                }
-                onClick={() =>
-                  send({
-                    type: 'copyToClipboard',
-                    requestId: requestId('copy-message'),
-                    text: state.details?.body ?? '',
-                  })
-                }
-              >
-                Copy Full Message
-              </button>
-            </>
-          ) : null}
-          {contextMenu.kind === 'file' ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={contextMenu.file.binary}
-                title={contextMenu.file.binary ? 'Binary files cannot be opened in the text diff editor' : undefined}
-                onClick={() => {
-                  openDiff(contextMenu.file);
-                  setContextMenu(undefined);
-                }}
-              >
-                Show Diff
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={
-                  contextMenu.file.binary ||
-                  (contextMenu.file.status === 'D' && !state.selectedParent)
-                }
-                title={
-                  contextMenu.file.binary
-                    ? 'Binary files cannot be opened in the text editor'
-                    : contextMenu.file.status === 'D' && !state.selectedParent
-                      ? 'The deleted file has no available parent revision'
-                      : undefined
-                }
-                onClick={() => openFile(contextMenu.file, 'revision')}
-              >
-                Open File at Revision
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => openFile(contextMenu.file, 'current')}
-              >
-                Open Current File
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  send({
-                    type: 'copyToClipboard',
-                    requestId: requestId('copy-path'),
-                    text: contextMenu.file.path,
-                  });
-                  setContextMenu(undefined);
-                }}
-              >
-                Copy Path
-              </button>
-            </>
-          ) : null}
-          {contextMenu.kind === 'ref' ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!selectedRepository?.head || selectedRepository.head === contextMenu.ref.target}
-                onClick={() => openCommitComparison(contextMenu.ref.target, 'current')}
-              >
-                Compare with Current
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() =>
-                  send({
-                    type: 'copyToClipboard',
-                    requestId: requestId('copy-ref'),
-                    text: contextMenu.ref.shortName,
-                  })
-                }
-              >
-                Copy Name
-              </button>
-              {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
-                <>
-                  {contextMenu.ref.kind === 'local' ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={contextMenu.ref.isCurrent}
-                      onClick={() =>
-                        runOperation(
-                          { kind: 'checkout', ref: contextMenu.ref.shortName },
-                          contextMenu.repositoryId,
-                        )
-                      }
-                    >
-                      Checkout
-                    </button>
-                  ) : null}
-                  {contextMenu.ref.kind === 'remote' &&
-                  contextMenu.ref.remote &&
-                  !contextMenu.ref.shortName.endsWith('/HEAD') ? (
-                    <>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          const remote = contextMenu.ref.remote;
-                          if (!remote) return;
-                          const branch = contextMenu.ref.shortName.slice(remote.length + 1);
-                          setNamedOperation({
-                            kind: 'checkoutRemote',
-                            repositoryId: contextMenu.repositoryId,
-                            startPoint: contextMenu.ref.shortName,
-                            value: branch,
-                          });
-                          setContextMenu(undefined);
-                        }}
-                      >
-                        Checkout as New Local…
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          const remote = contextMenu.ref.remote;
-                          if (!remote) return;
-                          runOperation(
-                            { kind: 'fetch', remote },
-                            contextMenu.repositoryId,
-                          )
-                        }}
-                      >
-                        Fetch
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          const remote = contextMenu.ref.remote;
-                          if (!remote) return;
-                          const branch = contextMenu.ref.shortName.slice(remote.length + 1);
-                          runOperation(
-                            { kind: 'deleteRemoteBranch', remote, branch },
-                            contextMenu.repositoryId,
-                          );
-                        }}
-                      >
-                        Delete Remote Branch…
-                      </button>
-                    </>
-                  ) : null}
-                  {contextMenu.ref.kind === 'tag' ? (
-                    <>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() =>
-                          runOperation(
-                            { kind: 'checkout', ref: contextMenu.ref.fullName },
-                            contextMenu.repositoryId,
-                          )
-                        }
-                      >
-                        Checkout
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() =>
-                          runOperation(
-                            { kind: 'deleteTag', name: contextMenu.ref.shortName },
-                            contextMenu.repositoryId,
-                          )
-                        }
-                      >
-                        Delete Local Tag…
-                      </button>
-                    </>
-                  ) : null}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setNamedOperation({
-                        kind: 'createBranch',
-                        repositoryId: contextMenu.repositoryId,
-                        target: contextMenu.ref.fullName,
-                        value: '',
-                      });
-                      setContextMenu(undefined);
-                    }}
-                  >
-                    New Branch from…
-                  </button>
-                  {contextMenu.ref.kind === 'local' ? (
-                    <>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={!selectedRepository?.currentBranch || contextMenu.ref.isCurrent}
-                        onClick={() =>
-                          runOperation(
-                            { kind: 'merge', ref: contextMenu.ref.shortName },
-                            contextMenu.repositoryId,
-                          )
-                        }
-                      >
-                        Merge into Current
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={!selectedRepository?.currentBranch || contextMenu.ref.isCurrent}
-                        onClick={() =>
-                          runOperation(
-                            { kind: 'rebase', ref: contextMenu.ref.shortName },
-                            contextMenu.repositoryId,
-                          )
-                        }
-                      >
-                        Rebase Current onto
-                      </button>
-                    </>
-                  ) : null}
-                  {contextMenu.ref.kind === 'local' ? (
-                    <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={!contextMenu.ref.isCurrent}
-                    title={contextMenu.ref.isCurrent ? 'Push the current branch' : 'Checkout this branch before pushing it'}
-                    onClick={() => runOperation({ kind: 'push' }, contextMenu.repositoryId)}
-                  >
-                    Push
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setNamedOperation({
-                        kind: 'renameBranch',
-                        repositoryId: contextMenu.repositoryId,
-                        oldName: contextMenu.ref.shortName,
-                        value: contextMenu.ref.shortName,
-                      });
-                      setContextMenu(undefined);
-                    }}
-                  >
-                    Rename…
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={contextMenu.ref.isCurrent}
-                    onClick={() =>
-                      runOperation(
-                        { kind: 'deleteBranch', name: contextMenu.ref.shortName, force: false },
-                        contextMenu.repositoryId,
-                      )
-                    }
-                  >
-                    Delete…
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={contextMenu.ref.isCurrent}
-                    title="Delete this branch even if it is not fully merged"
-                    onClick={() =>
-                      runOperation(
-                        { kind: 'deleteBranch', name: contextMenu.ref.shortName, force: true },
-                        contextMenu.repositoryId,
-                      )
-                    }
-                  >
-                    Force Delete…
-                  </button>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
-            </>
-          ) : null}
-          {contextMenu.kind === 'head' ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  send({
-                    type: 'copyToClipboard',
-                    requestId: requestId('copy-head'),
-                    text: contextMenu.hash,
-                  });
-                  setContextMenu(undefined);
-                }}
-              >
-                Copy Revision
-              </button>
-              {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setNamedOperation({
-                        kind: 'createBranch',
-                        repositoryId: contextMenu.repositoryId,
-                        target: contextMenu.hash,
-                        value: '',
-                      });
-                      setContextMenu(undefined);
-                    }}
-                  >
-                    Create Branch…
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setNamedOperation({
-                        kind: 'createTag',
-                        repositoryId: contextMenu.repositoryId,
-                        target: contextMenu.hash,
-                        value: '',
-                      });
-                      setContextMenu(undefined);
-                    }}
-                  >
-                    Create Tag…
-                  </button>
-                  {selectedRepository?.currentBranch
-                    ? (
-                      <>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() =>
-                            runOperation(
-                              { kind: 'reset', mode: 'soft', hash: contextMenu.hash },
-                              contextMenu.repositoryId,
-                            )
-                          }
-                        >
-                          Reset Current Branch (soft)
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() =>
-                            runOperation(
-                              { kind: 'reset', mode: 'mixed', hash: contextMenu.hash },
-                              contextMenu.repositoryId,
-                            )
-                          }
-                        >
-                          Reset Current Branch (mixed)
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() =>
-                            runOperation(
-                              { kind: 'reset', mode: 'hard', hash: contextMenu.hash },
-                              contextMenu.repositoryId,
-                            )
-                          }
-                        >
-                          Reset Current Branch (hard)…
-                        </button>
-                      </>
-                    )
-                    : null}
-                </>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+        <ContextMenu
+          contextMenu={contextMenu}
+          setContextMenu={setContextMenu}
+          menuRef={contextMenuRef}
+          measuredContextMenuPosition={measuredContextMenuPosition}
+          selectedRepository={selectedRepository}
+          hasContiguousCommitRange={hasContiguousCommitRange}
+          selectedOperationInFlight={selectedOperationInFlight}
+          detailsHash={state.details?.hash}
+          detailsBody={state.details?.body}
+          selectedParent={state.selectedParent}
+          runOperation={runOperation}
+          send={send}
+          openCommitComparison={openCommitComparison}
+          openDiff={openDiff}
+          openFile={openFile}
+setSquashOperation={setSquashOperation}
+          setAmendDialog={setAmendDialog}
+          setNamedOperation={setNamedOperation}
+          activeCommitMessagesRequestRef={activeCommitMessagesRequest}
+        />
       ) : null}
 
-      {stashDialog ? (
-        <div className="operation-dialog-backdrop">
-          <div
-            className="operation-dialog stash-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Stash management"
-          >
-            <button
-              className="stash-dialog-close"
-              type="button"
-              aria-label="Close stash manager"
-              title="Close"
-              onClick={() => {
-                stashDialogRepository.current = undefined;
-                setStashDialog(undefined);
-              }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-            <strong>Stashes</strong>
-            <section className="stash-tool-section">
-              <span>Stash changes</span>
-              <input
-                className="stash-message-input"
-                aria-label="Stash message"
-                placeholder="Optional stash message"
-                value={stashDialog.stashMessage}
-                disabled={Boolean(selectedRepository?.operationState)}
-                onChange={(event) =>
-                  setStashDialog((current) =>
-                    current ? { ...current, stashMessage: event.target.value } : current,
-                  )
-                }
-              />
-              <div className="stash-create-actions">
-                <label className="stash-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={stashDialog.includeUntracked}
-                    disabled={Boolean(selectedRepository?.operationState)}
-                    onChange={(event) =>
-                      setStashDialog((current) =>
-                        current ? { ...current, includeUntracked: event.target.checked } : current,
-                      )
-                    }
-                  />
-                  <span>Include untracked files</span>
-                </label>
-                <button
-                  className="stash-submit-button"
-                  type="button"
-                  disabled={Boolean(selectedRepository?.operationState) || selectedOperationInFlight}
-                  onClick={() =>
-                    runOperation(
-                      {
-                        kind: 'createStash',
-                        message: stashDialog.stashMessage,
-                        includeUntracked: stashDialog.includeUntracked,
-                      },
-                      stashDialog.repositoryId,
-                    )
-                  }
-                >
-                  Stash
-                </button>
-              </div>
-              {stashDialog.loading ? <span>Loading…</span> : null}
-              {stashDialog.stashes.map((stash) => (
-                <div className="stash-tool-row" key={stash.ref}>
-                  <span>{stash.subject}</span>
-                  <button
-                    type="button"
-                    aria-label={`Show changes for ${stash.ref}`}
-                    onClick={() =>
-                      send({
-                        type: 'openStashComparison',
-                        requestId: requestId('stash-diff'),
-                        repositoryId: stashDialog.repositoryId,
-                        hash: stash.hash,
-                      })
-                    }
-                  >
-                    Show Changes
-                  </button>
-                  <button
-                    type="button"
-                    disabled={Boolean(selectedRepository?.operationState) || selectedOperationInFlight}
-                    onClick={() =>
-                      runOperation(
-                        { kind: 'applyStash', stash: stash.ref },
-                        stashDialog.repositoryId,
-                      )
-                    }
-                  >
-                    Apply
-                  </button>
-                  <button
-                    type="button"
-                    disabled={Boolean(selectedRepository?.operationState) || selectedOperationInFlight}
-                    onClick={() =>
-                      runOperation(
-                        { kind: 'popStash', stash: stash.ref },
-                        stashDialog.repositoryId,
-                      )
-                    }
-                  >
-                    Pop
-                  </button>
-                  <button
-                    type="button"
-                    disabled={Boolean(selectedRepository?.operationState) || selectedOperationInFlight}
-                    onClick={() =>
-                      runOperation(
-                        { kind: 'dropStash', stash: stash.ref },
-                        stashDialog.repositoryId,
-                      )
-                    }
-                  >
-                    Drop…
-                  </button>
-                </div>
-              ))}
-            </section>
-          </div>
-        </div>
-      ) : null}
-
-      {amendDialog ? (
-        <div className="operation-dialog-backdrop">
-          <div className="operation-dialog" role="dialog" aria-modal="true" aria-label="Amend HEAD">
-            <strong>Amend HEAD</strong>
-            <span>Currently staged changes will be included in the amended commit.</span>
-            <textarea
-              aria-label="Amend commit message"
-              value={amendDialog.message}
-              onChange={(event) =>
-                setAmendDialog((current) =>
-                  current ? { ...current, message: event.target.value } : current,
-                )
-              }
-            />
-            <div className="operation-dialog-actions">
-              <button type="button" onClick={() => setAmendDialog(undefined)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                aria-label="Amend Commit"
-                disabled={!amendDialog.message.trim()}
-                onClick={() => {
-                  runOperation(
-                    { kind: 'amendCommit', message: amendDialog.message },
-                    amendDialog.repositoryId,
-                  );
-                  setAmendDialog(undefined);
-                }}
-              >
-                Amend
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {historyParentPicker ? (
-        <div className="operation-dialog-backdrop">
-          <div
-            className="operation-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Select history parent"
-          >
-            <strong>Select a parent for this merge commit</strong>
-            <span>{historyParentPicker.commit.subject}</span>
-            <div className="history-parent-options">
-              {historyParentPicker.commit.parents.map((parent, index) => (
-                <button
-                  type="button"
-                  aria-label={`Compare with parent ${parent.slice(0, 8)}`}
-                  title={parent}
-                  key={parent}
-                  onClick={() => {
-                    historyParentChoices.current.set(historyParentPicker.commit.hash, parent);
-                    send({
-                      type: 'openHistoryDiff',
-                      requestId: requestId('history-diff'),
-                      repositoryId: historyParentPicker.repositoryId,
-                      hash: historyParentPicker.commit.hash,
-                      parent,
-                    });
-                    setHistoryParentPicker(undefined);
-                  }}
-                >
-                  Parent {String(index + 1)} · {parent.slice(0, 8)}
-                </button>
-              ))}
-            </div>
-            <div className="operation-dialog-actions">
-              <button type="button" onClick={() => setHistoryParentPicker(undefined)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {squashOperation ? (
-        <div className="operation-dialog-backdrop">
-          <form
-            className="operation-dialog squash-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Squash Commits"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (squashOperation.loading || !squashOperation.message.trim()) return;
-              runOperation(
-                {
-                  kind: 'squashCommits',
-                  hashes: squashOperation.hashes,
-                  message: squashOperation.message,
-                },
-                squashOperation.repositoryId,
-              );
-              setSquashOperation(undefined);
-            }}
-          >
-            <label>
-              <span>Commit message</span>
-              <textarea
-                autoFocus
-                aria-label="Squash commit message"
-                disabled={squashOperation.loading}
-                value={squashOperation.message}
-                onChange={(event) =>
-                  setSquashOperation((current) =>
-                    current ? { ...current, message: event.target.value } : current,
-                  )
-                }
-              />
-            </label>
-            <div className="operation-dialog-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  activeCommitMessagesRequest.current = undefined;
-                  setSquashOperation(undefined);
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={squashOperation.loading || !squashOperation.message.trim()}
-              >
-                Squash Commits
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-
-      {namedOperation ? (
-        <div className="operation-dialog-backdrop">
-          <form
-            className="operation-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label={
-              namedOperation.kind === 'createBranch'
-                ? 'Create Branch'
-                : namedOperation.kind === 'createTag'
-                  ? 'Create Tag'
-                  : namedOperation.kind === 'checkoutRemote'
-                    ? 'Checkout Remote Branch'
-                    : 'Rename Branch'
-            }
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitNamedOperation();
-            }}
-          >
-            <label>
-              <span>
-                {namedOperation.kind === 'createBranch'
-                  ? 'Branch name'
-                  : namedOperation.kind === 'createTag'
-                    ? 'Tag name'
-                    : namedOperation.kind === 'checkoutRemote'
-                      ? 'Local branch name'
-                      : 'New branch name'}
-              </span>
-              <input
-                autoFocus
-                aria-label={
-                  namedOperation.kind === 'createBranch'
-                    ? 'Branch name'
-                    : namedOperation.kind === 'createTag'
-                      ? 'Tag name'
-                      : namedOperation.kind === 'checkoutRemote'
-                        ? 'Local branch name'
-                        : 'New branch name'
-                }
-                value={namedOperation.value}
-                onChange={(event) =>
-                  setNamedOperation((current) =>
-                    current ? { ...current, value: event.target.value } : current,
-                  )
-                }
-              />
-            </label>
-            <div className="operation-dialog-actions">
-              <button type="button" onClick={() => setNamedOperation(undefined)}>
-                Cancel
-              </button>
-              <button type="submit" disabled={!namedOperation.value.trim()}>
-                {namedOperation.kind === 'createBranch'
-                  ? 'Create Branch'
-                  : namedOperation.kind === 'createTag'
-                    ? 'Create Tag'
-                    : namedOperation.kind === 'checkoutRemote'
-                      ? 'Checkout'
-                      : 'Rename Branch'}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+      <Dialogs
+        stashDialog={stashDialog}
+        setStashDialog={setStashDialog}
+        stashDialogRepositoryRef={stashDialogRepository}
+        amendDialog={amendDialog}
+        setAmendDialog={setAmendDialog}
+        historyParentPicker={historyParentPicker}
+        setHistoryParentPicker={setHistoryParentPicker}
+        historyParentChoicesRef={historyParentChoices}
+        squashOperation={squashOperation}
+        setSquashOperation={setSquashOperation}
+        activeCommitMessagesRequestRef={activeCommitMessagesRequest}
+        namedOperation={namedOperation}
+        setNamedOperation={setNamedOperation}
+        submitNamedOperation={submitNamedOperation}
+        selectedRepository={selectedRepository}
+        selectedOperationInFlight={selectedOperationInFlight}
+        runOperation={runOperation}
+        send={send}
+      />
     </main>
   );
 }
