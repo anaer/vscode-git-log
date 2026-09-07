@@ -1420,16 +1420,27 @@ function Workbench() {
             {
               '--refs-column-width': `${String(state.layout.refsColumnWidth ?? 150)}px`,
               '--author-column-width': `${String(state.layout.authorColumnWidth ?? 130)}px`,
-              '--date-column-width': `${String(state.layout.dateColumnWidth ?? 125)}px`,
+              '--date-column-width': `${String(state.layout.dateColumnWidth ?? 150)}px`,
               '--log-content-width': `${String(logContentWidth)}px`,
+              '--commit-max-width': '700px',
               userSelect: 'none',
               '--log-grid-columns': `${
                 state.layout.commitColumnWidth
                   ? `${String(state.layout.commitColumnWidth)}px`
-                  : 'minmax(260px, 1fr)'
-              } ${String(state.layout.authorColumnWidth ?? 130)}px ${String(
-                state.layout.dateColumnWidth ?? 125,
-              )}px ${String(state.layout.refsColumnWidth ?? 150)}px`,
+                  : 'minmax(260px, min(1fr, var(--commit-max-width, 700px)))'
+              } ${
+                state.layout.authorColumnWidth
+                  ? `${String(state.layout.authorColumnWidth)}px`
+                  : 'max-content'
+              } ${
+                state.layout.dateColumnWidth
+                  ? `${String(state.layout.dateColumnWidth)}px`
+                  : 'max-content'
+              } ${
+                state.layout.refsColumnWidth
+                  ? `${String(state.layout.refsColumnWidth)}px`
+                  : 'max-content'
+              }`,
             } as CSSProperties
           }
         >

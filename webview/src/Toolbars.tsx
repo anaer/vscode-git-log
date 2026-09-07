@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
 import type { LogFilters } from '../../src/protocol/messages';
 import type { RepositorySummary } from '../../src/shared/models';
@@ -28,6 +29,15 @@ const dateRangeOptions: readonly {
   { label: 'Last 7 days', kind: 'days', days: 7 },
   { label: 'Last 30 days', kind: 'days', days: 30 },
 ];
+
+const formatDatePickerInput = (rawValue: string): string => {
+  const digits = rawValue.replace(/\D/g, '').slice(0, 8);
+  if (!digits) return '';
+  let value = digits.slice(0, 4);
+  if (digits.length > 4) value += `-${digits.slice(4, 6)}`;
+  if (digits.length > 6) value += `-${digits.slice(6, 8)}`;
+  return value;
+};
 
 export interface AuthorFilterOption {
   key: string;
@@ -354,19 +364,33 @@ export function CommitToolbar({
                 <label>
                   <span>From</span>
                   <input
-                    type="date"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={10}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="2026-09-07"
                     aria-label="Custom date from"
                     value={customDateFrom}
-                    onChange={(event) => onCustomDateFromChange(event.target.value)}
+                    onChange={(event) =>
+                      onCustomDateFromChange(formatDatePickerInput(event.target.value))
+                    }
                   />
                 </label>
                 <label>
                   <span>To</span>
                   <input
-                    type="date"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={10}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="2026-09-07"
                     aria-label="Custom date to"
                     value={customDateTo}
-                    onChange={(event) => onCustomDateToChange(event.target.value)}
+                    onChange={(event) =>
+                      onCustomDateToChange(formatDatePickerInput(event.target.value))
+                    }
                   />
                 </label>
                 <button

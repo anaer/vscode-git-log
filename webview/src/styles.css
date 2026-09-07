@@ -628,8 +628,8 @@ select:focus-visible,
   min-width: max(100%, var(--log-content-width, 665px));
   grid-template-columns: var(
     --log-grid-columns,
-    minmax(260px, 1fr) var(--author-column-width, 130px) var(--date-column-width, 125px)
-      var(--refs-column-width, 150px)
+    minmax(260px, min(1fr, var(--commit-max-width, 700px))) var(--author-column-width, max-content)
+      var(--date-column-width, max-content) var(--refs-column-width, max-content)
   );
   align-items: center;
   color: var(--vscode-descriptionForeground);
@@ -755,8 +755,8 @@ select:focus-visible,
   display: grid;
   grid-template-columns: var(
     --log-grid-columns,
-    minmax(260px, 1fr) var(--author-column-width, 130px) var(--date-column-width, 125px)
-      var(--refs-column-width, 150px)
+    minmax(260px, min(1fr, var(--commit-max-width, 700px))) var(--author-column-width, max-content)
+      var(--date-column-width, max-content) var(--refs-column-width, max-content)
   );
   align-items: center;
   height: 28px;
