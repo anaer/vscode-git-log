@@ -17,3 +17,4 @@ CONTRIBUTING.md
 *.vsix
 .workbuddy-ai/
 *.log
+.preview/

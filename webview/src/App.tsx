@@ -140,9 +140,8 @@ function Workbench() {
     readScrollTopByRepository(vscode.getState()),
   );
   const [filterPopup, setFilterPopup] = useState<FilterPopupKind | undefined>();
-  const [filterPopoverPosition, setFilterPopoverPosition] = useState<
-    { top: number; right: number } | undefined
-  >();
+  const [filterPopupAnchor, setFilterPopupAnchor] = useState<{ left: number; top: number }>();
+  const [filterPopoverPosition, setFilterPopoverPosition] = useState<CSSProperties>();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>();
   const [measuredContextMenuPosition, setMeasuredContextMenuPosition] = useState<
     CSSProperties | undefined
@@ -263,26 +262,25 @@ function Workbench() {
   const detailsPlacement = state.layout.detailsPlacement ?? 'bottom';
   const detailsInChanges = detailsPlacement === 'changes';
   useEffect(() => {
-    if (!filterPopup) return;
+    if (!filterPopup || !filterPopupAnchor) return;
     const updatePosition = (): void => {
-      const bounds = logRef.current?.getBoundingClientRect();
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-      if (!bounds || bounds.width <= 0 || bounds.height <= 0 || viewportWidth <= 0) return;
-      setFilterPopoverPosition({
-        top: Math.max(0, bounds.top + 38),
-        right: Math.max(8, viewportWidth - Math.min(bounds.right, viewportWidth) + 8),
-      });
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const maxWidth = Math.min(360, viewportWidth - 24);
+      const left = Math.max(
+        8,
+        Math.min(filterPopupAnchor.left, Math.max(8, viewportWidth - maxWidth - 8)),
+      );
+      const top = Math.min(
+        filterPopupAnchor.top + 4,
+        Math.max(8, viewportHeight - 420 - 4),
+      );
+      setFilterPopoverPosition({ left, top, right: 'auto' });
     };
     updatePosition();
     window.addEventListener('resize', updatePosition);
     return () => window.removeEventListener('resize', updatePosition);
-  }, [
-    filesCollapsed,
-    filterPopup,
-    refsCollapsed,
-    state.layout.filesWidth,
-    state.layout.refsWidth,
-  ]);
+  }, [filterPopup, filterPopupAnchor]);
   useLayoutEffect(() => {
     const menu = contextMenuRef.current;
     if (!contextMenu || !menu) return;
@@ -1150,9 +1148,11 @@ function Workbench() {
       onSelectRepository={selectRepository}
       onApplyFilters={applyFilters}
       onApplyDateRange={applyDateRange}
-      onFilterPopupChange={(popup) => {
+      onFilterPopupChange={(popup, anchor) => {
         setContextMenu(undefined);
         setFilterPopup(popup === undefined ? undefined : popup);
+        setFilterPopupAnchor(anchor);
+        if (popup === undefined) setFilterPopoverPosition(undefined);
       }}
       onCustomDateFromChange={setCustomDateFrom}
       onCustomDateToChange={setCustomDateTo}

@@ -1,7 +1,19 @@
-import type { CSSProperties, RefObject } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
 import type { LogFilters } from '../../src/protocol/messages';
 import type { RepositorySummary } from '../../src/shared/models';
-import { Archive, CloudDownload, More, PanelLeft, PanelRight, Refresh, Target } from './icons';
+import {
+  Archive,
+  Branch,
+  Calendar,
+  CloudDownload,
+  More,
+  PanelLeft,
+  PanelRight,
+  Paths,
+  Refresh,
+  Target,
+  User,
+} from './icons';
 
 export type FilterPopupKind = 'branch' | 'user' | 'date' | 'paths';
 
@@ -49,7 +61,10 @@ export interface CommitToolbarProps {
   onSelectRepository(repositoryId: string): void;
   onApplyFilters(filters: LogFilters, debounce?: boolean): void;
   onApplyDateRange(dateFrom?: number, dateTo?: number): void;
-  onFilterPopupChange(popup: FilterPopupKind | undefined): void;
+  onFilterPopupChange(
+    popup: FilterPopupKind | undefined,
+    anchor?: { left: number; top: number },
+  ): void;
   onCustomDateFromChange(value: string): void;
   onCustomDateToChange(value: string): void;
   onFocusLog(): void;
@@ -87,8 +102,16 @@ export function CommitToolbar({
   onCloseFolderHistory,
   onResetFilters,
 }: CommitToolbarProps) {
-  const toggleFilterPopup = (popup: FilterPopupKind): void => {
-    onFilterPopupChange(filterPopup === popup ? undefined : popup);
+  const toggleFilterPopup = (
+    popup: FilterPopupKind,
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ): void => {
+    if (filterPopup === popup) {
+      onFilterPopupChange(undefined);
+      return;
+    }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    onFilterPopupChange(popup, { left: bounds.left, top: bounds.bottom });
   };
   return (
     <header
@@ -200,34 +223,57 @@ export function CommitToolbar({
       <button
         type="button"
         data-popup-trigger="true"
+        aria-label="Filter by branch"
+        title="Filter by branch"
         className={filters.branches.length ? 'filter-active' : ''}
-        onClick={() => toggleFilterPopup('branch')}
+        onClick={(event) => toggleFilterPopup('branch', event)}
       >
-        Branch{filters.branches.length ? ` (${String(filters.branches.length)})` : ''}
+        {Branch}
+        {filters.branches.length ? (
+          <span className="filter-badge" aria-hidden="true">
+            {String(filters.branches.length)}
+          </span>
+        ) : null}
       </button>
       <button
         type="button"
         data-popup-trigger="true"
+        aria-label="Filter by author"
+        title="Filter by author"
         className={filters.authors.length ? 'filter-active' : ''}
-        onClick={() => toggleFilterPopup('user')}
+        onClick={(event) => toggleFilterPopup('user', event)}
       >
-        User{filters.authors.length ? ` (${String(filters.authors.length)})` : ''}
+        {User}
+        {filters.authors.length ? (
+          <span className="filter-badge" aria-hidden="true">
+            {String(filters.authors.length)}
+          </span>
+        ) : null}
       </button>
       <button
         type="button"
         data-popup-trigger="true"
+        aria-label="Filter by date range"
+        title="Filter by date range"
         className={filters.dateFrom || filters.dateTo ? 'filter-active' : ''}
-        onClick={() => toggleFilterPopup('date')}
+        onClick={(event) => toggleFilterPopup('date', event)}
       >
-        Date
+        {Calendar}
       </button>
       <button
         type="button"
         data-popup-trigger="true"
+        aria-label="Filter by path"
+        title="Filter by path"
         className={filters.paths.length ? 'filter-active' : ''}
-        onClick={() => toggleFilterPopup('paths')}
+        onClick={(event) => toggleFilterPopup('paths', event)}
       >
-        Paths{filters.paths.length ? ` (${String(filters.paths.length)})` : ''}
+        {Paths}
+        {filters.paths.length ? (
+          <span className="filter-badge" aria-hidden="true">
+            {String(filters.paths.length)}
+          </span>
+        ) : null}
       </button>
       {filterPopup ? (
         <div
