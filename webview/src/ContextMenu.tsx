@@ -3,10 +3,9 @@ import type { ChangedFile, RepositorySummary } from '../../src/shared/models';
 import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/protocol/messages';
 import type {
   AmendDialogState,
-  ContextMenuState,
-  NamedOperationState,
   SquashOperationState,
-} from './App';
+} from './workbenchEffects';
+import type { ContextMenuState, NamedOperationState } from './App';
 import { contextMenuPosition, requestId } from './webviewUtils';
 
 interface ContextMenuProps {
@@ -28,7 +27,7 @@ interface ContextMenuProps {
   setSquashOperation: Dispatch<SetStateAction<SquashOperationState | undefined>>;
   setAmendDialog: Dispatch<SetStateAction<AmendDialogState | undefined>>;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
-  activeCommitMessagesRequestRef: RefObject<string | undefined>;
+  setActiveCommitMessagesRequest: (requestId: string | undefined) => void;
 }
 
 export function ContextMenu(props: ContextMenuProps) {
@@ -51,7 +50,7 @@ export function ContextMenu(props: ContextMenuProps) {
     setSquashOperation,
     setAmendDialog,
     setNamedOperation,
-    activeCommitMessagesRequestRef,
+    setActiveCommitMessagesRequest,
   } = props;
 
   return (
@@ -151,7 +150,7 @@ export function ContextMenu(props: ContextMenuProps) {
                 onClick={() => {
                   const hashes = contextMenu.commits.map((commit) => commit.hash);
                   const messageRequestId = requestId('commit-messages');
-                  activeCommitMessagesRequestRef.current = messageRequestId;
+                  setActiveCommitMessagesRequest(messageRequestId);
                   setSquashOperation({
                     repositoryId: contextMenu.repositoryId,
                     hashes,

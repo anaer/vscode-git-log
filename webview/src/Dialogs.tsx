@@ -4,10 +4,10 @@ import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/p
 import type {
   AmendDialogState,
   HistoryParentPickerState,
-  NamedOperationState,
   SquashOperationState,
   StashDialogState,
-} from './App';
+} from './workbenchEffects';
+import type { NamedOperationState } from './App';
 import { requestId } from './webviewUtils';
 
 interface DialogsProps {
@@ -21,7 +21,7 @@ interface DialogsProps {
   historyParentChoicesRef: RefObject<Map<string, string>>;
   squashOperation: SquashOperationState | undefined;
   setSquashOperation: Dispatch<SetStateAction<SquashOperationState | undefined>>;
-  activeCommitMessagesRequestRef: RefObject<string | undefined>;
+  setActiveCommitMessagesRequest: (requestId: string | undefined) => void;
   namedOperation: NamedOperationState | undefined;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
   submitNamedOperation: () => void;
@@ -43,7 +43,7 @@ export function Dialogs(props: DialogsProps) {
     historyParentChoicesRef,
     squashOperation,
     setSquashOperation,
-    activeCommitMessagesRequestRef,
+    setActiveCommitMessagesRequest,
     namedOperation,
     setNamedOperation,
     submitNamedOperation,
@@ -311,7 +311,7 @@ export function Dialogs(props: DialogsProps) {
               <button
                 type="button"
                 onClick={() => {
-                  activeCommitMessagesRequestRef.current = undefined;
+                  setActiveCommitMessagesRequest(undefined);
                   setSquashOperation(undefined);
                 }}
               >

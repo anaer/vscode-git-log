@@ -5022,4 +5022,102 @@ describe('WorkbenchApp', () => {
       expect(screen.getByRole('button', { name })).toHaveAttribute('title', title);
     }
   });
+
+  it('drops stale same-repository log data when a newer log request supersedes it', () => {
+    vi.useFakeTimers();
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-log-supersede',
+            repositories: [
+              {
+                id: 'repo-log-supersede',
+                rootUri: 'file:///workspace/log-supersede',
+                gitDirUri: 'file:///workspace/log-supersede/.git',
+                displayName: 'log-supersede',
+                isBare: false,
+              },
+            ],
+            selectedRepositoryId: 'repo-log-supersede',
+            pageSize: 500,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+    const search = screen.getByRole('searchbox', { name: 'Text or hash' });
+    fireEvent.change(search, { target: { value: 'older' } });
+    act(() => vi.advanceTimersByTime(200));
+    const older = postedMessages.filter((message) => message.type === 'updateFilters').at(-1);
+    fireEvent.change(search, { target: { value: 'newer' } });
+    act(() => vi.advanceTimersByTime(200));
+    const newer = postedMessages.filter((message) => message.type === 'updateFilters').at(-1);
+    expect(older?.type).toBe('updateFilters');
+    expect(newer?.type).toBe('updateFilters');
+    if (!older || older.type !== 'updateFilters' || !newer || newer.type !== 'updateFilters') return;
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'repositoryData',
+            requestId: newer.requestId,
+            repositoryId: 'repo-log-supersede',
+            refs: [],
+            commits: [
+              {
+                hash: 'f'.repeat(40),
+                parents: [],
+                subject: 'FRESH DATA',
+                authorName: 'Fresh',
+                authorEmail: 'fresh@example.com',
+                authorTime: 2,
+                commitTime: 2,
+                refs: [],
+              },
+            ],
+            filters: { text: 'newer', branches: [], authors: [], paths: [] },
+            replace: true,
+            hasMore: false,
+          },
+        }),
+      );
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'repositoryData',
+            requestId: older.requestId,
+            repositoryId: 'repo-log-supersede',
+            refs: [],
+            commits: [
+              {
+                hash: 's'.repeat(40),
+                parents: [],
+                subject: 'STALE DATA',
+                authorName: 'Stale',
+                authorEmail: 'stale@example.com',
+                authorTime: 1,
+                commitTime: 1,
+                refs: [],
+              },
+            ],
+            filters: { text: 'older', branches: [], authors: [], paths: [] },
+            replace: true,
+            hasMore: false,
+          },
+        }),
+      );
+    });
+
+    expect(screen.getByText('FRESH DATA')).toBeInTheDocument();
+    expect(screen.queryByText('STALE DATA')).not.toBeInTheDocument();
+  });
 });

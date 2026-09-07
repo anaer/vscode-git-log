@@ -1,6 +1,9 @@
 import { createContext, useContext } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
-import type { GraphContinuationState, GraphLayoutResult } from '../../src/shared/layoutCommitGraph';
+import {
+  type GraphContinuationState,
+  type GraphLayoutResult,
+} from '../../src/shared/layoutCommitGraph';
 import type {
   ErrorRecoveryAction,
   ExtensionToWebviewMessage,
@@ -17,6 +20,12 @@ import type {
   RefLabel,
   RepositorySummary,
 } from '../../src/shared/models';
+import { createMessageProcessor } from './workbenchMessageProcessing';
+import {
+  createNoopEffects,
+  type WorkbenchEffects,
+  type WorkbenchRaceState,
+} from './workbenchEffects';
 
 export const EMPTY_GRAPH_LAYOUT: GraphLayoutResult = {
   rows: [],
@@ -123,16 +132,47 @@ export const initialWorkbenchState: WorkbenchState = {
 export interface WorkbenchStore {
   state: WorkbenchState;
   setState(next: WorkbenchState | ((current: WorkbenchState) => WorkbenchState)): void;
+  race: WorkbenchRaceState;
+  /** Currently-bound component/副作用 bridge consumed by `processMessage`. */
+  effects: WorkbenchEffects;
+  /** Bind (or re-bind) the component/副作用 bridge used by `processMessage`. */
+  bindEffects(effects: WorkbenchEffects): void;
+  /** Handle a message from the extension host (migrated message-listener switch). */
+  processMessage(message: ExtensionToWebviewMessage): void;
 }
 
 export function createWorkbenchStore(): StoreApi<WorkbenchStore> {
-  return createStore<WorkbenchStore>()((set) => ({
-    state: initialWorkbenchState,
-    setState: (next) =>
+  return createStore<WorkbenchStore>()((set, get) => {
+    const setWorkbenchState = (next: WorkbenchState | ((current: WorkbenchState) => WorkbenchState)) =>
       set((current) => ({
         state: typeof next === 'function' ? next(current.state) : next,
-      })),
-  }));
+      }));
+
+    const processMessage = createMessageProcessor({
+      get: () => ({ race: get().race, effects: get().effects }),
+      setWorkbenchState,
+    });
+
+    return {
+      state: initialWorkbenchState,
+      setState: setWorkbenchState,
+      race: {
+        requestById: new Map(),
+        latestByScope: {},
+        activeSelectionRequest: undefined,
+        activeCommitMessagesRequest: undefined,
+        activeOperationByRepository: new Map(),
+        acceptedRepositoryId: undefined,
+        pendingFilters: undefined,
+        pendingScrollPosition: undefined,
+      },
+      effects: createNoopEffects(),
+      bindEffects: (effects) => {
+        get().effects = effects;
+      },
+      processMessage,
+    };
+  });
 }
 
 export const WorkbenchStoreContext = createContext<StoreApi<WorkbenchStore> | undefined>(

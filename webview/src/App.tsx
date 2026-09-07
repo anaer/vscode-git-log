@@ -1,3 +1,11 @@
+/* eslint-disable react-hooks/immutability --
+ * The `race` slice read from `storeApi.getState().race` is intentionally mutated
+ * in place and deliberately excluded from React's reactivity: it replaces `useRef`s
+ * that were mutated in place, so mutations must not be treated as render inputs and
+ * must not be added to effect/callback dependency arrays. Only the mutable-store
+ * rule is disabled file-wide; `react-hooks/exhaustive-deps` stays enabled and any
+ * hook that must reference `race` (a deliberately non-reactive store field) opts
+ * out per statement below. */
 import {
   useCallback,
   useEffect,
@@ -9,7 +17,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { layoutCommitGraph, type GraphContinuationState } from '../../src/shared/layoutCommitGraph';
 import {
   parseWebviewMessage,
   type ExtensionToWebviewMessage,
@@ -22,10 +29,8 @@ import type {
   ChangedFile,
   CommitSummary,
   RefLabel,
-  StashEntry,
 } from '../../src/shared/models';
 import { getVsCodeApi } from './vscodeApi';
-import { advanceCommitWindow } from './commitWindow';
 import { CommitList } from './CommitList';
 import { requestId } from './webviewUtils';
 import {
@@ -50,10 +55,15 @@ import {
   EMPTY_GRAPH_LAYOUT_CACHE,
   useSetWorkbenchState,
   useWorkbenchState,
+  useWorkbenchStoreApi,
   WorkbenchStoreContext,
-  type GraphLayoutCache,
-  type WorkbenchState,
 } from './workbenchStore';
+import type {
+  AmendDialogState,
+  HistoryParentPickerState,
+  SquashOperationState,
+  StashDialogState,
+} from './workbenchEffects';
 
 export type ContextMenuState =
   | {
@@ -69,51 +79,11 @@ export type ContextMenuState =
   | { kind: 'toolbar'; repositoryId: string; x: number; y: number }
   | { kind: 'head'; repositoryId: string; hash: string; x: number; y: number };
 
-export interface SquashOperationState {
-  repositoryId: string;
-  hashes: string[];
-  requestId: string;
-  message: string;
-  loading: boolean;
-}
-
 export type NamedOperationState =
   | { kind: 'createBranch'; repositoryId: string; target: string; value: string }
   | { kind: 'createTag'; repositoryId: string; target: string; value: string }
   | { kind: 'renameBranch'; repositoryId: string; oldName: string; value: string }
   | { kind: 'checkoutRemote'; repositoryId: string; startPoint: string; value: string };
-
-export interface HistoryParentPickerState {
-  repositoryId: string;
-  commit: CommitSummary;
-}
-
-export interface StashDialogState {
-  repositoryId: string;
-  stashes: StashEntry[];
-  loading: boolean;
-  stashMessage: string;
-  includeUntracked: boolean;
-}
-
-export interface AmendDialogState {
-  repositoryId: string;
-  message: string;
-}
-
-function filtersEqual(left: LogFilters, right: LogFilters): boolean {
-  const sameItems = (leftItems: readonly string[], rightItems: readonly string[]): boolean =>
-    leftItems.length === rightItems.length &&
-    leftItems.every((item, index) => item === rightItems[index]);
-  return (
-    left.text === right.text &&
-    left.dateFrom === right.dateFrom &&
-    left.dateTo === right.dateTo &&
-    sameItems(left.branches, right.branches) &&
-    sameItems(left.authors, right.authors) &&
-    sameItems(left.paths, right.paths)
-  );
-}
 
 type WorkbenchRequestScope = 'repositories' | 'log' | 'selection' | 'operation';
 
@@ -149,56 +119,6 @@ function readScrollTopByRepository(value: unknown): Record<string, number> {
   return {};
 }
 
-// Incrementally compute the commit-graph layout. The `previous` cache is the
-// layout already in WorkbenchState; when the new commits merely append to the
-// previously laid-out prefix we lay out only the tail and splice the rows, which
-// is O(appended) instead of O(commits). Any other change (replace, evict, history
-// view) falls back to a from-scratch layout, so the output is always identical to
-// `layoutCommitGraph(commits, graphContinuation)` for the commit list, or to a
-// layout of the history entries when `history` is set.
-function computeGraphLayout(
-  commits: CommitSummary[],
-  graphContinuation: GraphContinuationState | undefined,
-  history: WorkbenchState['history'],
-  previous: GraphLayoutCache | undefined,
-): GraphLayoutCache {
-  if (history) {
-    const visibleHashes = new Set(history.entries.map((entry) => entry.hash));
-    return {
-      mode: 'history',
-      commits,
-      result: layoutCommitGraph(
-        history.entries.map((entry) => ({
-          hash: entry.hash,
-          parents: entry.parents.filter((parent) => visibleHashes.has(parent)),
-        })),
-      ),
-    };
-  }
-  if (
-    previous?.mode === 'commits' &&
-    commits.length > previous.commits.length &&
-    commits.slice(0, previous.commits.length).every((commit, index) => commit === previous.commits[index])
-  ) {
-    const appended = commits.slice(previous.commits.length);
-    const appendedLayout = layoutCommitGraph(appended, previous.result.continuation);
-    return {
-      mode: 'commits',
-      commits,
-      result: {
-        rows: [...previous.result.rows, ...appendedLayout.rows],
-        continuation: appendedLayout.continuation,
-        maxLaneCount: Math.max(previous.result.maxLaneCount, appendedLayout.maxLaneCount),
-      },
-    };
-  }
-  return {
-    mode: 'commits',
-    commits,
-    result: layoutCommitGraph(commits, graphContinuation),
-  };
-}
-
 export function App() {
   const [store] = useState(createWorkbenchStore);
   return (
@@ -212,6 +132,8 @@ function Workbench() {
   const vscode = useMemo(() => getVsCodeApi(), []);
   const state = useWorkbenchState();
   const setState = useSetWorkbenchState();
+  const storeApi = useWorkbenchStoreApi();
+  const race = storeApi.getState().race;
   const [commitSelection, setCommitSelection] = useState<CommitSelection>(emptyCommitSelection);
   const [refSearch, setRefSearch] = useState('');
   const [scrollTopByRepository, setScrollTopByRepository] = useState<Record<string, number>>(() =>
@@ -256,15 +178,8 @@ function Workbench() {
   const filterTimer = useRef<number | undefined>(undefined);
   const detailsHashCopyRequest = useRef<string | undefined>(undefined);
   const detailsHashCopyTimer = useRef<number | undefined>(undefined);
-  const pendingFiltersRef = useRef<
-    | { repositoryId: string; filters: LogFilters; requestId?: string }
-    | undefined
-  >(undefined);
   const scrollPersistTimer = useRef<number | undefined>(undefined);
   const scrollTopByRepositoryRef = useRef(scrollTopByRepository);
-  const pendingScrollPosition = useRef<
-    { repositoryId: string; scrollTop: number } | undefined
-  >(undefined);
   const previousWindowOffsetByRepository = useRef<Map<string, number>>(new Map());
   const lastWindowAnchorSignature = useRef<string | undefined>(undefined);
   const historyParentChoices = useRef<Map<string, string>>(new Map());
@@ -281,17 +196,7 @@ function Workbench() {
       logHeaderRef.current.style.transform = `translateX(${-scrollLeft}px)`;
     }
   }, []);
-  const selectedRepositoryIdRef = useRef<string | undefined>(undefined);
   const latestRepositorySelectionRequest = useRef<string | undefined>(undefined);
-  const latestRequestByScope = useRef<Partial<Record<WorkbenchRequestScope, string>>>({});
-  const requestScopeById = useRef<Map<string, WorkbenchRequestScope>>(new Map());
-  const activeOperationRequestByRepository = useRef<Map<string, string>>(new Map());
-  const activeSelectionRequest = useRef<{
-    requestId: string;
-    repositoryId: string;
-    hash: string;
-  } | undefined>(undefined);
-  const activeCommitMessagesRequest = useRef<string | undefined>(undefined);
   const stashDialogRepository = useRef<string | undefined>(undefined);
   const commitRevealSequence = useRef(0);
   const selectedRepository = state.repositories.find(
@@ -452,12 +357,13 @@ function Workbench() {
   }, []);
 
   useEffect(() => {
-    const pending = pendingScrollPosition.current;
+    const pending = race.pendingScrollPosition;
     scrollTopByRepositoryRef.current = {
       ...scrollTopByRepository,
       ...(pending ? { [pending.repositoryId]: pending.scrollTop } : {}),
     };
-  }, [scrollTopByRepository]);
+    // `race.pendingScrollPosition` is a deliberately non-reactive store field.
+  }, [scrollTopByRepository]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     logWindowRef.current = {
@@ -500,7 +406,7 @@ function Workbench() {
       setScrollTopByRepository((current) => {
         const next = { ...current, [repositoryId]: scrollTop };
         scrollTopByRepositoryRef.current = next;
-        pendingScrollPosition.current = undefined;
+        race.pendingScrollPosition = undefined;
         vscode.setState({ scrollTopByRepository: next });
         return next;
       });
@@ -513,7 +419,7 @@ function Workbench() {
       logOffset: state.startLogOffset,
       ...(state.graphContinuation ? { graphContinuation: state.graphContinuation } : {}),
     });
-  }, [
+  }, [ // eslint-disable-line react-hooks/exhaustive-deps -- deliberate non-reactive race field
     state.graphContinuation,
     state.selectedRepositoryId,
     state.startLogOffset,
@@ -522,548 +428,44 @@ function Workbench() {
   ]);
 
   useEffect(() => {
+    storeApi.getState().bindEffects({
+      setCommitSelection,
+      setSquashOperation,
+      setStashDialog,
+      setAmendDialog,
+      setResponsiveExpanded,
+      setScrollTopByRepository,
+      setHistoryParentPicker,
+      setDetailsHashCopyState,
+      stashDialogRepositoryRef: stashDialogRepository,
+      lastWindowAnchorSignatureRef: lastWindowAnchorSignature,
+      historyParentChoicesRef: historyParentChoices,
+      scrollTopByRepositoryRef,
+      latestRepositorySelectionRequestRef: latestRepositorySelectionRequest,
+      detailsHashCopyRequestRef: detailsHashCopyRequest,
+      clearDetailsHashCopyReset: () => {
+        if (detailsHashCopyTimer.current !== undefined) {
+          window.clearTimeout(detailsHashCopyTimer.current);
+          detailsHashCopyTimer.current = undefined;
+        }
+      },
+      scheduleDetailsHashCopyReset: (reset) => {
+        if (detailsHashCopyTimer.current !== undefined) {
+          window.clearTimeout(detailsHashCopyTimer.current);
+        }
+        detailsHashCopyTimer.current = window.setTimeout(() => {
+          detailsHashCopyTimer.current = undefined;
+          reset();
+        }, 1_500);
+      },
+      vscodePostMessage: (msg) => vscode.postMessage(msg),
+      persistScrollTopByRepository: (value) =>
+        vscode.setState({ scrollTopByRepository: value }),
+    });
     const listener = (event: MessageEvent<ExtensionToWebviewMessage>): void => {
       const message = event.data;
       if (!message || typeof message !== 'object' || !('type' in message)) return;
-
-      switch (message.type) {
-        case 'initialize':
-          if (
-            requestScopeById.current.get(message.requestId) === 'repositories' &&
-            latestRequestByScope.current.repositories !== message.requestId
-          ) {
-            requestScopeById.current.delete(message.requestId);
-            break;
-          }
-          requestScopeById.current.delete(message.requestId);
-          activeSelectionRequest.current = undefined;
-          activeCommitMessagesRequest.current = undefined;
-          setCommitSelection(emptyCommitSelection);
-          setSquashOperation(undefined);
-          setStashDialog(undefined);
-          setAmendDialog(undefined);
-          stashDialogRepository.current = undefined;
-          activeOperationRequestByRepository.current.clear();
-          pendingFiltersRef.current = undefined;
-          lastWindowAnchorSignature.current = undefined;
-          selectedRepositoryIdRef.current = message.selectedRepositoryId;
-          if (message.layout.detailsPlacement === 'changes') {
-            setResponsiveExpanded((current) =>
-              current.files ? current : { ...current, files: true },
-            );
-          }
-          setState((current) => ({
-            ...current,
-            repositories: message.repositories,
-            selectedRepositoryId: message.selectedRepositoryId,
-            pageSize: message.pageSize,
-            maxCachedCommits: message.maxCachedCommits ?? 5000,
-            nextLogOffset: 0,
-            startLogOffset: 0,
-            graphContinuation: undefined,
-            graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
-            windowAnchorReady: false,
-            operationRepositoryIds: new Set(),
-            layout: message.layout,
-            filters: defaultFilters,
-            refs: [],
-            commits: [],
-            commitListRevision: current.commitListRevision + 1,
-            details: undefined,
-            detailsRepositoryId: undefined,
-            selectedParent: undefined,
-            files: [],
-            selectedFile: undefined,
-            error: undefined,
-            errorRecovery: undefined,
-            folderHistory: undefined,
-          }));
-          break;
-        case 'commitMessagesLoaded':
-          if (activeCommitMessagesRequest.current !== message.requestId) break;
-          activeCommitMessagesRequest.current = undefined;
-          setSquashOperation((current) =>
-            current &&
-            current.requestId === message.requestId &&
-            current.repositoryId === message.repositoryId
-              ? {
-                  ...current,
-                  loading: false,
-                  message: message.messages
-                    .map((entry) => entry.message.replace(/\r?\n$/u, ''))
-                    .join('\n\n'),
-                }
-              : current,
-          );
-          break;
-        case 'stashStateLoaded':
-          setStashDialog((current) =>
-            current && current.repositoryId === message.repositoryId
-              ? { ...current, stashes: message.stashes, loading: false }
-              : current,
-          );
-          break;
-        case 'repositoryData': {
-          if (selectedRepositoryIdRef.current !== message.repositoryId) {
-            requestScopeById.current.delete(message.requestId);
-            break;
-          }
-          if (
-            requestScopeById.current.get(message.requestId) === 'log' &&
-            latestRequestByScope.current.log !== message.requestId
-          ) {
-            requestScopeById.current.delete(message.requestId);
-            break;
-          }
-          requestScopeById.current.delete(message.requestId);
-          const pendingFilters = pendingFiltersRef.current;
-          const resolvesPendingFilters =
-            pendingFilters?.repositoryId === message.repositoryId &&
-            (pendingFilters.requestId === message.requestId ||
-              filtersEqual(pendingFilters.filters, message.filters));
-          const preservesPendingFilters =
-            pendingFilters?.repositoryId === message.repositoryId && !resolvesPendingFilters;
-          if (resolvesPendingFilters) pendingFiltersRef.current = undefined;
-          if (message.replace && message.scrollTop !== undefined) {
-            setScrollTopByRepository((current) => {
-              const next = { ...current, [message.repositoryId]: message.scrollTop ?? 0 };
-              scrollTopByRepositoryRef.current = next;
-              if (pendingScrollPosition.current?.repositoryId === message.repositoryId) {
-                pendingScrollPosition.current = undefined;
-              }
-              vscode.setState({ scrollTopByRepository: next });
-              return next;
-            });
-          }
-          if (message.selectedHash) {
-            const selectedHash = message.selectedHash;
-            activeSelectionRequest.current = {
-              requestId: message.requestId,
-              repositoryId: message.repositoryId,
-              hash: selectedHash,
-            };
-            if (message.selectedHashes) {
-              setCommitSelection({ hashes: message.selectedHashes, anchor: selectedHash });
-            } else {
-              setCommitSelection((current) => {
-                const selectedIndexes = current.hashes.map((hash) =>
-                  message.commits.findIndex((commit) => commit.hash === hash),
-                );
-                const keepsSelection =
-                  current.hashes.length > 1 &&
-                  current.hashes.includes(selectedHash) &&
-                  selectedIndexes.every((index) => index >= 0);
-                if (keepsSelection) return current;
-                return { hashes: [selectedHash], anchor: selectedHash };
-              });
-            }
-          }
-          setState((current) => {
-            if (current.selectedRepositoryId !== message.repositoryId) return current;
-            const commitWindow = advanceCommitWindow(
-              {
-                commits: current.commits,
-                graphContinuation: current.graphContinuation,
-                nextLogOffset: current.nextLogOffset,
-                startLogOffset: current.startLogOffset,
-              },
-              message.commits,
-              current.maxCachedCommits,
-              message.replace,
-              message.startLogOffset ?? (message.replace ? 0 : current.nextLogOffset),
-              message.graphContinuation,
-            );
-            const keepsSelection =
-              message.selectedHash !== undefined ||
-              !message.replace ||
-              (current.selectedHash !== undefined &&
-                commitWindow.commits.some((commit) => commit.hash === current.selectedHash));
-            const graphLayout = computeGraphLayout(
-              commitWindow.commits,
-              commitWindow.graphContinuation,
-              current.history,
-              message.replace ? undefined : current.graphLayout,
-            );
-            return {
-              ...current,
-              selectedRepositoryId: message.repositoryId,
-              graphLayout,
-              refs: message.refs,
-              filters: preservesPendingFilters ? current.filters : message.filters,
-              commits: commitWindow.commits,
-              commitListRevision: message.replace
-                ? current.commitListRevision + 1
-                : current.commitListRevision,
-              nextLogOffset: commitWindow.nextLogOffset,
-              startLogOffset: commitWindow.startLogOffset,
-              graphContinuation: commitWindow.graphContinuation,
-              windowAnchorReady: true,
-              ...(message.selectedHash ? { selectedHash: message.selectedHash } : {}),
-              hasMore: message.hasMore,
-              loading: undefined,
-              error: undefined,
-              errorRecovery: undefined,
-              ...(message.replace && !keepsSelection
-                ? {
-                    selectedHash: undefined,
-                    details: undefined,
-                    detailsRepositoryId: undefined,
-                    selectedParent: undefined,
-                    files: [],
-                    selectedFile: undefined,
-                  }
-                : {}),
-            };
-          });
-          break;
-        }
-        case 'repositoriesUpdated':
-          if (
-            message.selectedRepositoryId &&
-            message.selectedRepositoryId !== selectedRepositoryIdRef.current &&
-            latestRepositorySelectionRequest.current !== message.requestId
-          ) {
-            break;
-          }
-          setState((current) => {
-            const selectedRepositoryId = message.selectedRepositoryId ?? current.selectedRepositoryId;
-            selectedRepositoryIdRef.current = selectedRepositoryId;
-            if (selectedRepositoryId !== current.selectedRepositoryId) {
-              activeSelectionRequest.current = undefined;
-              lastWindowAnchorSignature.current = undefined;
-              return {
-                ...current,
-                repositories: message.repositories,
-                selectedRepositoryId,
-                refs: [],
-                commits: [],
-                commitListRevision: current.commitListRevision + 1,
-                nextLogOffset: 0,
-                startLogOffset: 0,
-                graphContinuation: undefined,
-                graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
-                windowAnchorReady: false,
-                selectedHash: undefined,
-                details: undefined,
-                detailsRepositoryId: undefined,
-                selectedParent: undefined,
-                files: [],
-                selectedFile: undefined,
-              };
-            }
-            return { ...current, repositories: message.repositories };
-          });
-          break;
-        case 'selectionDetailsLoaded':
-          requestScopeById.current.delete(message.requestId);
-          setState((current) => {
-            const activeRequest = activeSelectionRequest.current;
-            if (
-              !activeRequest ||
-              activeRequest.requestId !== message.requestId ||
-              activeRequest.repositoryId !== message.repositoryId ||
-              activeRequest.hash !== message.details.hash ||
-              current.selectedRepositoryId !== message.repositoryId ||
-              current.selectedHash !== message.details.hash
-            ) {
-              return current;
-            }
-            return {
-              ...current,
-              details: message.details,
-              detailsRepositoryId: message.repositoryId,
-              selectedParent: message.selectedParent ?? message.details.parents[0],
-              files: message.files,
-              selectedFile: undefined,
-              loading: undefined,
-              error: undefined,
-              errorRecovery: undefined,
-            };
-          });
-          break;
-        case 'historyOpened':
-          if (message.replace) historyParentChoices.current.clear();
-          setHistoryParentPicker(undefined);
-          setState((current) => {
-            const history = {
-              repositoryId: message.repositoryId,
-              kind: message.kind,
-              path: message.path,
-              ...(message.startLine !== undefined ? { startLine: message.startLine } : {}),
-              ...(message.endLine !== undefined ? { endLine: message.endLine } : {}),
-              entries: message.replace
-                ? message.entries
-                : [...(current.history?.entries ?? []), ...message.entries],
-              hasMore: message.hasMore,
-              ...(message.notice ? { notice: message.notice } : {}),
-            };
-            return {
-              ...current,
-              history,
-              graphLayout: computeGraphLayout(
-                current.commits,
-                current.graphContinuation,
-                history,
-                current.graphLayout,
-              ),
-              loading: undefined,
-              error: undefined,
-              errorRecovery: undefined,
-            };
-          });
-          break;
-        case 'historyClosed':
-          historyParentChoices.current.clear();
-          setHistoryParentPicker(undefined);
-          setState((current) =>
-            current.history?.repositoryId === message.repositoryId
-              ? {
-                  ...current,
-                  history: undefined,
-                  graphLayout: computeGraphLayout(
-                    current.commits,
-                    current.graphContinuation,
-                    undefined,
-                    current.graphLayout,
-                  ),
-                  ...(message.reason
-                    ? { error: message.reason, errorRecovery: undefined }
-                    : {}),
-                }
-              : current,
-          );
-          break;
-        case 'folderHistoryOpened':
-          selectedRepositoryIdRef.current = message.repositoryId;
-          historyParentChoices.current.clear();
-          setHistoryParentPicker(undefined);
-          setState((current) => {
-            const repositories = current.repositories.some(
-              (repository) => repository.id === message.repository.id,
-            )
-              ? current.repositories.map((repository) =>
-                  repository.id === message.repository.id ? message.repository : repository,
-                )
-              : [...current.repositories, message.repository];
-            return {
-              ...current,
-              repositories,
-              selectedRepositoryId: message.repositoryId,
-              refs: [],
-              commits: [],
-              graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
-              commitListRevision: current.commitListRevision + 1,
-              selectedHash: undefined,
-              details: undefined,
-              detailsRepositoryId: undefined,
-              selectedParent: undefined,
-              files: [],
-              selectedFile: undefined,
-              history: undefined,
-              folderHistory: {
-                repositoryId: message.repositoryId,
-                path: message.path,
-              },
-              error: undefined,
-              errorRecovery: undefined,
-            };
-          });
-          break;
-        case 'folderHistoryClosed':
-          if (message.selectedRepositoryId) {
-            selectedRepositoryIdRef.current = message.selectedRepositoryId;
-          }
-          activeSelectionRequest.current = undefined;
-          setCommitSelection(emptyCommitSelection);
-          setState((current) =>
-            current.folderHistory?.repositoryId === message.repositoryId
-              ? {
-                  ...current,
-                  folderHistory: undefined,
-                  selectedHash: undefined,
-                  details: undefined,
-                  detailsRepositoryId: undefined,
-                  selectedParent: undefined,
-                  files: [],
-                  selectedFile: undefined,
-                  ...(message.selectedRepositoryId &&
-                  message.selectedRepositoryId !== current.selectedRepositoryId
-                    ? {
-                        selectedRepositoryId: message.selectedRepositoryId,
-                        refs: [],
-                        commits: [],
-                        graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
-                        commitListRevision: current.commitListRevision + 1,
-                      }
-                    : {}),
-                }
-              : current,
-          );
-          break;
-        case 'loading':
-          if (message.scope === 'operation' && message.repositoryId) {
-            const repositoryId = message.repositoryId;
-            const activeRequest = activeOperationRequestByRepository.current.get(repositoryId);
-            if (activeRequest && activeRequest !== message.requestId) break;
-            activeOperationRequestByRepository.current.set(repositoryId, message.requestId);
-            setState((current) => ({
-              ...current,
-              operationRepositoryIds: new Set(current.operationRepositoryIds).add(repositoryId),
-              error: undefined,
-              errorRecovery: undefined,
-            }));
-            break;
-          }
-          if (
-            requestScopeById.current.get(message.requestId) === message.scope &&
-            latestRequestByScope.current[message.scope] !== message.requestId
-          ) {
-            break;
-          }
-          latestRequestByScope.current[message.scope] = message.requestId;
-          setState((current) => {
-            if (message.repositoryId && current.selectedRepositoryId !== message.repositoryId) {
-              return current;
-            }
-            return {
-              ...current,
-              loading: message.scope,
-              error: undefined,
-              errorRecovery: undefined,
-            };
-          });
-          break;
-        case 'clipboardCopied':
-          if (detailsHashCopyRequest.current !== message.requestId) break;
-          detailsHashCopyRequest.current = undefined;
-          setDetailsHashCopyState('copied');
-          if (detailsHashCopyTimer.current !== undefined) {
-            window.clearTimeout(detailsHashCopyTimer.current);
-          }
-          detailsHashCopyTimer.current = window.setTimeout(() => {
-            detailsHashCopyTimer.current = undefined;
-            setDetailsHashCopyState('idle');
-          }, 1_500);
-          break;
-        case 'error':
-          {
-            if (detailsHashCopyRequest.current === message.requestId) {
-              detailsHashCopyRequest.current = undefined;
-              setDetailsHashCopyState('idle');
-            }
-            if (activeCommitMessagesRequest.current === message.requestId) {
-              activeCommitMessagesRequest.current = undefined;
-              setSquashOperation(undefined);
-            }
-            if (pendingFiltersRef.current?.requestId === message.requestId) {
-              pendingFiltersRef.current = undefined;
-            }
-            const scope = requestScopeById.current.get(message.requestId);
-            if (scope === 'operation' && message.repositoryId) {
-              const repositoryId = message.repositoryId;
-              if (
-                activeOperationRequestByRepository.current.get(repositoryId) !== message.requestId
-              ) {
-                requestScopeById.current.delete(message.requestId);
-                break;
-              }
-              activeOperationRequestByRepository.current.delete(repositoryId);
-              requestScopeById.current.delete(message.requestId);
-              setState((current) => {
-                const operationRepositoryIds = new Set(current.operationRepositoryIds);
-                operationRepositoryIds.delete(repositoryId);
-                return {
-                  ...current,
-                  operationRepositoryIds,
-                  ...(current.selectedRepositoryId === repositoryId
-                    ? {
-                        error: message.message,
-                        errorRecovery: message.recovery
-                          ? { repositoryId, action: message.recovery }
-                          : undefined,
-                      }
-                    : {}),
-                };
-              });
-              break;
-            }
-            if (scope && latestRequestByScope.current[scope] !== message.requestId) {
-              requestScopeById.current.delete(message.requestId);
-              break;
-            }
-          }
-          requestScopeById.current.delete(message.requestId);
-          setState((current) => {
-            if (
-              message.repositoryId &&
-              current.selectedRepositoryId !== message.repositoryId &&
-              current.history?.repositoryId !== message.repositoryId
-            ) {
-              return current;
-            }
-            return {
-              ...current,
-              loading: undefined,
-              error: message.message,
-              errorRecovery:
-                message.recovery && message.repositoryId
-                  ? { repositoryId: message.repositoryId, action: message.recovery }
-                  : undefined,
-            };
-          });
-          break;
-        case 'operationCompleted':
-          if (
-            activeOperationRequestByRepository.current.get(message.repositoryId) !==
-            message.requestId
-          ) {
-            requestScopeById.current.delete(message.requestId);
-            break;
-          }
-          activeOperationRequestByRepository.current.delete(message.repositoryId);
-          requestScopeById.current.delete(message.requestId);
-          setState((current) => {
-            const operationRepositoryIds = new Set(current.operationRepositoryIds);
-            operationRepositoryIds.delete(message.repositoryId);
-            return {
-              ...current,
-              operationRepositoryIds,
-              ...(current.selectedRepositoryId === message.repositoryId
-                ? { error: undefined, errorRecovery: undefined }
-                : {}),
-            };
-          });
-          if (stashDialogRepository.current === message.repositoryId) {
-            vscode.postMessage({
-              type: 'requestStashState',
-              requestId: requestId('stash-state-refresh'),
-              repositoryId: message.repositoryId,
-            });
-          }
-          break;
-        case 'operationCancelled':
-          if (
-            activeOperationRequestByRepository.current.get(message.repositoryId) !==
-            message.requestId
-          ) {
-            requestScopeById.current.delete(message.requestId);
-            break;
-          }
-          activeOperationRequestByRepository.current.delete(message.repositoryId);
-          requestScopeById.current.delete(message.requestId);
-          setState((current) => {
-            const operationRepositoryIds = new Set(current.operationRepositoryIds);
-            operationRepositoryIds.delete(message.repositoryId);
-            return {
-              ...current,
-              operationRepositoryIds,
-              ...(current.selectedRepositoryId === message.repositoryId
-                ? { error: undefined, errorRecovery: undefined }
-                : {}),
-            };
-          });
-          break;
-      }
+      storeApi.getState().processMessage(message as ExtensionToWebviewMessage);
     };
 
     window.addEventListener('message', listener);
@@ -1076,13 +478,13 @@ function Workbench() {
         window.clearTimeout(detailsHashCopyTimer.current);
       }
     };
-  }, [setState, vscode]);
+  }, [setState, vscode]); // eslint-disable-line react-hooks/exhaustive-deps -- storeApi handle is stable
 
   const send = (message: WebviewToExtensionMessage): void => {
     const scope = requestScopeForMessage(message);
     if (scope) {
-      requestScopeById.current.set(message.requestId, scope);
-      latestRequestByScope.current[scope] = message.requestId;
+      race.requestById.set(message.requestId, scope);
+      race.latestByScope[scope] = message.requestId;
     }
     vscode.postMessage(message);
   };
@@ -1095,14 +497,14 @@ function Workbench() {
         ...scrollTopByRepositoryRef.current,
         [repositoryId]: scrollTop,
       };
-      pendingScrollPosition.current = { repositoryId, scrollTop };
+      race.pendingScrollPosition = { repositoryId, scrollTop };
       if (scrollPersistTimer.current !== undefined) {
         window.clearTimeout(scrollPersistTimer.current);
       }
       scrollPersistTimer.current = window.setTimeout(() => {
         scrollPersistTimer.current = undefined;
         const next = scrollTopByRepositoryRef.current;
-        pendingScrollPosition.current = undefined;
+        race.pendingScrollPosition = undefined;
         setScrollTopByRepository(next);
         vscode.setState({ scrollTopByRepository: next });
         const logWindow = logWindowRef.current;
@@ -1118,7 +520,7 @@ function Workbench() {
         });
       }, 200);
     },
-    [state.history, state.selectedRepositoryId, vscode],
+    [state.history, state.selectedRepositoryId, vscode], // eslint-disable-line react-hooks/exhaustive-deps -- deliberate non-reactive race field
   );
 
   const applyFilters = (filters: LogFilters, debounce = false): void => {
@@ -1129,11 +531,11 @@ function Workbench() {
     }
     if (!state.selectedRepositoryId) return;
     const repositoryId = state.selectedRepositoryId;
-    pendingFiltersRef.current = { repositoryId, filters };
+    race.pendingFilters = { repositoryId, filters };
     setScrollTopByRepository((current) => {
       const next = { ...current, [repositoryId]: 0 };
       scrollTopByRepositoryRef.current = next;
-      pendingScrollPosition.current = undefined;
+      race.pendingScrollPosition = undefined;
       vscode.setState({ scrollTopByRepository: next });
       return next;
     });
@@ -1152,7 +554,7 @@ function Workbench() {
         windowAnchorReady: true,
       }));
       const filterRequestId = requestId('filters');
-      pendingFiltersRef.current = { repositoryId, filters, requestId: filterRequestId };
+      race.pendingFilters = { repositoryId, filters, requestId: filterRequestId };
       send({
         type: 'updateFilters',
         requestId: filterRequestId,
@@ -1181,26 +583,26 @@ function Workbench() {
       window.clearTimeout(filterTimer.current);
       filterTimer.current = undefined;
     }
-    pendingFiltersRef.current = undefined;
+    race.pendingFilters = undefined;
     if (scrollPersistTimer.current !== undefined) {
       window.clearTimeout(scrollPersistTimer.current);
       scrollPersistTimer.current = undefined;
     }
-    pendingScrollPosition.current = undefined;
+    race.pendingScrollPosition = undefined;
     setCommitRevealTarget(undefined);
     setContextMenu(undefined);
     setNamedOperation(undefined);
     setFilterPopup(undefined);
     setRefSearch('');
-    activeSelectionRequest.current = undefined;
-    activeCommitMessagesRequest.current = undefined;
+    race.activeSelectionRequest = undefined;
+    race.activeCommitMessagesRequest = undefined;
     setCommitSelection(emptyCommitSelection);
     setSquashOperation(undefined);
     setStashDialog(undefined);
     setAmendDialog(undefined);
     stashDialogRepository.current = undefined;
     lastWindowAnchorSignature.current = undefined;
-    selectedRepositoryIdRef.current = repositoryId;
+    race.acceptedRepositoryId = repositoryId;
     setState((current) => ({
       ...current,
       selectedRepositoryId: repositoryId,
@@ -1259,7 +661,7 @@ function Workbench() {
     const focusedHash = next.focusedHash;
     setCommitSelection(next.selection);
     const selectionRequestId = requestId('selection');
-    activeSelectionRequest.current = {
+    race.activeSelectionRequest = {
       requestId: selectionRequestId,
       repositoryId: state.selectedRepositoryId,
       hash: focusedHash,
@@ -1300,7 +702,7 @@ function Workbench() {
       selectedFile: undefined,
     }));
     const selectionRequestId = requestId(prefix);
-    activeSelectionRequest.current = {
+    race.activeSelectionRequest = {
       requestId: selectionRequestId,
       repositoryId: state.selectedRepositoryId,
       hash,
@@ -1389,7 +791,7 @@ function Workbench() {
       requestId: commitRevealSequence.current,
       minimumListRevision:
         state.commitListRevision +
-        (pendingFiltersRef.current?.repositoryId === repositoryId ? 1 : 0),
+        (race.pendingFilters?.repositoryId === repositoryId ? 1 : 0),
     });
     selectHash(head, 'head');
   };
@@ -1613,7 +1015,7 @@ function Workbench() {
   };
 
   const runOperation = (operation: GitOperationRequest, repositoryId = state.selectedRepositoryId): void => {
-    if (!repositoryId || activeOperationRequestByRepository.current.has(repositoryId)) return;
+    if (!repositoryId || race.activeOperationByRepository.has(repositoryId)) return;
     const operationRequestId = requestId('operation');
     const validatedMessage = parseWebviewMessage({
       type: 'runOperation',
@@ -1629,7 +1031,7 @@ function Workbench() {
       }));
       return;
     }
-    activeOperationRequestByRepository.current.set(repositoryId, operationRequestId);
+    race.activeOperationByRepository.set(repositoryId, operationRequestId);
     setState((current) => ({
       ...current,
       operationRepositoryIds: new Set(current.operationRepositoryIds).add(repositoryId),
@@ -1838,7 +1240,7 @@ function Workbench() {
     setState((current) => ({ ...current, selectedParent: parent }));
     if (!state.detailsRepositoryId) return;
     const parentRequestId = requestId('parent');
-    activeSelectionRequest.current = {
+    race.activeSelectionRequest = {
       requestId: parentRequestId,
       repositoryId: state.detailsRepositoryId,
       hash,
@@ -2261,7 +1663,9 @@ function Workbench() {
 setSquashOperation={setSquashOperation}
           setAmendDialog={setAmendDialog}
           setNamedOperation={setNamedOperation}
-          activeCommitMessagesRequestRef={activeCommitMessagesRequest}
+          setActiveCommitMessagesRequest={(value) => {
+            race.activeCommitMessagesRequest = value;
+          }}
         />
       ) : null}
 
@@ -2276,7 +1680,9 @@ setSquashOperation={setSquashOperation}
         historyParentChoicesRef={historyParentChoices}
         squashOperation={squashOperation}
         setSquashOperation={setSquashOperation}
-        activeCommitMessagesRequestRef={activeCommitMessagesRequest}
+        setActiveCommitMessagesRequest={(value) => {
+            race.activeCommitMessagesRequest = value;
+          }}
         namedOperation={namedOperation}
         setNamedOperation={setNamedOperation}
         submitNamedOperation={submitNamedOperation}
