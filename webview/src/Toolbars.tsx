@@ -1,6 +1,7 @@
 import type { CSSProperties, RefObject } from 'react';
 import type { LogFilters } from '../../src/protocol/messages';
 import type { RepositorySummary } from '../../src/shared/models';
+import { Archive, CloudDownload, More, PanelLeft, PanelRight, Refresh, Target } from './icons';
 
 export type FilterPopupKind = 'branch' | 'user' | 'date' | 'paths';
 
@@ -415,7 +416,7 @@ export function GlobalToolbar({
         title="Refresh local repository state"
         onClick={onRefresh}
       >
-        ↻
+        {Refresh}
       </button>
       <button
         type="button"
@@ -424,7 +425,7 @@ export function GlobalToolbar({
         disabled={!hasHead}
         onClick={onGoToHead}
       >
-        ◎
+        {Target}
       </button>
       <button
         type="button"
@@ -433,7 +434,7 @@ export function GlobalToolbar({
         disabled={!canRunOperations || operationInFlight}
         onClick={onFetch}
       >
-        ⇣
+        {CloudDownload}
       </button>
       <button
         type="button"
@@ -442,7 +443,7 @@ export function GlobalToolbar({
         disabled={!canRunOperations}
         onClick={onManageStashes}
       >
-        ◫
+        {Archive}
       </button>
       <button
         type="button"
@@ -450,7 +451,7 @@ export function GlobalToolbar({
         title={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
         onClick={onToggleRefsPane}
       >
-        ⇤
+        {PanelLeft}
       </button>
       <button
         type="button"
@@ -458,7 +459,7 @@ export function GlobalToolbar({
         title={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
         onClick={onToggleFilesPane}
       >
-        ⇥
+        {PanelRight}
       </button>
       <button
         type="button"
@@ -473,7 +474,7 @@ export function GlobalToolbar({
           onToggleMoreActions({ right: bounds.right, bottom: bounds.bottom + 2 });
         }}
       >
-        ⋮
+        {More}
       </button>
     </header>
   );

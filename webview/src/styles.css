@@ -205,6 +205,10 @@ select:focus-visible,
   padding: 0 9px;
 }
 
+.global-toolbar button svg {
+  display: block;
+}
+
 .filter-bar button:hover,
 .global-toolbar button:hover,
 .segmented-control button:hover {
