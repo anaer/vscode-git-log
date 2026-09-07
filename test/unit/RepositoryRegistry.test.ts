@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 describe('RepositoryRegistry', () => {
@@ -47,10 +47,10 @@ describe('RepositoryRegistry', () => {
     registry.retain(repository, 'diff-1');
     registry.retain(repository, 'diff-2');
     registry.replace([]);
-    expect(registry.getRoot('repo-1')).toBe('/workspace/project');
+    expect(registry.getRoot('repo-1')).toBe(fileURLToPath(pathToFileURL('/workspace/project')));
 
     registry.release('diff-1');
-    expect(registry.getRoot('repo-1')).toBe('/workspace/project');
+    expect(registry.getRoot('repo-1')).toBe(fileURLToPath(pathToFileURL('/workspace/project')));
     registry.release('diff-2');
     expect(registry.getRoot('repo-1')).toBeUndefined();
   });

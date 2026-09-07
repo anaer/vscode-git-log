@@ -1,10 +1,25 @@
 import { access, readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
+async function readWebviewSources(): Promise<string> {
+  const files = [
+    'webview/src/App.tsx',
+    'webview/src/Toolbars.tsx',
+    'webview/src/ContextMenu.tsx',
+    'webview/src/Dialogs.tsx',
+    'webview/src/RefsPane.tsx',
+    'webview/src/FilesPane.tsx',
+    'webview/src/DetailsPane.tsx',
+    'webview/src/commitSelection.ts',
+  ];
+  const sources = await Promise.all(files.map((file) => readFile(file, 'utf8')));
+  return sources.join('\n');
+}
+
 describe('reduced feature surface', () => {
   it('keeps only stash management and Amend HEAD from the current feature work', async () => {
     const [app, protocol, packageJson] = await Promise.all([
-      readFile('webview/src/App.tsx', 'utf8'),
+      readWebviewSources(),
       readFile('src/protocol/messages.ts', 'utf8'),
       readFile('package.json', 'utf8'),
     ]);

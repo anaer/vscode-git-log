@@ -16,7 +16,7 @@ function commit(hash: string, parents: string[] = []): CommitSummary {
 
 describe('layoutCommitGraph', () => {
   it('keeps a linear history in one stable lane across pagination', async () => {
-    const modulePath = '../../src/graph/layoutCommitGraph';
+    const modulePath = '../../src/shared/layoutCommitGraph';
     const graphModule = await import(/* @vite-ignore */ modulePath).catch(() => undefined);
     expect(graphModule, 'the commit graph layout module must exist').toBeDefined();
     if (!graphModule) return;
@@ -36,7 +36,7 @@ describe('layoutCommitGraph', () => {
   });
 
   it('creates and rejoins lanes for a two-parent merge', async () => {
-    const modulePath = '../../src/graph/layoutCommitGraph';
+    const modulePath = '../../src/shared/layoutCommitGraph';
     const graphModule = await import(/* @vite-ignore */ modulePath).catch(() => undefined);
     expect(graphModule, 'the commit graph layout module must exist').toBeDefined();
     if (!graphModule) return;
@@ -62,7 +62,7 @@ describe('layoutCommitGraph', () => {
   });
 
   it('supports octopus merges with more than two parents', async () => {
-    const modulePath = '../../src/graph/layoutCommitGraph';
+    const modulePath = '../../src/shared/layoutCommitGraph';
     const graphModule = await import(/* @vite-ignore */ modulePath).catch(() => undefined);
     expect(graphModule, 'the commit graph layout module must exist').toBeDefined();
     if (!graphModule) return;

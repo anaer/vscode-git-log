@@ -21,11 +21,11 @@ describe('workbench styles', () => {
     expect(app).toContain('log-header-viewport');
   });
 
-  it('allows deeply nested changed files to overflow horizontally', async () => {
+  it('truncates deeply nested changed files with ellipsis instead of horizontal overflow', async () => {
     const styles = await readFile('webview/src/styles.css', 'utf8');
 
-    expect(styles).toMatch(/\.file-list-content\s*\{[^}]*min-width:\s*max-content;/su);
-    expect(styles).toMatch(/\.file-row\s*\{[^}]*width:\s*max-content;/su);
+    expect(styles).toMatch(/\.file-list-content\s*\{[^}]*width:\s*100%;/su);
+    expect(styles).toMatch(/\.file-folder-name\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/su);
   });
 
   it('matches the VS Code Explorer row height in changed-files tree and list views', async () => {
@@ -33,7 +33,7 @@ describe('workbench styles', () => {
 
     expect(styles).toMatch(/:root\s*\{[^}]*--explorer-row-height:\s*22px;/su);
     expect(styles).toMatch(
-      /\.file-directory\s*>\s*summary\s*\{[^}]*height:\s*var\(--explorer-row-height\);/su,
+      /\.file-folder-row\s*\{[^}]*height:\s*var\(--explorer-row-height\);/su,
     );
     expect(styles).toMatch(
       /\.file-row\s*\{[^}]*height:\s*var\(--explorer-row-height\);/su,
@@ -74,15 +74,16 @@ describe('workbench styles', () => {
 
   it('pins every workspace pane to its grid column when sibling panes are hidden', async () => {
     const styles = await readFile('webview/src/styles.css', 'utf8');
-    const app = await readFile('webview/src/App.tsx', 'utf8');
+    const refsPane = await readFile('webview/src/RefsPane.tsx', 'utf8');
+    const filesPane = await readFile('webview/src/FilesPane.tsx', 'utf8');
 
     expect(styles).toMatch(/\.refs-pane\s*\{[^}]*grid-column:\s*1;/su);
     expect(styles).toMatch(/\.refs-resizer\s*\{[^}]*grid-column:\s*2;/su);
     expect(styles).toMatch(/\.log-pane\s*\{[^}]*grid-column:\s*3;/su);
     expect(styles).toMatch(/\.files-resizer\s*\{[^}]*grid-column:\s*4;/su);
     expect(styles).toMatch(/\.files-pane\s*\{[^}]*grid-column:\s*5;/su);
-    expect(app).toContain('pane-resizer vertical refs-resizer');
-    expect(app).toContain('pane-resizer vertical files-resizer');
+    expect(refsPane).toContain('pane-resizer vertical refs-resizer');
+    expect(filesPane).toContain('pane-resizer vertical files-resizer');
   });
 
   it('draws one-pixel pane dividers while keeping a wider resize hit target', async () => {
@@ -125,7 +126,7 @@ describe('workbench styles', () => {
 
   it('uses one dark background for every pane toolbar and heading row', async () => {
     const styles = await readFile('webview/src/styles.css', 'utf8');
-    const app = await readFile('webview/src/App.tsx', 'utf8');
+    const refsPane = await readFile('webview/src/RefsPane.tsx', 'utf8');
 
     expect(styles).toMatch(
       /:root\s*\{[^}]*--workbench-header-background:\s*var\(--vscode-sideBar-background\);/su,
@@ -144,7 +145,7 @@ describe('workbench styles', () => {
     expect(styles).toMatch(
       /\.pane-heading,\s*\n\.log-header\s*\{[^}]*background:\s*var\(--workbench-header-background\);/su,
     );
-    expect(app).toContain('className="refs-toolbar"');
+    expect(refsPane).toContain('className="refs-toolbar"');
   });
 
   it('colors additions green and deletions red', async () => {
@@ -160,11 +161,11 @@ describe('workbench styles', () => {
 
   it('aligns the stash checkbox with the primary Stash action', async () => {
     const styles = await readFile('webview/src/styles.css', 'utf8');
-    const app = await readFile('webview/src/App.tsx', 'utf8');
+    const dialogs = await readFile('webview/src/Dialogs.tsx', 'utf8');
 
-    expect(app).toContain('className="stash-create-actions"');
-    expect(app).toContain('className="stash-checkbox"');
-    expect(app).toContain('className="stash-submit-button"');
+    expect(dialogs).toContain('className="stash-create-actions"');
+    expect(dialogs).toContain('className="stash-checkbox"');
+    expect(dialogs).toContain('className="stash-submit-button"');
     expect(styles).toMatch(
       /\.operation-dialog input:not\(\[type='checkbox'\]\),\s*\n\.operation-dialog textarea\s*\{/su,
     );
@@ -190,10 +191,10 @@ describe('workbench styles', () => {
 
   it('uses a wider stash dialog with a top-right close button and no horizontal scrolling', async () => {
     const styles = await readFile('webview/src/styles.css', 'utf8');
-    const app = await readFile('webview/src/App.tsx', 'utf8');
+    const dialogs = await readFile('webview/src/Dialogs.tsx', 'utf8');
 
-    expect(app).toContain('className="stash-dialog-close"');
-    expect(app).toContain('aria-label="Close stash manager"');
+    expect(dialogs).toContain('className="stash-dialog-close"');
+    expect(dialogs).toContain('aria-label="Close stash manager"');
     expect(styles).toMatch(
       /\.stash-dialog\s*\{[^}]*position:\s*relative;[^}]*width:\s*min\(920px, calc\(100vw - 32px\)\);[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/su,
     );

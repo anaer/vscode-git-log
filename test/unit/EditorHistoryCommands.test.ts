@@ -11,8 +11,8 @@ describe('EditorHistoryCommands', () => {
 
     const repository = {
       id: 'repo-1',
-      rootUri: 'file:///workspace/project',
-      gitDirUri: 'file:///workspace/project/.git',
+      rootUri: 'file:///C:/workspace/project',
+      gitDirUri: 'file:///C:/workspace/project/.git',
       displayName: 'project',
       isBare: false,
       currentBranch: 'main',
@@ -57,8 +57,8 @@ describe('EditorHistoryCommands', () => {
     const { EditorHistoryCommands } = await import('../../src/editor/EditorHistoryCommands');
     const repository = {
       id: 'repo-1',
-      rootUri: 'file:///workspace/project',
-      gitDirUri: 'file:///workspace/project/.git',
+      rootUri: 'file:///C:/workspace/project',
+      gitDirUri: 'file:///C:/workspace/project/.git',
       displayName: 'project',
       isBare: false,
       currentBranch: 'main',
@@ -96,8 +96,8 @@ describe('EditorHistoryCommands', () => {
     const { EditorHistoryCommands } = await import('../../src/editor/EditorHistoryCommands');
     const repository = {
       id: 'repo-1',
-      rootUri: 'file:///workspace/project',
-      gitDirUri: 'file:///workspace/project/.git',
+      rootUri: 'file:///C:/workspace/project',
+      gitDirUri: 'file:///C:/workspace/project/.git',
       displayName: 'project',
       isBare: false,
       currentBranch: 'main',
@@ -154,8 +154,8 @@ describe('EditorHistoryCommands', () => {
     const { EditorHistoryCommands } = await import('../../src/editor/EditorHistoryCommands');
     const repository = {
       id: 'repo-1',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -201,8 +201,8 @@ describe('EditorHistoryCommands', () => {
     const { EditorHistoryCommands } = await import('../../src/editor/EditorHistoryCommands');
     const repository = {
       id: 'repo-1',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -248,8 +248,8 @@ describe('EditorHistoryCommands', () => {
     const { EditorHistoryCommands } = await import('../../src/editor/EditorHistoryCommands');
     const repository = {
       id: 'repo-1',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',

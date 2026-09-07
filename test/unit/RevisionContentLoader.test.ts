@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+﻿import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,7 +26,7 @@ describe('RevisionContentLoader', () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-content-'));
     temporaryDirectories.push(repository);
     await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
-    await writeFile(join(repository, 'hello 中文.txt'), 'hello revision\n');
+    await writeFile(join(repository, 'hello 娑擃厽鏋?txt'), 'hello revision\n');
     await writeFile(join(repository, 'binary.bin'), Buffer.from([0, 1, 2, 0, 255]));
     await execFileAsync('git', ['add', '.'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'content'], {
@@ -60,7 +60,7 @@ describe('RevisionContentLoader', () => {
       loader.load({
         repositoryId: 'repo-1',
         revision,
-        path: 'hello 中文.txt',
+        path: 'hello 娑擃厽鏋?txt',
         empty: false,
       }),
     ).resolves.toBe('hello revision\n');
@@ -68,7 +68,7 @@ describe('RevisionContentLoader', () => {
       loader.load({ repositoryId: 'repo-1', revision: '', path: 'new.txt', empty: true }),
     ).resolves.toBe('');
     await expect(
-      loader.load({ repositoryId: 'missing', revision, path: 'hello 中文.txt', empty: false }),
+      loader.load({ repositoryId: 'missing', revision, path: 'hello 娑擃厽鏋?txt', empty: false }),
     ).rejects.toThrow('Unknown repository');
     await expect(
       loader.load({ repositoryId: 'repo-1', revision, path: 'binary.bin', empty: false }),
@@ -81,8 +81,8 @@ describe('RevisionContentLoader', () => {
     registry.replace([
       {
         id: 'repo-1',
-        rootUri: 'file:///workspace/project',
-        gitDirUri: 'file:///workspace/project/.git',
+        rootUri: 'file:///C:/workspace/project',
+        gitDirUri: 'file:///C:/workspace/project/.git',
         displayName: 'project',
         isBare: false,
       },

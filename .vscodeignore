@@ -15,3 +15,5 @@ vitest.config.mts
 eslint.config.mjs
 CONTRIBUTING.md
 *.vsix
+.workbuddy-ai/
+*.log

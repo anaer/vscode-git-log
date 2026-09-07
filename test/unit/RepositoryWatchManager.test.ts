@@ -18,9 +18,9 @@ describe('RepositoryWatchManager', () => {
     const onRepositoryChanged = vi.fn();
     const repository: RepositorySummary = {
       id: 'repo-1',
-      rootUri: 'file:///workspace/project',
-      gitDirUri: 'file:///workspace/project/.git/worktrees/linked',
-      commonGitDirUri: 'file:///workspace/project/.git',
+      rootUri: 'file:///C:/workspace/project',
+      gitDirUri: 'file:///C:/workspace/project/.git/worktrees/linked',
+      commonGitDirUri: 'file:///C:/workspace/project/.git',
       displayName: 'project',
       isBare: false,
     };
@@ -39,8 +39,10 @@ describe('RepositoryWatchManager', () => {
     expect(registrations.map(({ pattern }) => pattern)).toEqual(
       expect.arrayContaining(['HEAD', 'index', 'refs/**', 'packed-refs', 'logs/**']),
     );
-    expect(registrations.some(({ basePath }) => basePath.endsWith('/.git'))).toBe(true);
-    expect(registrations.some(({ basePath }) => basePath.includes('/worktrees/linked'))).toBe(true);
+    expect(registrations.some(({ basePath }) => basePath.replace(/\\/g, '/').endsWith('/.git'))).toBe(true);
+    expect(
+      registrations.some(({ basePath }) => basePath.replace(/\\/g, '/').includes('/worktrees/linked')),
+    ).toBe(true);
 
     registrations[0]?.fire();
     registrations[1]?.fire();
@@ -54,5 +56,42 @@ describe('RepositoryWatchManager', () => {
     expect(registrations.every(({ dispose }) => dispose.mock.calls.length === 1)).toBe(true);
     manager.dispose();
     vi.useRealTimers();
+  });
+
+  it('continues watching when creating one watcher fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registrations: Array<{ basePath: string; pattern: string; dispose(): void }> = [];
+    const onRepositoryChanged = vi.fn();
+    const modulePath = '../../src/repositories/RepositoryWatchManager';
+    const watchModule = await import(/* @vite-ignore */ modulePath).catch(() => undefined);
+    expect(watchModule, 'RepositoryWatchManager must exist').toBeDefined();
+    if (!watchModule) return;
+
+    const manager = new watchModule.RepositoryWatchManager(
+      (basePath: string, pattern: string) => {
+        if (pattern === 'refs/**') throw new Error('boom');
+        registrations.push({ basePath, pattern, dispose: () => {} });
+        return { dispose: () => {} };
+      },
+      onRepositoryChanged,
+      100,
+    );
+    const repository: RepositorySummary = {
+      id: 'repo-1',
+      rootUri: 'file:///C:/workspace/project',
+      gitDirUri: 'file:///C:/workspace/project/.git',
+      displayName: 'project',
+      isBare: false,
+    };
+
+    manager.replace([repository]);
+
+    expect(registrations.map(({ pattern }) => pattern)).toEqual(
+      expect.arrayContaining(['HEAD', 'index', 'packed-refs', 'logs/**']),
+    );
+    expect(registrations.map(({ pattern }) => pattern)).not.toContain('refs/**');
+    expect(warn).toHaveBeenCalledOnce();
+    manager.dispose();
+    warn.mockRestore();
   });
 });

@@ -7,6 +7,8 @@ import type {
   LogFilters,
   WorkbenchLayout,
 } from '../../src/protocol/messages';
+import { defaultFilters, defaultLayout } from '../../src/protocol/messages';
+export { defaultFilters, defaultLayout } from '../../src/protocol/messages';
 import type {
   ChangedFile,
   CommitDetails,
@@ -15,24 +17,6 @@ import type {
   RefLabel,
   RepositorySummary,
 } from '../../src/shared/models';
-
-export const defaultLayout: WorkbenchLayout = {
-  refsWidth: 220,
-  filesWidth: 320,
-  detailsHeight: 156,
-  detailsPlacement: 'bottom',
-  filesViewMode: 'tree',
-  refsColumnWidth: 150,
-  authorColumnWidth: 130,
-  dateColumnWidth: 125,
-};
-
-export const defaultFilters: LogFilters = {
-  text: '',
-  branches: [],
-  authors: [],
-  paths: [],
-};
 
 export const EMPTY_GRAPH_LAYOUT: GraphLayoutResult = {
   rows: [],

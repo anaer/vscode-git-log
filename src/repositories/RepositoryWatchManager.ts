@@ -48,11 +48,22 @@ export class RepositoryWatchManager implements WatchDisposable {
       }
     }
 
-    this.watchers = [...targets.values()].map((target) =>
-      this.watch(target.basePath, target.pattern, () => {
-        for (const repositoryId of target.repositoryIds) this.schedule(repositoryId);
-      }),
-    );
+    this.watchers = [...targets.values()].flatMap((target) => {
+      try {
+        return [
+          this.watch(target.basePath, target.pattern, () => {
+            for (const repositoryId of target.repositoryIds) this.schedule(repositoryId);
+          }),
+        ];
+      } catch (error) {
+        console.warn(
+          `[workbench] failed to watch ${target.pattern} in ${target.basePath}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return [];
+      }
+    });
   }
 
   dispose(): void {

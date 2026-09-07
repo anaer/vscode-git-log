@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GitCommandError, type GitRunner } from './GitRunner';
@@ -29,6 +29,7 @@ const MAX_TEXT_SEARCH_CACHES = 4;
 const FULL_FILE_DIFF_CONTEXT_LINES = 2_147_483_647;
 const WEBVIEW_FILE_PATCH_MAX_STDOUT_BYTES = 8 * 1024 * 1024;
 const WEBVIEW_FILE_PATCH_MAX_LINES = 50_000;
+const TEMP_DIR_PREFIX = 'git-log-';
 
 export interface LogQuery {
   limit: number;
@@ -93,6 +94,17 @@ export class GitService {
   );
 
   constructor(private readonly runner: GitRunner) {}
+
+  async cleanupStaleTemporaryDirectories(): Promise<void> {
+    const entries = await readdir(tmpdir(), { withFileTypes: true }).catch(() => []);
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith(TEMP_DIR_PREFIX))
+        .map((entry) =>
+          rm(join(tmpdir(), entry.name), { recursive: true, force: true }).catch(() => undefined),
+        ),
+    );
+  }
 
   async getStashes(cwd: string, signal?: AbortSignal): Promise<StashEntry[]> {
     const result = await this.runner.run(

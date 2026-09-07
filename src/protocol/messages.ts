@@ -43,6 +43,24 @@ export interface WorkbenchLayout {
   hiddenColumns?: Array<'refs' | 'author' | 'date'>;
 }
 
+export const defaultLayout: WorkbenchLayout = {
+  refsWidth: 220,
+  filesWidth: 320,
+  detailsHeight: 156,
+  detailsPlacement: 'bottom',
+  filesViewMode: 'tree',
+  refsColumnWidth: 150,
+  authorColumnWidth: 130,
+  dateColumnWidth: 125,
+};
+
+export const defaultFilters: LogFilters = {
+  text: '',
+  branches: [],
+  authors: [],
+  paths: [],
+};
+
 export interface PersistedWorkbenchState {
   selectedRepositoryId?: string;
   repositories: Record<
@@ -543,11 +561,19 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
   }
 }
 
+function optionalParentOrOldPath(
+  value: Record<string, unknown>,
+  key: 'parent' | 'oldPath',
+): Record<string, never> | Record<typeof key, string> {
+  return typeof value[key] === 'string' ? ({ [key]: value[key] } as Record<typeof key, string>) : {};
+}
+
 export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage | undefined {
   if (!isRecord(value) || !hasBase(value)) return undefined;
 
   switch (value.type) {
     case 'ready':
+    case 'showOutput':
       return { type: value.type, requestId: value.requestId };
     case 'selectRepository':
       return hasRepository(value)
@@ -585,17 +611,6 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
           }
         : undefined;
     case 'requestLogPage':
-      return hasRepository(value) &&
-        Number.isSafeInteger(value.skip) &&
-        Number(value.skip) >= 0 &&
-        Number(value.skip) <= MAX_LOG_OFFSET
-        ? {
-            type: value.type,
-            requestId: value.requestId,
-            repositoryId: value.repositoryId,
-            skip: Number(value.skip),
-          }
-        : undefined;
     case 'requestHistoryPage':
       return hasRepository(value) &&
         Number.isSafeInteger(value.skip) &&
@@ -625,7 +640,7 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
             requestId: value.requestId,
             repositoryId: value.repositoryId,
             hash: value.hash,
-            ...(typeof value.parent === 'string' ? { parent: value.parent } : {}),
+            ...optionalParentOrOldPath(value, 'parent'),
           }
         : undefined;
     case 'closeHistory':
@@ -667,8 +682,6 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
         requestId: value.requestId,
         ...(typeof value.repositoryId === 'string' ? { repositoryId: value.repositoryId } : {}),
       };
-    case 'showOutput':
-      return { type: value.type, requestId: value.requestId };
     case 'copyToClipboard':
       return typeof value.text === 'string' && value.text.length <= 100_000
         ? { type: value.type, requestId: value.requestId, text: value.text }
@@ -727,8 +740,8 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
         hash: value.hash,
         path: value.path,
         status: value.status,
-        ...(typeof value.parent === 'string' ? { parent: value.parent } : {}),
-        ...(typeof value.oldPath === 'string' ? { oldPath: value.oldPath } : {}),
+        ...optionalParentOrOldPath(value, 'parent'),
+        ...optionalParentOrOldPath(value, 'oldPath'),
       };
     case 'openFile':
       if (
@@ -750,8 +763,8 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
         path: value.path,
         status: value.status,
         mode: value.mode,
-        ...(typeof value.parent === 'string' ? { parent: value.parent } : {}),
-        ...(typeof value.oldPath === 'string' ? { oldPath: value.oldPath } : {}),
+        ...optionalParentOrOldPath(value, 'parent'),
+        ...optionalParentOrOldPath(value, 'oldPath'),
       };
     case 'openCommitComparison':
       return hasRepository(value) &&
@@ -764,7 +777,7 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
             repositoryId: value.repositoryId,
             hash: value.hash,
             mode: value.mode,
-            ...(typeof value.parent === 'string' ? { parent: value.parent } : {}),
+            ...optionalParentOrOldPath(value, 'parent'),
           }
         : undefined;
     case 'runOperation':

@@ -9,8 +9,8 @@ vi.mock('vscode', () => ({}));
 
 const repository: RepositorySummary = {
   id: 'repo-1',
-  rootUri: 'file:///repo',
-  gitDirUri: 'file:///repo/.git',
+  rootUri: 'file:///C:/repo',
+  gitDirUri: 'file:///C:/repo/.git',
   displayName: 'repo',
   isBare: false,
 };

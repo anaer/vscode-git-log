@@ -2650,8 +2650,8 @@ describe('WorkbenchController', () => {
     const hash = 'a'.repeat(40);
     const repository: RepositorySummary = {
       id: 'repo-line-mapping-notices',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -2743,8 +2743,8 @@ describe('WorkbenchController', () => {
     const hash = 'a'.repeat(40);
     const repository: RepositorySummary = {
       id: 'repo-deleted-line-history',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -2792,8 +2792,8 @@ describe('WorkbenchController', () => {
     const hash = 'a'.repeat(40);
     const repository: RepositorySummary = {
       id: 'repo-line-history-binary',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -2860,8 +2860,8 @@ describe('WorkbenchController', () => {
     const openDiff = vi.fn().mockResolvedValue(undefined);
     const repository: RepositorySummary = {
       id: 'repo-merge-history',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -2921,8 +2921,8 @@ describe('WorkbenchController', () => {
     const hash = 'a'.repeat(40);
     const repository: RepositorySummary = {
       id: 'repo-root-history-path',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -2986,8 +2986,8 @@ describe('WorkbenchController', () => {
     const hash = 'a'.repeat(40);
     const repository: RepositorySummary = {
       id: 'repo-binary-history',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -3052,8 +3052,8 @@ describe('WorkbenchController', () => {
     const hash = 'a'.repeat(40);
     const repository: RepositorySummary = {
       id: 'repo-watched-history',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -3099,8 +3099,8 @@ describe('WorkbenchController', () => {
   it('cancels an older direct editor-history request without surfacing a cancellation error', async () => {
     const repository: RepositorySummary = {
       id: 'repo-history-cancel',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',
@@ -3159,8 +3159,8 @@ describe('WorkbenchController', () => {
   it('loads file history in bounded pages and detects the final page without an empty request', async () => {
     const repository: RepositorySummary = {
       id: 'repo-history-pages',
-      rootUri: 'file:///repo',
-      gitDirUri: 'file:///repo/.git',
+      rootUri: 'file:///C:/repo',
+      gitDirUri: 'file:///C:/repo/.git',
       displayName: 'repo',
       isBare: false,
       currentBranch: 'main',

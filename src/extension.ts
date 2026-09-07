@@ -59,30 +59,28 @@ interface GitExtension {
 
 let flushLineEditTimesOnDeactivate: (() => Promise<void>) | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
-  const output = vscode.window.createOutputChannel('Git Log');
-  const configuration = vscode.workspace.getConfiguration('gitLogWorkbench');
-  const runner = new GitRunner({
-    executable: configuration.get<string>('git.path', 'git'),
-    logLevel: configuration.get<'off' | 'error' | 'debug'>('debug.logLevel', 'off'),
-    onDiagnostic: (line) => output.appendLine(line),
-  });
-  const gitService = new GitService(runner);
-  const lineBlameService = new LineBlameService(runner);
-  const fileHistoryService = new FileHistoryService(runner);
-  const operationService = new GitOperationService(runner);
-  const repositories = new RepositoryRegistry();
-  const maximumDiffFileBytes = configuration.get<number>(
-    'performance.maxDiffFileBytes',
-    5 * 1024 * 1024,
-  );
-  const contentLoader = new RevisionContentLoader(
-    repositories,
-    gitService,
-    maximumDiffFileBytes,
-  );
-  const diffManager = new DiffManager();
-  const editorContexts = new EditorGitContextService(runner);
+interface BlameFeature {
+  lineBlameDecoration: vscode.TextEditorDecorationType;
+  scheduleLineBlame: (delayMs?: number) => void;
+  blameRefreshImmediateMs: number;
+  blameRefreshEditDebounceMs: number;
+  resetLineBlameTimer: () => void;
+  ensureGitStateSubscriptions: () => void;
+  disposeGitStateSubscriptions: vscode.Disposable;
+  currentLineBlame: CurrentLineBlameController;
+  lineEditTimes: LineEditTimeTracker;
+  persistLineEditTimes: () => void;
+  resetLineEditTimesTimer: () => void;
+  isCustomLineBlameEnabled: (resource?: vscode.Uri) => boolean;
+}
+
+function initializeBlameFeature(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  lineBlameService: LineBlameService,
+  gitService: GitService,
+  editorContexts: EditorGitContextService,
+): BlameFeature {
   const customLineBlameEnabled = (resource?: vscode.Uri): boolean =>
     shouldUseCustomLineBlame(
       vscode.workspace
@@ -132,6 +130,10 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       });
     }, 1_000);
+  };
+  const resetLineEditTimesTimer = (): void => {
+    if (persistLineEditTimesTimer) clearTimeout(persistLineEditTimesTimer);
+    persistLineEditTimesTimer = undefined;
   };
   const editorKey = (editor: vscode.TextEditor): string => {
     const line = editor.selection.active.line;
@@ -235,6 +237,9 @@ export function activate(context: vscode.ExtensionContext): void {
       void currentLineBlame.refresh();
     }, delayMs);
   };
+  const resetLineBlameTimer = (): void => {
+    if (lineBlameTimer) clearTimeout(lineBlameTimer);
+  };
   const gitRepositorySubscriptions = new Map<GitRepository, vscode.Disposable>();
   const gitApiSubscriptions: vscode.Disposable[] = [];
   let gitStateDisposed = false;
@@ -287,9 +292,72 @@ export function activate(context: vscode.ExtensionContext): void {
       );
     });
   };
+  const feature: BlameFeature = {
+    lineBlameDecoration,
+    scheduleLineBlame,
+    blameRefreshImmediateMs: BLAME_REFRESH_IMMEDIATE_MS,
+    blameRefreshEditDebounceMs: BLAME_REFRESH_EDIT_DEBOUNCE_MS,
+    resetLineBlameTimer,
+    ensureGitStateSubscriptions,
+    disposeGitStateSubscriptions,
+    currentLineBlame,
+    lineEditTimes,
+    persistLineEditTimes,
+    resetLineEditTimesTimer,
+    isCustomLineBlameEnabled: customLineBlameEnabled,
+  };
   if (customLineBlameEnabled()) {
     ensureGitStateSubscriptions();
   }
+  return feature;
+}
+
+export function activate(context: vscode.ExtensionContext): void {
+  const output = vscode.window.createOutputChannel('Git Log');
+  const configuration = vscode.workspace.getConfiguration('gitLogWorkbench');
+  const runner = new GitRunner({
+    executable: configuration.get<string>('git.path', 'git'),
+    logLevel: configuration.get<'off' | 'error' | 'debug'>('debug.logLevel', 'off'),
+    onDiagnostic: (line) => output.appendLine(line),
+  });
+  const gitService = new GitService(runner);
+  void gitService.cleanupStaleTemporaryDirectories();
+  const lineBlameService = new LineBlameService(runner);
+  const fileHistoryService = new FileHistoryService(runner);
+  const operationService = new GitOperationService(runner);
+  const repositories = new RepositoryRegistry();
+  const maximumDiffFileBytes = configuration.get<number>(
+    'performance.maxDiffFileBytes',
+    5 * 1024 * 1024,
+  );
+  const contentLoader = new RevisionContentLoader(
+    repositories,
+    gitService,
+    maximumDiffFileBytes,
+  );
+  const diffManager = new DiffManager();
+  const editorContexts = new EditorGitContextService(runner);
+  const blame = initializeBlameFeature(
+    context,
+    output,
+    lineBlameService,
+    gitService,
+    editorContexts,
+  );
+  const {
+    lineBlameDecoration,
+    scheduleLineBlame,
+    blameRefreshImmediateMs,
+    blameRefreshEditDebounceMs,
+    resetLineBlameTimer,
+    ensureGitStateSubscriptions,
+    disposeGitStateSubscriptions,
+    currentLineBlame,
+    lineEditTimes,
+    persistLineEditTimes,
+    resetLineEditTimesTimer,
+    isCustomLineBlameEnabled,
+  } = blame;
   const workingSnapshots = new WorkingSnapshotContentProvider(
     maximumDiffFileBytes,
     maximumDiffFileBytes * 8,
@@ -413,13 +481,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     output,
     disposeGitStateSubscriptions,
-    new vscode.Disposable(() => {
-      if (lineBlameTimer) clearTimeout(lineBlameTimer);
-    }),
-    new vscode.Disposable(() => {
-      if (persistLineEditTimesTimer) clearTimeout(persistLineEditTimesTimer);
-      persistLineEditTimesTimer = undefined;
-    }),
+    new vscode.Disposable(resetLineBlameTimer),
+    new vscode.Disposable(resetLineEditTimesTimer),
     currentLineBlame,
     lineBlameDecoration,
     fileComparisonEditor,
@@ -468,14 +531,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeTextDocument((event) => {
       if (
         event.document.uri.scheme === 'file' &&
-        customLineBlameEnabled(event.document.uri)
+        isCustomLineBlameEnabled(event.document.uri)
       ) {
         const finalLine = event.document.lineAt(event.document.lineCount - 1);
         if (
           event.document.offsetAt(finalLine.rangeIncludingLineBreak.end) >
           MAX_DIRTY_BLAME_CHARACTERS
         ) {
-          if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
+          if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(blameRefreshImmediateMs);
           return;
         }
         const documentKey = event.document.uri.toString();
@@ -491,7 +554,7 @@ export function activate(context: vscode.ExtensionContext): void {
             : {}),
         });
         persistLineEditTimes();
-        if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(BLAME_REFRESH_EDIT_DEBOUNCE_MS);
+        if (event.document === vscode.window.activeTextEditor?.document) scheduleLineBlame(blameRefreshEditDebounceMs);
       }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
@@ -500,14 +563,14 @@ export function activate(context: vscode.ExtensionContext): void {
           event.affectsConfiguration(key),
         )
       ) {
-        if (customLineBlameEnabled()) {
+        if (isCustomLineBlameEnabled()) {
           ensureGitStateSubscriptions();
         }
-        scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
+        scheduleLineBlame(blameRefreshImmediateMs);
       }
     }),
   );
-  scheduleLineBlame(BLAME_REFRESH_IMMEDIATE_MS);
+  scheduleLineBlame(blameRefreshImmediateMs);
 }
 
 export async function deactivate(): Promise<void> {

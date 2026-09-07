@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+﻿import { execFile } from 'node:child_process';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,8 +13,8 @@ import { getOperationConfirmation } from '../../src/git/GitOperationService';
 
 const repository: RepositorySummary = {
   id: 'repo-1',
-  rootUri: 'file:///workspace/project',
-  gitDirUri: 'file:///workspace/project/.git',
+  rootUri: 'file:///C:/workspace/project',
+  gitDirUri: 'file:///C:/workspace/project/.git',
   displayName: 'project',
   isBare: false,
 };
@@ -487,8 +487,8 @@ describe('GitOperationService', () => {
     const otherRepository = {
       ...repository,
       id: 'repo-2',
-      rootUri: 'file:///workspace/other',
-      gitDirUri: 'file:///workspace/other/.git',
+      rootUri: 'file:///C:/workspace/other',
+      gitDirUri: 'file:///C:/workspace/other/.git',
       displayName: 'other',
     };
 
@@ -526,14 +526,14 @@ describe('GitOperationService', () => {
     const service = new GitOperationService(runner, passthroughInspection);
     const mainWorktree = {
       ...repository,
-      commonGitDirUri: 'file:///workspace/project/.git',
+      commonGitDirUri: 'file:///C:/workspace/project/.git',
     };
     const linkedWorktree: RepositorySummary = {
       ...repository,
       id: 'repo-linked',
-      rootUri: 'file:///workspace/project-feature',
-      gitDirUri: 'file:///workspace/project/.git/worktrees/project-feature',
-      commonGitDirUri: 'file:///workspace/project/.git',
+      rootUri: 'file:///C:/workspace/project-feature',
+      gitDirUri: 'file:///C:/workspace/project/.git/worktrees/project-feature',
+      commonGitDirUri: 'file:///C:/workspace/project/.git',
       displayName: 'project-feature',
     };
 

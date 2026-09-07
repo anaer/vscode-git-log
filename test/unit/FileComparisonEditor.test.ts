@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiffManager } from '../../src/diff/DiffManager';
 import type { WorkingSnapshotContentProvider } from '../../src/diff/WorkingSnapshotContentProvider';
 import type { GitService } from '../../src/git/GitService';
 import { RepositoryRegistry } from '../../src/repositories/RepositoryRegistry';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const { file } = vi.hoisted(() => ({
   file: vi.fn((path: string) => ({ scheme: 'file', fsPath: path })),
@@ -12,8 +13,8 @@ vi.mock('vscode', () => ({ Uri: { file } }));
 
 const repository = {
   id: 'repo-1',
-  rootUri: 'file:///repo',
-  gitDirUri: 'file:///repo/.git',
+  rootUri: pathToFileURL('/repo').toString(),
+  gitDirUri: pathToFileURL('/repo/.git').toString(),
   displayName: 'repo',
   isBare: false,
   currentBranch: 'main',
@@ -50,9 +51,9 @@ describe('FileComparisonEditor', () => {
       workingContent: 'unsaved editor content\n',
     });
 
-    expect(repositories.getRoot('repo-1')).toBe('/repo');
+    expect(repositories.getRoot('repo-1')).toBe(fileURLToPath(pathToFileURL('/repo')));
     expect(hasFileAtRevision).toHaveBeenCalledWith(
-      '/repo',
+      fileURLToPath(pathToFileURL('/repo')),
       'a'.repeat(40),
       'src/app.ts',
       expect.any(AbortSignal),
@@ -213,7 +214,7 @@ describe('FileComparisonEditor', () => {
         toString: () => 'git-log-workbench:/app.ts?repositoryId=repo-1',
       });
       repositories.replace([]);
-      expect(repositories.getRoot('repo-1')).toBe('/repo');
+      expect(repositories.getRoot('repo-1')).toBe(fileURLToPath(pathToFileURL('/repo')));
     });
     const editor = new FileComparisonEditor(
       {
