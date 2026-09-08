@@ -828,6 +828,17 @@ select:focus-visible,
   background: var(--vscode-button-secondaryHoverBackground);
 }
 
+.details-actions .details-stop-button {
+  border-color: var(--vscode-inputValidation-warningBorder, #b89500);
+  background: var(--vscode-inputValidation-warningBackground, #352a05);
+  color: var(--vscode-inputValidation-warningForeground, #ffffff);
+  font-weight: 600;
+}
+
+.details-actions .details-stop-button:hover {
+  background: color-mix(in srgb, var(--vscode-inputValidation-warningBackground, #352a05) 85%, var(--vscode-inputValidation-warningForeground, #ffffff));
+}
+
 .details-actions .details-placement-button {
   width: 26px;
   padding: 0;

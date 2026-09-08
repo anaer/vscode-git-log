@@ -198,6 +198,8 @@ function Workbench() {
   const latestRepositorySelectionRequest = useRef<string | undefined>(undefined);
   const stashDialogRepository = useRef<string | undefined>(undefined);
   const commitRevealSequence = useRef(0);
+  const accumulatedAuthors = useRef(new Map<string, string>());
+  const lastAuthorFilterRepository = useRef<string | undefined>(undefined);
   const selectedRepository = state.repositories.find(
     (repository) => repository.id === state.selectedRepositoryId,
   );
@@ -211,15 +213,23 @@ function Workbench() {
     const userEmail = selectedRepository?.userEmail?.trim();
     const configuredName = userName?.toLocaleLowerCase();
     const configuredEmail = userEmail?.toLocaleLowerCase();
-    const authors = new Map<string, string>();
+
+    if (lastAuthorFilterRepository.current !== state.selectedRepositoryId) {
+      accumulatedAuthors.current = new Map();
+      lastAuthorFilterRepository.current = state.selectedRepositoryId;
+    }
+
     for (const commit of state.commits) {
       const nameKey = commit.authorName.trim().toLocaleLowerCase();
       const isCurrentUser =
         (Boolean(configuredName) && nameKey === configuredName) ||
         (Boolean(configuredEmail) &&
           commit.authorEmail.trim().toLocaleLowerCase() === configuredEmail);
-      if (!isCurrentUser && !authors.has(nameKey)) authors.set(nameKey, commit.authorName);
+      if (!isCurrentUser && !accumulatedAuthors.current.has(nameKey)) {
+        accumulatedAuthors.current.set(nameKey, commit.authorName);
+      }
     }
+
     return [
       ...(userEmail || userName
         ? [
@@ -230,9 +240,13 @@ function Workbench() {
             },
           ]
         : []),
-      ...[...authors.entries()].map(([key, name]) => ({ key: `author-${key}`, label: name, value: name })),
+      ...[...accumulatedAuthors.current.entries()].map(([key, name]) => ({
+        key: `author-${key}`,
+        label: name,
+        value: name,
+      })),
     ];
-  }, [selectedRepository?.userEmail, selectedRepository?.userName, state.commits]);
+  }, [selectedRepository?.userEmail, selectedRepository?.userName, state.commits, state.selectedRepositoryId]);
   // Incremental commit-graph layout. A full DAG layout is O(commits); on the
   // common append-only page-load path we only lay out the newly appended commits
   // and reuse the cached rows, falling back to a full recompute whenever the list
@@ -1013,7 +1027,9 @@ function Workbench() {
   };
 
   const runOperation = (operation: GitOperationRequest, repositoryId = state.selectedRepositoryId): void => {
-    if (!repositoryId || race.activeOperationByRepository.has(repositoryId)) return;
+    if (!repositoryId) return;
+    const isAbort = operation.kind === 'abortCherryPick' || operation.kind === 'abortRevert';
+    if (!isAbort && race.activeOperationByRepository.has(repositoryId)) return;
     const operationRequestId = requestId('operation');
     const validatedMessage = parseWebviewMessage({
       type: 'runOperation',

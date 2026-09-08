@@ -110,40 +110,66 @@ function CommitDetailsPane({
             <div className="details-message">{details.subject}</div>
             <div className="details-actions" role="toolbar" aria-label="Commit actions">
               {detailsPlacementButton}
-              <button
-                type="button"
-                aria-label="Cherry-pick selected commit"
-                disabled={
-                  selectedRepository?.isBare ||
-                  Boolean(selectedRepository?.operationState) ||
-                  selectedOperationInFlight
-                }
-                onClick={() =>
-                  runOperation(
-                    { kind: 'cherryPick', hash: details?.hash ?? '' },
-                    detailsRepositoryId,
-                  )
-                }
-              >
-                Cherry-pick
-              </button>
-              <button
-                type="button"
-                aria-label="Revert selected commit"
-                disabled={
-                  selectedRepository?.isBare ||
-                  Boolean(selectedRepository?.operationState) ||
-                  selectedOperationInFlight
-                }
-                onClick={() =>
-                  runOperation(
-                    { kind: 'revert', hash: details?.hash ?? '' },
-                    detailsRepositoryId,
-                  )
-                }
-              >
-                Revert
-              </button>
+              {selectedRepository?.operationState === 'cherry-pick' ? (
+                <button
+                  type="button"
+                  className="details-stop-button"
+                  aria-label="Abort cherry-pick"
+                  onClick={() =>
+                    runOperation({ kind: 'abortCherryPick' }, detailsRepositoryId)
+                  }
+                >
+                  Stop Cherry-pick
+                </button>
+              ) : selectedRepository?.operationState === 'revert' ? (
+                <button
+                  type="button"
+                  className="details-stop-button"
+                  aria-label="Abort revert"
+                  onClick={() =>
+                    runOperation({ kind: 'abortRevert' }, detailsRepositoryId)
+                  }
+                >
+                  Stop Revert
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Cherry-pick selected commit"
+                    disabled={
+                      selectedRepository?.isBare ||
+                      Boolean(selectedRepository?.operationState) ||
+                      selectedOperationInFlight
+                    }
+                    onClick={() =>
+                      runOperation(
+                        { kind: 'cherryPick', hash: details?.hash ?? '' },
+                        detailsRepositoryId,
+                      )
+                    }
+                  >
+                    Cherry-pick
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Revert selected commit"
+                    disabled={
+                      selectedRepository?.isBare ||
+                      Boolean(selectedRepository?.operationState) ||
+                      selectedOperationInFlight
+                    }
+                    onClick={() =>
+                      runOperation(
+                        { kind: 'revert', hash: details?.hash ?? '' },
+                        detailsRepositoryId,
+                      )
+                    }
+                  >
+                    Revert
+                  </button>
+                </>
+              )}
             </div>
           </div>
           <div className="details-meta">

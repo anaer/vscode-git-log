@@ -155,6 +155,10 @@ export function buildOperationArguments(
     case 'dropCommits':
     case 'squashCommits':
       throw new Error(`${operation.kind} requires a validated history rewrite plan.`);
+    case 'abortCherryPick':
+      return ['cherry-pick', '--abort'];
+    case 'abortRevert':
+      return ['revert', '--abort'];
   }
 }
 
@@ -229,8 +233,24 @@ export function getOperationConfirmation(
   if (operation.kind === 'amendCommit') {
     return {
       title: 'Amend the current HEAD commit?',
-      detail: `Repository “${repository.displayName}” will replace the current HEAD commit and include staged changes.`,
+      detail: `Repository "${repository.displayName}" will replace the current HEAD commit and include staged changes.`,
       confirmLabel: 'Amend Commit',
+      destructive: true,
+    };
+  }
+  if (operation.kind === 'abortCherryPick') {
+    return {
+      title: 'Abort cherry-pick?',
+      detail: `Repository "${repository.displayName}" will abort the in-progress cherry-pick and restore the working tree.`,
+      confirmLabel: 'Abort Cherry-pick',
+      destructive: true,
+    };
+  }
+  if (operation.kind === 'abortRevert') {
+    return {
+      title: 'Abort revert?',
+      detail: `Repository "${repository.displayName}" will abort the in-progress revert and restore the working tree.`,
+      confirmLabel: 'Abort Revert',
       destructive: true,
     };
   }
@@ -387,7 +407,7 @@ export class GitOperationService {
       .then(async () => {
         const freshRepository = await this.inspect(repository);
         if (!freshRepository) throw new Error(`Repository “${repository.displayName}” is unavailable.`);
-        if (freshRepository.operationState && operation.kind !== 'fetch') {
+        if (freshRepository.operationState && operation.kind !== 'fetch' && operation.kind !== 'abortCherryPick' && operation.kind !== 'abortRevert') {
           throw new Error(
             `A Git ${freshRepository.operationState} is in progress; finish or abort it first.`,
           );

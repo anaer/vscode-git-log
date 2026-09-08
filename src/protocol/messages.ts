@@ -179,7 +179,9 @@ export type GitOperationRequest =
   | { kind: 'dropStash'; stash: string }
   | { kind: 'amendCommit'; message: string }
   | { kind: 'dropCommits'; hashes: string[] }
-  | { kind: 'squashCommits'; hashes: string[]; message: string };
+  | { kind: 'squashCommits'; hashes: string[]; message: string }
+  | { kind: 'abortCherryPick' }
+  | { kind: 'abortRevert' };
 
 export type ErrorRecoveryAction = { kind: 'forceDeleteBranch'; branch: string };
 
@@ -556,6 +558,9 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
         value.message.length <= MAX_COMMIT_MESSAGE_LENGTH &&
         !value.message.includes('\0')
       );
+    case 'abortCherryPick':
+    case 'abortRevert':
+      return true;
     default:
       return false;
   }

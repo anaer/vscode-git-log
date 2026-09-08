@@ -4402,13 +4402,13 @@ describe('WorkbenchApp', () => {
 
     fireEvent.contextMenu(screen.getByTitle('refs/heads/main'));
     let menu = screen.getByRole('menu', { name: 'ref actions' });
-    expect(within(menu).getByRole('menuitem', { name: 'Force Delete…' })).toBeDisabled();
+    expect(within(menu).getByRole('menuitem', { name: 'Delete…' })).toBeDisabled();
 
     fireEvent.contextMenu(screen.getByTitle('refs/heads/feature/unmerged'));
     menu = screen.getByRole('menu', { name: 'ref actions' });
-    const forceDelete = within(menu).getByRole('menuitem', { name: 'Force Delete…' });
-    expect(forceDelete).toBeEnabled();
-    fireEvent.click(forceDelete);
+    const deleteBranch = within(menu).getByRole('menuitem', { name: 'Delete…' });
+    expect(deleteBranch).toBeEnabled();
+    fireEvent.click(deleteBranch);
 
     expect(postedMessages).toContainEqual(
       expect.objectContaining({

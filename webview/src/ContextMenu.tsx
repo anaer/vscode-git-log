@@ -1,4 +1,4 @@
-import type { CSSProperties, Dispatch, RefObject, SetStateAction } from 'react';
+import { type CSSProperties, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { ChangedFile, RepositorySummary } from '../../src/shared/models';
 import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/protocol/messages';
 import type {
@@ -64,7 +64,9 @@ export function ContextMenu(props: ContextMenuProps) {
         const target = event.target;
         if (!(target instanceof Element)) return;
         const menuItem = target.closest<HTMLButtonElement>('button[role="menuitem"]');
-        if (menuItem && !menuItem.disabled) setContextMenu(undefined);
+        if (menuItem && !menuItem.disabled) {
+          setContextMenu(undefined);
+        }
       }}
     >
       {contextMenu.kind === 'toolbar' ? (
@@ -660,25 +662,13 @@ export function ContextMenu(props: ContextMenuProps) {
                     disabled={contextMenu.ref.isCurrent}
                     onClick={() =>
                       runOperation(
-                        { kind: 'deleteBranch', name: contextMenu.ref.shortName, force: false },
-                        contextMenu.repositoryId,
-                      )
-                    }
-                  >
-                    Delete…                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={contextMenu.ref.isCurrent}
-                    title="Delete this branch even if it is not fully merged"
-                    onClick={() =>
-                      runOperation(
                         { kind: 'deleteBranch', name: contextMenu.ref.shortName, force: true },
                         contextMenu.repositoryId,
                       )
                     }
                   >
-                    Force Delete…                  </button>
+                    Delete…
+                  </button>
                 </>
               ) : null}
             </>

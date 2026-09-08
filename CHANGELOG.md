@@ -4,12 +4,18 @@ All notable changes to Git Log are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Added "Stop Cherry-pick" and "Stop Revert" buttons in commit details to abort in-progress cherry-pick or revert operations with a confirmation dialog.
+
 ### Changed
 
 - Redesigned the Branches panel tree to match VS Code's native TreeView look: collapsible groups and folders now use 16px inline SVG chevron icons instead of Unicode arrows, and indentation guides show as vertical lines aligned with each folder's expand icon.
 - Increased the per-level indent of the Branches tree and reserved an invisible placeholder before leaf branch/tag names so their text aligns with nested folders. Only the current `HEAD` branch keeps a badge icon.
 - Reworked the Changed Files tree with the same native TreeView styling: SVG chevron collapse/expand, vertical indentation guide lines, and a wider per-level indent.
 - Moved the Changed Files status badge (`A`/`M`/`D`/…) to the right edge of each row, aligned against the right side of the panel in both Tree and List view.
+- Merged "Delete…" and "Force Delete…" into a single "Delete…" action that defaults to force deletion for all local branches.
+- The authors filter dropdown now retains all previously seen author options when filtering, so selecting "Me" no longer hides other authors from the list.
 
 ### Fixed
 
