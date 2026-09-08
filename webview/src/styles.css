@@ -1311,6 +1311,49 @@ select:focus-visible,
   background: var(--vscode-list-hoverBackground);
 }
 
+.file-icon-definitions {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.file-type-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  color: var(--vscode-descriptionForeground);
+}
+
+.file-type-dart { color: #40c4ff; }
+.file-type-typescript { color: #3178c6; }
+.file-type-javascript { color: #d6ba32; }
+.file-type-react { color: #61dafb; }
+.file-type-html { color: #e44d26; }
+.file-type-css { color: #42a5f5; }
+.file-type-json,
+.file-type-yaml,
+.file-type-config { color: var(--vscode-symbolIcon-objectForeground, #d7ba7d); }
+.file-type-markdown { color: #519aba; }
+.file-type-image { color: #a074c4; }
+.file-type-archive { color: #eca958; }
+.file-type-shell { color: #89e051; }
+.file-type-python { color: #3572a5; }
+.file-type-go { color: #00add8; }
+.file-type-rust { color: #dea584; }
+.file-type-c,
+.file-type-cpp { color: #00599c; }
+.file-type-java { color: #b07219; }
+.file-type-ruby { color: #cc342d; }
+.file-type-swift { color: #f05138; }
+.file-type-kotlin { color: #a97bff; }
+.file-type-php { color: #4f5d95; }
+.file-type-sql { color: #dcdee2; }
+.file-type-xml { color: #e44d26; }
+.file-type-document { color: var(--vscode-descriptionForeground); }
+.file-type-binary { color: var(--vscode-descriptionForeground); }
+
 .file-status {
   flex: 0 0 auto;
   margin-left: auto;

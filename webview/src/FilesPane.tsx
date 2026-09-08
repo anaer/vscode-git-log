@@ -6,6 +6,7 @@ import {
 } from 'react';
 import type { ChangedFile, CommitDetails } from '../../src/shared/models';
 import type { WorkbenchLayout } from '../../src/protocol/messages';
+import { fileIconKind } from '../../src/shared/fileIconKind';
 import { buildFileTree, type FileTreeNode } from './buildFileTree';
 import { ChevronDown, ChevronRight } from './icons';
 
@@ -26,14 +27,12 @@ function changedFileStatusLabel(status: ChangedFile['status']): string {
 function ChangedFileRow({
   file,
   depth = 0,
-  inTree = false,
   onOpen,
   onSelect,
   onContextMenu,
 }: {
   file: ChangedFile;
   depth?: number;
-  inTree?: boolean;
   onOpen(file: ChangedFile): void;
   onSelect(file: ChangedFile): void;
   onContextMenu(file: ChangedFile, x: number, y: number): void;
@@ -42,7 +41,7 @@ function ChangedFileRow({
     <button
       type="button"
       className="file-row"
-      style={{ paddingLeft: 10 + depth * (inTree ? 20 : 14) }}
+      style={{ paddingLeft: 10 + depth * 14 }}
       title={file.binary ? `${file.path} is binary` : file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
       onClick={() => onSelect(file)}
       onDoubleClick={() => onOpen(file)}
@@ -55,7 +54,9 @@ function ChangedFileRow({
         if (event.key === 'Enter') onOpen(file);
       }}
     >
-      {inTree ? <span className="folder-chevron" aria-hidden="true" /> : null}
+      <svg className="file-type-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <use href={`#file-icon-${fileIconKind(file.path.split('/').at(-1) ?? file.path, file.binary)}`} />
+      </svg>
       <span className="file-path">{file.path.split('/').at(-1)}</span>
       {file.additions !== undefined || file.deletions !== undefined ? (
         <span className="file-stats">
@@ -93,13 +94,13 @@ function FileTreeNodes({
     node.type === 'directory' ? (
       <div
         className="file-tree-directory"
-        style={{ '--indent-guide-left': `${8 + depth * 20}px` } as React.CSSProperties}
+        style={{ '--indent-guide-left': `${8 + depth * 14}px` } as React.CSSProperties}
         key={node.path}
       >
         <button
           type="button"
           className="file-folder-row"
-          style={{ paddingLeft: 8 + depth * 20 }}
+          style={{ paddingLeft: 8 + depth * 14 }}
           aria-expanded={!collapsedDirectories.has(node.path)}
           onClick={() => onToggleDirectory(node.path)}
         >
@@ -124,7 +125,6 @@ function FileTreeNodes({
       <ChangedFileRow
         file={node.file}
         depth={depth}
-        inTree
         onOpen={onOpen}
         onSelect={onSelect}
         onContextMenu={onContextMenu}

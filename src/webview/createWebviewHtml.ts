@@ -1,3 +1,5 @@
+import { renderFileIconDefinitions } from '../shared/fileIconKind';
+
 export interface WebviewHtmlOptions {
   cspSource: string;
   scriptUri: string;
@@ -32,6 +34,7 @@ export function createWebviewHtml(options: WebviewHtmlOptions): string {
     <title>Git Log</title>
   </head>
   <body>
+    ${renderFileIconDefinitions()}
     <div id="root"></div>
     <script nonce="${nonce}" src="${scriptUri}"></script>
   </body>

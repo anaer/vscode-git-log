@@ -2,11 +2,12 @@
 
 All notable changes to Git Log are documented in this file.
 
-## Unreleased
+## 0.1.0
 
 ### Added
 
 - Added "Stop Cherry-pick" and "Stop Revert" buttons in commit details to abort in-progress cherry-pick or revert operations with a confirmation dialog.
+- Added file-type icons to the Changed Files tree, using the same SVG icon system as the diff comparison view with 26 language-specific color icons.
 
 ### Changed
 
@@ -16,6 +17,8 @@ All notable changes to Git Log are documented in this file.
 - Moved the Changed Files status badge (`A`/`M`/`D`/…) to the right edge of each row, aligned against the right side of the panel in both Tree and List view.
 - Merged "Delete…" and "Force Delete…" into a single "Delete…" action that defaults to force deletion for all local branches.
 - The authors filter dropdown now retains all previously seen author options when filtering, so selecting "Me" no longer hides other authors from the list.
+- Reduced per-level tree indentation in Branches and Changed Files panels from 20px to 14px for a more compact layout.
+- Aligned file nodes and directory nodes at the same depth level in the Changed Files tree.
 
 ### Fixed
 
@@ -25,6 +28,7 @@ All notable changes to Git Log are documented in this file.
 ### Internal
 
 - Split the context menu and the stash, amend, squash, named-operation, and history-parent-picker dialogs out of the monolithic `App.tsx` into dedicated components (`ContextMenu.tsx`, `Dialogs.tsx`), with shared helpers moved to `webviewUtils.ts`. No user-visible behavior change; the codebase refactor follows ADR-0003 (Zustand + incremental split).
+- Extracted file icon kind mapping and SVG rendering into a shared module (`src/shared/fileIconKind.ts`) used by both the diff comparison view and the workbench webview.
 
 ## 0.0.9
 

@@ -42,7 +42,7 @@ function RefTreeNodes({
       return (
         <div
           className="ref-tree-directory"
-          style={{ '--indent-guide-left': `${16 + depth * 20}px` } as React.CSSProperties}
+          style={{ '--indent-guide-left': `${16 + depth * 14}px` } as React.CSSProperties}
           role="group"
           aria-label={
             group.kind === 'remote' && depth === 0
@@ -54,7 +54,7 @@ function RefTreeNodes({
           <button
             type="button"
             className="ref-folder-row"
-            style={{ paddingLeft: 16 + depth * 20 }}
+            style={{ paddingLeft: 16 + depth * 14 }}
             aria-expanded={!collapsed}
             aria-label={
               forceExpanded
@@ -92,7 +92,7 @@ function RefTreeNodes({
       <button
         type="button"
         className={`ref-item${ref.isCurrent ? ' current-ref' : ''}`}
-        style={{ paddingLeft: 16 + depth * 20, '--indent-guide-left': `${16 + depth * 20}px` } as React.CSSProperties}
+        style={{ paddingLeft: 16 + depth * 14, '--indent-guide-left': `${16 + depth * 14}px` } as React.CSSProperties}
         key={ref.fullName}
         title={ref.fullName}
         data-ref-item="true"
