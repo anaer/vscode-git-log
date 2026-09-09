@@ -1,6 +1,10 @@
 :root {
   --explorer-row-height: 22px;
   --global-toolbar-width: 224px;
+  --commit-max-width: 700px;
+  --author-column-width: 130px;
+  --date-column-width: 150px;
+  --refs-column-width: 150px;
   --workbench-header-background: var(--vscode-sideBar-background);
   color-scheme: light dark;
   font-family: var(--vscode-font-family);
@@ -171,6 +175,7 @@ select:focus-visible,
 
 .history-stats {
   display: inline-flex;
+  flex: 0 0 auto;
   margin-left: auto;
   gap: 6px;
   padding-left: 8px;
@@ -178,6 +183,8 @@ select:focus-visible,
 }
 
 .history-rename {
+  min-width: 0;
+  flex: 0 1 auto;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   overflow: hidden;
@@ -625,11 +632,13 @@ select:focus-visible,
 .log-header {
   z-index: 1;
   display: grid;
-  min-width: max(100%, var(--log-content-width, 665px));
+  min-width: max(100%, var(--log-content-width, 690px));
   grid-template-columns: var(
     --log-grid-columns,
-    minmax(260px, min(1fr, var(--commit-max-width, 700px))) var(--author-column-width, max-content)
-      var(--date-column-width, max-content) var(--refs-column-width, max-content)
+    minmax(260px, var(--commit-max-width, 700px))
+      minmax(60px, var(--author-column-width, 130px))
+      minmax(60px, var(--date-column-width, 150px))
+      minmax(40px, var(--refs-column-width, 150px))
   );
   align-items: center;
   color: var(--vscode-descriptionForeground);
@@ -740,7 +749,7 @@ select:focus-visible,
 
 .commit-list {
   position: relative;
-  min-width: max(100%, var(--log-content-width, 665px));
+  min-width: max(100%, var(--log-content-width, 690px));
 }
 
 .commit-viewport {
@@ -755,8 +764,10 @@ select:focus-visible,
   display: grid;
   grid-template-columns: var(
     --log-grid-columns,
-    minmax(260px, min(1fr, var(--commit-max-width, 700px))) var(--author-column-width, max-content)
-      var(--date-column-width, max-content) var(--refs-column-width, max-content)
+    minmax(260px, var(--commit-max-width, 700px))
+      minmax(60px, var(--author-column-width, 130px))
+      minmax(60px, var(--date-column-width, 150px))
+      minmax(40px, var(--refs-column-width, 150px))
   );
   align-items: center;
   height: 28px;
@@ -1129,7 +1140,10 @@ select:focus-visible,
 }
 
 .commit-subject {
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 

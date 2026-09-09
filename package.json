@@ -2,7 +2,7 @@
   "name": "a-git-log",
   "displayName": "A Git Log — Commit Graph & History",
   "description": "A visual Git log, commit graph, history browser, and repository operations extension for Visual Studio Code.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "anaer",
   "license": "MIT",
   "icon": "media/git-log.png",

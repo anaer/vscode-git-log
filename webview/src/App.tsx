@@ -1086,7 +1086,7 @@ function Workbench() {
   const logContentWidth =
     (state.layout.commitColumnWidth ?? 260) +
     (state.layout.authorColumnWidth ?? 130) +
-    (state.layout.dateColumnWidth ?? 125) +
+    (state.layout.dateColumnWidth ?? 150) +
     (state.layout.refsColumnWidth ?? 150);
 
   const handleWorkbenchKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
@@ -1443,19 +1443,19 @@ function Workbench() {
               '--log-grid-columns': `${
                 state.layout.commitColumnWidth
                   ? `${String(state.layout.commitColumnWidth)}px`
-                  : 'minmax(260px, min(1fr, var(--commit-max-width, 700px)))'
+                  : 'minmax(260px, var(--commit-max-width, 700px))'
               } ${
                 state.layout.authorColumnWidth
                   ? `${String(state.layout.authorColumnWidth)}px`
-                  : 'max-content'
+                  : 'minmax(60px, var(--author-column-width, 130px))'
               } ${
                 state.layout.dateColumnWidth
                   ? `${String(state.layout.dateColumnWidth)}px`
-                  : 'max-content'
+                  : 'minmax(60px, var(--date-column-width, 150px))'
               } ${
                 state.layout.refsColumnWidth
                   ? `${String(state.layout.refsColumnWidth)}px`
-                  : 'max-content'
+                  : 'minmax(40px, var(--refs-column-width, 150px))'
               }`,
             } as CSSProperties
           }
@@ -1518,7 +1518,7 @@ function Workbench() {
                   role="separator"
                   aria-label="Resize date column"
                   aria-orientation="vertical"
-                  aria-valuenow={state.layout.dateColumnWidth ?? 125}
+                  aria-valuenow={state.layout.dateColumnWidth ?? 150}
                   tabIndex={0}
                   onPointerDown={(event) => beginColumnResize('dateColumnWidth', event)}
                   onKeyDown={(event) => {

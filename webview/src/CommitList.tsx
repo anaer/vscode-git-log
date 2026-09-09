@@ -251,7 +251,9 @@ export function CommitList({
                 {graphRow ? (
                   <CommitGraphCell row={graphRow} maxLaneCount={graphLayout.maxLaneCount} />
                 ) : null}
-                <span className="commit-subject">{commit.subject}</span>
+                <span className="commit-subject" title={commit.subject}>
+                  {commit.subject}
+                </span>
                 {'oldPath' in commit &&
                 (commit as HistoryEntry).oldPath &&
                 (commit as HistoryEntry).oldPath !== (commit as HistoryEntry).path ? (

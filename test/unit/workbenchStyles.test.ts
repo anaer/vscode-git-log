@@ -189,6 +189,48 @@ describe('workbench styles', () => {
     expect(styles).toMatch(/\.stash-tool-row button:disabled\s*\{[^}]*opacity:\s*0\.55;/su);
   });
 
+  it('bounds the commit column so long subjects ellipsize instead of stretching the row', async () => {
+    const styles = await readFile('webview/src/styles.css', 'utf8');
+    const app = await readFile('webview/src/App.tsx', 'utf8');
+
+    // `<flex>` values are not allowed inside `min()/max()` in CSS Grid track
+    // sizing, so the previous `minmax(260px, min(1fr, ...))` collapsed the
+    // whole row into a single full-width column. Lock in a length-based cap.
+    expect(styles).not.toMatch(/min\(1fr/);
+    expect(app).not.toMatch(/min\(1fr/);
+
+    // The CSS fallback template and the JS string must agree, and every
+    // column must be a shrinkable `minmax(<length>, <length>)` so the log
+    // header and rows stay aligned regardless of cell content.
+    const fallbackTemplate =
+      /minmax\(260px,\s*var\(--commit-max-width,\s*700px\)\)\s+minmax\(60px,\s*var\(--author-column-width,\s*130px\)\)\s+minmax\(60px,\s*var\(--date-column-width,\s*150px\)\)\s+minmax\(40px,\s*var\(--refs-column-width,\s*150px\)\)/su;
+    expect(styles).toMatch(
+      /\.log-header[^}]*grid-template-columns:[^}]*?minmax\(260px,\s*var\(--commit-max-width,\s*700px\)/su,
+    );
+    expect(styles).toMatch(
+      /\.commit-row[^}]*grid-template-columns:[^}]*?minmax\(260px,\s*var\(--commit-max-width,\s*700px\)/su,
+    );
+    expect(styles).toMatch(fallbackTemplate);
+    // The JS template is built as four independent minmax segments; check
+    // each one so the test stays robust against intermediate source edits.
+    expect(app).toMatch(/'minmax\(260px, var\(--commit-max-width, 700px\)\)'/);
+    expect(app).toMatch(/'minmax\(60px, var\(--author-column-width, 130px\)\)'/);
+    expect(app).toMatch(/'minmax\(60px, var\(--date-column-width, 150px\)\)'/);
+    expect(app).toMatch(/'minmax\(40px, var\(--refs-column-width, 150px\)\)'/);
+    expect(app).toContain('--commit-max-width');
+
+    // The commit subject flex item must shrink inside its cell so
+    // `text-overflow: ellipsis` can actually truncate long subjects.
+    expect(styles).toMatch(/\.commit-subject\s*\{[^}]*min-width:\s*0;[^}]*white-space:\s*nowrap;[^}]*text-overflow:\s*ellipsis;/su);
+
+    // `:root` should declare the column-width defaults so the CSS fallback
+    // is deterministic when the inline section styles are absent.
+    expect(styles).toMatch(/:root\s*\{[^}]*--commit-max-width:\s*700px;/su);
+    expect(styles).toMatch(/:root\s*\{[^}]*--author-column-width:\s*130px;/su);
+    expect(styles).toMatch(/:root\s*\{[^}]*--date-column-width:\s*150px;/su);
+    expect(styles).toMatch(/:root\s*\{[^}]*--refs-column-width:\s*150px;/su);
+  });
+
   it('uses a wider stash dialog with a top-right close button and no horizontal scrolling', async () => {
     const styles = await readFile('webview/src/styles.css', 'utf8');
     const dialogs = await readFile('webview/src/Dialogs.tsx', 'utf8');
