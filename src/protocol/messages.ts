@@ -114,6 +114,7 @@ export type WebviewToExtensionMessage =
   | { type: 'openStashComparison'; requestId: string; repositoryId: string; hash: string }
   | { type: 'refresh'; requestId: string; repositoryId?: string }
   | { type: 'showOutput'; requestId: string }
+  | { type: 'openSourceControl'; requestId: string }
   | { type: 'copyToClipboard'; requestId: string; text: string }
   | {
       type: 'updateScrollAnchor';
@@ -170,6 +171,9 @@ export type GitOperationRequest =
   | { kind: 'revert'; hash: string }
   | { kind: 'merge'; ref: string }
   | { kind: 'rebase'; ref: string }
+  | { kind: 'rebaseContinue' }
+  | { kind: 'rebaseSkip' }
+  | { kind: 'rebaseAbort' }
   | { kind: 'reset'; hash: string; mode: 'soft' | 'mixed' | 'hard' }
   | { kind: 'renameBranch'; oldName: string; newName: string }
   | { kind: 'deleteBranch'; name: string; force: boolean }
@@ -470,6 +474,7 @@ function isGraphContinuation(value: unknown): value is GraphContinuationState {
       !isCounter(lane.id) ||
       !isCounter(lane.colorIndex) ||
       !isHash(lane.target) ||
+      (lane.collapsed !== undefined && typeof lane.collapsed !== 'boolean') ||
       ids.has(lane.id)
     ) {
       return false;
@@ -524,6 +529,10 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
     case 'merge':
     case 'rebase':
       return isSafeGitToken(value.ref);
+    case 'rebaseContinue':
+    case 'rebaseSkip':
+    case 'rebaseAbort':
+      return true;
     case 'reset':
       return isHash(value.hash) && ['soft', 'mixed', 'hard'].includes(String(value.mode));
     case 'renameBranch':
@@ -579,6 +588,7 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
   switch (value.type) {
     case 'ready':
     case 'showOutput':
+    case 'openSourceControl':
       return { type: value.type, requestId: value.requestId };
     case 'selectRepository':
       return hasRepository(value)

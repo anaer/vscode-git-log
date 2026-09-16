@@ -180,7 +180,7 @@ function Workbench() {
   const detailsHashCopyTimer = useRef<number | undefined>(undefined);
   const scrollPersistTimer = useRef<number | undefined>(undefined);
   const scrollTopByRepositoryRef = useRef(scrollTopByRepository);
-  const previousWindowOffsetByRepository = useRef<Map<string, number>>(new Map());
+  const previousWindowRowOffsetByRepository = useRef<Map<string, number>>(new Map());
   const lastWindowAnchorSignature = useRef<string | undefined>(undefined);
   const historyParentChoices = useRef<Map<string, string>>(new Map());
   const logWindowRef = useRef({
@@ -407,20 +407,20 @@ function Workbench() {
   useEffect(() => {
     const repositoryId = state.selectedRepositoryId;
     if (!repositoryId || !state.windowAnchorReady) return;
-    const signature = `${repositoryId}:${String(state.startLogOffset)}:${JSON.stringify(
-      state.graphContinuation ?? null,
-    )}`;
+    const signature = `${repositoryId}:${String(state.startLogOffset)}:${String(
+      state.startRowOffset,
+    )}:${JSON.stringify(state.graphContinuation ?? null)}`;
     if (lastWindowAnchorSignature.current === signature) return;
     lastWindowAnchorSignature.current = signature;
     if (scrollPersistTimer.current !== undefined) {
       window.clearTimeout(scrollPersistTimer.current);
       scrollPersistTimer.current = undefined;
     }
-    const previousOffset = previousWindowOffsetByRepository.current.get(repositoryId);
-    previousWindowOffsetByRepository.current.set(repositoryId, state.startLogOffset);
+    const previousRowOffset = previousWindowRowOffsetByRepository.current.get(repositoryId);
+    previousWindowRowOffsetByRepository.current.set(repositoryId, state.startRowOffset);
     let scrollTop = scrollTopByRepositoryRef.current[repositoryId] ?? 0;
-    if (previousOffset !== undefined && state.startLogOffset > previousOffset) {
-      scrollTop = Math.max(0, scrollTop - (state.startLogOffset - previousOffset) * 28);
+    if (previousRowOffset !== undefined && state.startRowOffset > previousRowOffset) {
+      scrollTop = Math.max(0, scrollTop - (state.startRowOffset - previousRowOffset) * 28);
       setScrollTopByRepository((current) => {
         const next = { ...current, [repositoryId]: scrollTop };
         scrollTopByRepositoryRef.current = next;
@@ -441,6 +441,7 @@ function Workbench() {
     state.graphContinuation,
     state.selectedRepositoryId,
     state.startLogOffset,
+    state.startRowOffset,
     state.windowAnchorReady,
     vscode,
   ]);
@@ -566,6 +567,7 @@ function Workbench() {
       setState((current) => ({
         ...current,
         startLogOffset: 0,
+        startRowOffset: 0,
         nextLogOffset: 0,
         graphContinuation: undefined,
         graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
@@ -629,6 +631,7 @@ function Workbench() {
       commitListRevision: current.commitListRevision + 1,
       nextLogOffset: 0,
       startLogOffset: 0,
+      startRowOffset: 0,
       graphContinuation: undefined,
       graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
       windowAnchorReady: false,
@@ -1159,6 +1162,9 @@ function Workbench() {
       repositories={state.repositories}
       selectedRepositoryId={state.selectedRepositoryId}
       selectedRepositoryOperationState={selectedRepository?.operationState}
+      onOpenSourceControl={() =>
+        send({ type: 'openSourceControl', requestId: requestId('source-control') })
+      }
       refs={state.refs}
       filters={state.filters}
       filterPopup={filterPopup}
@@ -1442,7 +1448,9 @@ function Workbench() {
 
         <section
           ref={logRef}
-          className="log-pane pane"
+          className={`log-pane pane${
+            selectedRepository?.operationState === 'rebase' ? ' rebase-active' : ''
+          }`}
           role="grid"
           aria-label="Commit log"
           tabIndex={0}
@@ -1475,6 +1483,62 @@ function Workbench() {
           }
         >
           {commitToolbar}
+          {selectedRepository?.operationState === 'rebase' ? (
+            <div
+              className="rebase-status-row"
+              role="toolbar"
+              aria-label="Rebase in progress"
+            >
+              <button
+                className="operation-badge"
+                type="button"
+                aria-label="Open Source Control"
+                title="Open Source Control"
+                onClick={() =>
+                  send({
+                    type: 'openSourceControl',
+                    requestId: requestId('source-control'),
+                  })
+                }
+              >
+                Rebasing
+              </button>
+              <div className="rebase-actions" role="group" aria-label="Rebase actions">
+                <button
+                  className="rebase-action-button rebase-continue-button"
+                  type="button"
+                  disabled={
+                    selectedOperationInFlight ||
+                    Boolean(selectedRepository.hasUnresolvedConflicts)
+                  }
+                  title={
+                    selectedRepository.hasUnresolvedConflicts
+                      ? 'Resolve all conflicts before continuing the rebase'
+                      : 'Continue rebase'
+                  }
+                  onClick={() => runOperation({ kind: 'rebaseContinue' })}
+                >
+                  Continue
+                </button>
+                <button
+                  className="rebase-action-button"
+                  type="button"
+                  disabled={selectedOperationInFlight}
+                  onClick={() => runOperation({ kind: 'rebaseSkip' })}
+                >
+                  Skip
+                </button>
+                <button
+                  className="rebase-action-button"
+                  type="button"
+                  disabled={selectedOperationInFlight}
+                  onClick={() => runOperation({ kind: 'rebaseAbort' })}
+                >
+                  Abort
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className="log-header-viewport">
             <div className="log-header" role="row" ref={logHeaderRef}>
               <span className="column-header" role="columnheader">

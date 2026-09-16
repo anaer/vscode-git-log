@@ -70,6 +70,8 @@ export interface WorkbenchState {
   maxCachedCommits: number;
   nextLogOffset: number;
   startLogOffset: number;
+  /** Rendered rows discarded from the front; unlike startLogOffset, this includes graph context. */
+  startRowOffset: number;
   graphContinuation: GraphContinuationState | undefined;
   graphLayout: GraphLayoutCache;
   windowAnchorReady: boolean;
@@ -116,6 +118,7 @@ export const initialWorkbenchState: WorkbenchState = {
   maxCachedCommits: 5000,
   nextLogOffset: 0,
   startLogOffset: 0,
+  startRowOffset: 0,
   graphContinuation: undefined,
   graphLayout: EMPTY_GRAPH_LAYOUT_CACHE,
   windowAnchorReady: false,

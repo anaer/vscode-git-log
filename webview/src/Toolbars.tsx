@@ -51,6 +51,7 @@ export interface CommitToolbarProps {
   repositories: readonly RepositorySummary[];
   selectedRepositoryId: string | undefined;
   selectedRepositoryOperationState: string | undefined;
+  onOpenSourceControl(): void;
   refs: readonly { fullName: string; shortName: string }[];
   filters: LogFilters;
   filterPopup: FilterPopupKind | undefined;
@@ -76,12 +77,17 @@ export interface CommitToolbarProps {
   onResetFilters(): void;
 }
 
+function operationStateLabel(state: string): string {
+  return state === 'rebase' ? 'Rebasing' : state;
+}
+
 export function CommitToolbar({
   history,
   folderHistory,
   repositories,
   selectedRepositoryId,
   selectedRepositoryOperationState,
+  onOpenSourceControl,
   refs,
   filters,
   filterPopup,
@@ -177,7 +183,7 @@ export function CommitToolbar({
         </div>
       ) : null}
       {repositories.length > 1 ? (
-        <label className="field repository-field">
+        <div className="field repository-field">
           <span className="sr-only">Repository</span>
           <select
             aria-label="Repository"
@@ -190,16 +196,34 @@ export function CommitToolbar({
             {repositories.map((repository) => (
               <option value={repository.id} key={repository.id}>
                 {repository.displayName}
-                {repository.operationState ? ` · ${repository.operationState}` : ''}
+                {repository.operationState
+                  ? ` · ${operationStateLabel(repository.operationState)}`
+                  : ''}
               </option>
             ))}
           </select>
-          {selectedRepositoryOperationState ? (
-            <span className="operation-badge">{selectedRepositoryOperationState}</span>
+          {selectedRepositoryOperationState && selectedRepositoryOperationState !== 'rebase' ? (
+            <button
+              className="operation-badge"
+              type="button"
+              aria-label="Open Source Control"
+              title="Open Source Control"
+              onClick={onOpenSourceControl}
+            >
+              {operationStateLabel(selectedRepositoryOperationState)}
+            </button>
           ) : null}
-        </label>
-      ) : selectedRepositoryOperationState ? (
-        <span className="operation-badge">{selectedRepositoryOperationState}</span>
+        </div>
+      ) : selectedRepositoryOperationState && selectedRepositoryOperationState !== 'rebase' ? (
+        <button
+          className="operation-badge"
+          type="button"
+          aria-label="Open Source Control"
+          title="Open Source Control"
+          onClick={onOpenSourceControl}
+        >
+          {operationStateLabel(selectedRepositoryOperationState)}
+        </button>
       ) : null}
       <label className="field search-field">
         <input

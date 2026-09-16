@@ -151,6 +151,16 @@ describe('parseWebviewMessage', () => {
         operation: { kind: 'reset', hash: 'abcdef1', mode: 'hard' },
       }),
     ).toMatchObject({ type: 'runOperation', operation: { kind: 'reset', mode: 'hard' } });
+    for (const kind of ['rebaseContinue', 'rebaseSkip', 'rebaseAbort']) {
+      expect(
+        protocol.parseWebviewMessage({
+          type: 'runOperation',
+          requestId: `operation-${kind}`,
+          repositoryId: 'repository-1',
+          operation: { kind },
+        }),
+      ).toMatchObject({ type: 'runOperation', operation: { kind } });
+    }
     expect(
       protocol.parseWebviewMessage({
         type: 'runOperation',
@@ -251,6 +261,12 @@ describe('parseWebviewMessage', () => {
     });
     expect(
       protocol.parseWebviewMessage({
+        type: 'openSourceControl',
+        requestId: 'source-control-1',
+      }),
+    ).toEqual({ type: 'openSourceControl', requestId: 'source-control-1' });
+    expect(
+      protocol.parseWebviewMessage({
         type: 'copyToClipboard',
         requestId: 'copy-1',
         text: 'diagnostic',
@@ -264,7 +280,7 @@ describe('parseWebviewMessage', () => {
         scrollTop: 8400,
         logOffset: 5000,
         graphContinuation: {
-          lanes: [{ id: 1, target: 'abcdef1', colorIndex: 2 }],
+          lanes: [{ id: 1, target: 'abcdef1', colorIndex: 2, collapsed: true }],
           nextLaneId: 3,
           nextColorIndex: 4,
         },
@@ -274,9 +290,23 @@ describe('parseWebviewMessage', () => {
       scrollTop: 8400,
       logOffset: 5000,
       graphContinuation: {
-        lanes: [{ id: 1, target: 'abcdef1', colorIndex: 2 }],
+        lanes: [{ id: 1, target: 'abcdef1', colorIndex: 2, collapsed: true }],
       },
     });
+    expect(
+      protocol.parseWebviewMessage({
+        type: 'updateScrollAnchor',
+        requestId: 'scroll-invalid-collapsed-lane',
+        repositoryId: 'repository-1',
+        scrollTop: 8400,
+        logOffset: 5000,
+        graphContinuation: {
+          lanes: [{ id: 1, target: 'abcdef1', colorIndex: 2, collapsed: 'yes' }],
+          nextLaneId: 3,
+          nextColorIndex: 4,
+        },
+      }),
+    ).toBeUndefined();
     expect(
       protocol.parseWebviewMessage({
         type: 'updateScrollAnchor',
