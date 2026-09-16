@@ -2,6 +2,39 @@
 
 All notable changes to Git Log are documented in this file.
 
+## 26.916.1516
+
+### Added
+
+- Batch **"Edit Commit Messages…"** in the commit context menu: rewrite the message of any reachable commit(s) — not just `HEAD` — via a pure-TypeScript git-object rebuild with an explicit backup branch and an atomic `update-ref` compare-and-swap (no external runtime). Works on a dirty worktree, supports merge commits, and prompts for a destructive-operation confirmation. Multi-select edits one commit at a time with ‹/› navigation.
+- **Rebase continuation controls** in the workbench: continue / skip / abort an in-progress rebase, with an unresolved-conflict badge and a dedicated status row, plus an **Open Source Control** action that jumps to VS Code's SCM view.
+- **Date-range picker**: a custom calendar with year/month inputs to set explicit `dateFrom`/`dateTo` bounds on the log filters.
+
+### Changed
+
+- The **commit graph folds hidden commits correctly under filters**: when path/text filters hide commits, collapsed parent lines are threaded through and pagination counts matches, so hidden commits no longer distort the DAG; scroll position is compensated via a start-row offset.
+- **Compact default panel sizes**: the Commit Details default height and Branches (refs) default width now take each panel's minimum draggable size (`detailsHeight` 100, `refsWidth` 160) instead of the protocol floor, giving the commit list more room on first open.
+
+### Fixed
+
+- The Details pane renders a multi-line commit message verbatim (subject line stripped, whitespace preserved) instead of splitting per line and dropping blank lines.
+- Dialog textareas auto-grow to their content height (VS Code's baseline Chromium lacks CSS `field-sizing: content`).
+- Corrected "history ended" handling that failed to infer further matches, and report in-progress rebase conflicts.
+
+### Internal
+
+- Added a commands-and-menus reference to the Chinese README covering the extension's commands, command-palette visibility, the VS Code context menu, and in-app right-click menus.
+
+## 0.1.1
+
+### Changed
+
+- Widened the default date-column width (125 → 150) and switched the log grid columns to `minmax()` with per-column CSS variables (author/date/refs) instead of `max-content`, for a more stable, resizable layout.
+
+### Fixed
+
+- Truncated commit subjects now expose their full text via a hover tooltip.
+
 ## 0.1.0
 
 ### Added
@@ -27,7 +60,7 @@ All notable changes to Git Log are documented in this file.
 
 ### Internal
 
-- Split the context menu and the stash, amend, squash, named-operation, and history-parent-picker dialogs out of the monolithic `App.tsx` into dedicated components (`ContextMenu.tsx`, `Dialogs.tsx`), with shared helpers moved to `webviewUtils.ts`. No user-visible behavior change; the codebase refactor follows ADR-0003 (Zustand + incremental split).
+- Split the context menu and the stash, amend, squash, named-operation, and history-parent-picker dialogs out of the monolithic `App.tsx` into dedicated components (`ContextMenu.tsx`, `Dialogs.tsx`), with shared helpers moved to `webviewUtils.ts`. No user-visible behavior change; the refactor uses an external per-instance store and incremental component extraction.
 - Extracted file icon kind mapping and SVG rendering into a shared module (`src/shared/fileIconKind.ts`) used by both the diff comparison view and the workbench webview.
 
 ## 0.0.9

@@ -25,23 +25,23 @@ code --install-extension ascenx.git-log
 
 ### Git Log 主界面
 
-![Git Log 主界面](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/git_log_workbench.png)
+![Git Log 主界面](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/git_log_workbench.png)
 
 ### 当前行 Blame 与编辑器菜单
 
-![当前行 Blame 与编辑器菜单](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/git_blame_and_menu.png)
+![当前行 Blame 与编辑器菜单](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/git_blame_and_menu.png)
 
 ### 文件历史
 
-![文件历史](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/file_history.png)
+![文件历史](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/file_history.png)
 
 ### 行历史
 
-![行历史](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/line_history.png)
+![行历史](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/line_history.png)
 
 ### 与分支或标签比较
 
-![与分支或标签比较](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/branch_compare.png)
+![与分支或标签比较](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/branch_compare.png)
 
 ## 核心原则
 

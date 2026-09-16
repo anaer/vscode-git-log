@@ -25,23 +25,23 @@ code --install-extension ascenx.git-log
 
 ### Git Log Workbench
 
-![Git Log Workbench](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/git_log_workbench.png)
+![Git Log Workbench](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/git_log_workbench.png)
 
 ### Current-line Blame and Editor Menu
 
-![Current-line Blame and Editor Menu](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/git_blame_and_menu.png)
+![Current-line Blame and Editor Menu](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/git_blame_and_menu.png)
 
 ### File History
 
-![File History](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/file_history.png)
+![File History](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/file_history.png)
 
 ### Line History
 
-![Line History](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/line_history.png)
+![Line History](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/line_history.png)
 
 ### Compare with Branch or Tag
 
-![Compare with Branch or Tag](https://raw.githubusercontent.com/ascenx/vscode-git-log/main/images/branch_compare.png)
+![Compare with Branch or Tag](https://raw.githubusercontent.com/anaer/vscode-git-log/main/images/branch_compare.png)
 
 ## Core principles
 
