@@ -7,9 +7,17 @@ export interface ClassifiedGitError {
 }
 
 export function redactGitDiagnostic(value: string): string {
-  return value.replace(/([a-z][a-z0-9+.-]*:\/\/)([^\s/@]+)@/giu, '$1***@');
+  return value
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s]*@/giu, '$1***@')
+    .replace(/([?&](?:access_token|token|password|pat)=)[^&\s]*/giu, '$1***');
 }
 
+/**
+ * Maps a failed Git invocation to a user-facing error category.
+ *
+ * Cancelled commands are handled by callers (they return before classifying),
+ * so there is intentionally no cancellation branch here.
+ */
 export function classifyGitError(error: GitCommandError): ClassifiedGitError {
   const detail = redactGitDiagnostic(error.stderr.toString('utf8').trim() || error.message);
   const lower = detail.toLowerCase();

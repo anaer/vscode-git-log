@@ -349,6 +349,238 @@ select:focus-visible,
   grid-column: 1 / -1;
 }
 
+/* Read-back of the pending selection, so choosing a date gives immediate
+   feedback before the range is applied. */
+.custom-date-preview {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- flatpickr: VS Code theme mapping ----
+   flatpickr 4.6.13 ships no custom properties (its stylesheet contains zero
+   var() calls), so every colour has to be overridden selector by selector.
+   These rules intentionally follow the flatpickr import so that equal-specificity
+   declarations win by source order. */
+
+.flatpickr-calendar,
+.flatpickr-calendar.arrowTop:before,
+.flatpickr-calendar.arrowTop:after,
+.flatpickr-calendar.arrowBottom:before,
+.flatpickr-calendar.arrowBottom:after,
+.dayContainer,
+.flatpickr-days,
+.flatpickr-weekdaycontainer {
+  /* Single source of truth for the popover width. flatpickr hardcodes
+     307.875px onto .flatpickr-days / .dayContainer (including min- and
+     max-width), so changing only .flatpickr-calendar's width makes the 7-column
+     grid overflow its container and clips the calendar. Everything that carries
+     a fixed width has to be re-pointed at this variable together. */
+  --fp-width: 210px;
+}
+
+.flatpickr-calendar {
+  width: var(--fp-width);
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  background: var(--vscode-menu-background);
+  box-shadow: 0 4px 12px var(--vscode-widget-shadow);
+  color: var(--vscode-menu-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+/* .dayContainer and .flatpickr-days ship a fixed 307.875px (with matching min-
+   and max-width) that does not follow the calendar's own width. */
+.flatpickr-days,
+.dayContainer {
+  width: var(--fp-width);
+  min-width: var(--fp-width);
+  max-width: var(--fp-width);
+}
+
+/* The popover's little pointer arrow keeps flatpickr's hardcoded border colours. */
+.flatpickr-calendar:before {
+  border-color: transparent;
+}
+
+.flatpickr-calendar:after {
+  border-color: transparent;
+}
+
+.flatpickr-calendar.arrowTop:before,
+.flatpickr-calendar.arrowTop:after {
+  border-bottom-color: var(--vscode-menu-background);
+}
+
+.flatpickr-calendar.arrowBottom:before,
+.flatpickr-calendar.arrowBottom:after {
+  border-top-color: var(--vscode-menu-background);
+}
+
+.flatpickr-months .flatpickr-month,
+.flatpickr-current-month {
+  background: transparent;
+  color: var(--vscode-menu-foreground);
+  fill: var(--vscode-menu-foreground);
+}
+
+/* The month rail. flatpickr centres .flatpickr-current-month in a 75% box and
+   every control inside it carries its own native spacing, which leaves the
+   header loose and off-centre against the prev/next arrows. The calendar shows a
+   single combined `YYYY-MM` field instead of flatpickr's separate month <select>
+   and year stepper (see DateRangePicker.tsx), so hide the native pair and lay the
+   replacement out on one centred row. */
+.flatpickr-current-month {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month .numInputWrapper {
+  display: none;
+}
+
+/* flatpickr's month/year hooks update this field; it has to fill the room the
+   hidden native controls used to take. */
+.flatpickr-current-month .flatpickr-month-year-input {
+  width: 8ch;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+}
+
+.flatpickr-current-month .flatpickr-month-year-input:hover {
+  background: var(--vscode-input-background);
+}
+
+.flatpickr-current-month .flatpickr-month-year-input:focus {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  outline: none;
+}
+
+/* The prev/next arrows sit inside the header next to the combined field; the
+   native sheets give them 10px padding, which reads as an oversized gap once the
+   month and year controls collapse into one. */
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+  color: var(--vscode-icon-foreground, var(--vscode-menu-foreground));
+  fill: var(--vscode-icon-foreground, var(--vscode-menu-foreground));
+  padding: 8px;
+}
+
+.flatpickr-months .flatpickr-prev-month:hover,
+.flatpickr-months .flatpickr-next-month:hover {
+  color: var(--vscode-menu-foreground);
+}
+
+.flatpickr-months .flatpickr-prev-month svg,
+.flatpickr-months .flatpickr-next-month svg {
+  fill: currentColor;
+}
+
+.flatpickr-weekdays,
+.flatpickr-weekday,
+.flatpickr-weekdays .flatpickr-weekdaycontainer {
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+}
+
+.flatpickr-weekday {
+  font-weight: 600;
+}
+
+.flatpickr-days,
+.dayContainer {
+  border-color: transparent;
+}
+
+.flatpickr-day {
+  /* 7 columns across --fp-width; the 2px deduction accounts for the border so
+     the grid stays on exact column boundaries. */
+  max-width: calc(var(--fp-width) / 7 - 2px);
+  height: calc(var(--fp-width) / 7 - 2px);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-menu-foreground);
+  line-height: calc(var(--fp-width) / 7 - 4px);
+}
+
+.flatpickr-day:hover,
+.flatpickr-day:focus,
+.flatpickr-day.prevMonthDay:hover,
+.flatpickr-day.nextMonthDay:hover {
+  border-color: transparent;
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-menu-foreground);
+}
+
+.flatpickr-day.today {
+  border-color: var(--vscode-focusBorder);
+}
+
+.flatpickr-day.today:hover,
+.flatpickr-day.today:focus {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-menu-foreground);
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange:hover,
+.flatpickr-day.endRange:hover {
+  border-color: transparent;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+/* inRange covers the days between the two picks; flatpickr otherwise paints
+   them a fixed light blue that ignores the theme entirely. */
+.flatpickr-day.inRange,
+.flatpickr-day.prevMonthDay.inRange,
+.flatpickr-day.nextMonthDay.inRange,
+.flatpickr-day.inRange:hover,
+.flatpickr-day.prevMonthDay.inRange:hover,
+.flatpickr-day.nextMonthDay.inRange:hover {
+  border-color: transparent;
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  box-shadow: none;
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-menu-foreground));
+}
+
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover,
+.flatpickr-day.notAllowed,
+.flatpickr-day.notAllowed:hover,
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+  background: transparent;
+  border-color: transparent;
+  color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+}
+
+.flatpickr-day.flatpickr-disabled:hover {
+  cursor: default;
+}
+
 .date-options button,
 .filter-popover .reset-filters {
   width: 100%;

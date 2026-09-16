@@ -40,6 +40,7 @@ import {
   type CommitSelection,
 } from './commitSelection';
 import { ContextMenu } from './ContextMenu';
+import { epochSecondsToDateInput } from './dateInput';
 import { Dialogs } from './Dialogs';
 import { RefsPane } from './RefsPane';
 import { FilesPane } from './FilesPane';
@@ -357,6 +358,11 @@ function Workbench() {
       if (
         target.closest('.context-menu') ||
         target.closest('.filter-popover') ||
+        // flatpickr mounts its calendar on document.body, so it is not a
+        // descendant of the popover that owns the input. Without this the very
+        // click that picks a date would register as an outside click and close
+        // the filter menu before the value reaches React state.
+        target.closest('.flatpickr-calendar') ||
         target.closest('[data-popup-trigger="true"]')
       ) {
         return;
@@ -1169,6 +1175,14 @@ function Workbench() {
         setFilterPopup(popup === undefined ? undefined : popup);
         setFilterPopupAnchor(anchor);
         if (popup === undefined) setFilterPopoverPosition(undefined);
+        // The date fields are drafts until "Apply custom range" is pressed, so
+        // they normally sit empty. Re-seed them from the applied filters when
+        // the date popup opens, otherwise a reopened popup looks blank and
+        // gives no feedback about which range is actually in effect.
+        if (popup === 'date') {
+          setCustomDateFrom(epochSecondsToDateInput(state.filters.dateFrom));
+          setCustomDateTo(epochSecondsToDateInput(state.filters.dateTo));
+        }
       }}
       onCustomDateFromChange={setCustomDateFrom}
       onCustomDateToChange={setCustomDateTo}

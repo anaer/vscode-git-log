@@ -245,4 +245,83 @@ describe('workbench styles', () => {
     );
     expect(styles).toMatch(/\.stash-tool-row\s*\{[^}]*flex-wrap:\s*wrap;/su);
   });
+
+  it('keeps the flatpickr calendar grid inside its own width', async () => {
+    const styles = await readFile('webview/src/styles.css', 'utf8');
+
+    // flatpickr hardcodes 307.875px on .flatpickr-days and .dayContainer
+    // (including min-/max-width). Narrowing only .flatpickr-calendar would make
+    // the 7-column day grid overflow its container and clip the calendar, so all
+    // three have to be driven by the same single-source-of-truth variable.
+    expect(styles).toMatch(/--fp-width:\s*\d+px;/u);
+    expect(styles).toMatch(/\.flatpickr-days,\s*\n?\s*\.dayContainer\s*\{[^}]*width:\s*var\(--fp-width\);[^}]*min-width:\s*var\(--fp-width\);[^}]*max-width:\s*var\(--fp-width\);/su);
+    expect(styles).toMatch(/\.flatpickr-calendar\s*\{[^}]*width:\s*var\(--fp-width\);/su);
+    // Day cells must scale with the variable rather than stay at a fixed size.
+    expect(styles).toMatch(/\.flatpickr-day\s*\{[^}]*max-width:\s*calc\(var\(--fp-width\)\s*\/\s*7/su);
+    expect(styles).toMatch(/\.flatpickr-day\s*\{[^}]*height:\s*calc\(var\(--fp-width\)\s*\/\s*7/su);
+  });
+
+  it('imports the flatpickr stylesheet before the workbench stylesheet', async () => {
+    const entry = await readFile('webview/src/index.tsx', 'utf8');
+
+    // flatpickr's stylesheet sets hardcoded colours at the same specificity as
+    // our overrides, so ours only win if they come later in the bundled
+    // stylesheet — esbuild emits CSS imports in the order they are first
+    // encountered. Importing flatpickr's CSS from a component (rather than from
+    // the entry point) makes the emitted order depend on module traversal, which
+    // silently placed several overrides *before* flatpickr's own rules and
+    // defeated them. The entry point has to state the order explicitly.
+    const flatpickrAt = entry.search(/import\s+['"]flatpickr\/dist\/flatpickr\.css['"]/u);
+    const stylesAt = entry.search(/import\s+['"]\.\/styles\.css['"]/u);
+
+    expect(flatpickrAt).toBeGreaterThanOrEqual(0);
+    expect(stylesAt).toBeGreaterThanOrEqual(0);
+    expect(flatpickrAt).toBeLessThan(stylesAt);
+  });
+
+  it('hides the native month/year controls and centres the combined field', async () => {
+    const styles = await readFile('webview/src/styles.css', 'utf8');
+    const picker = await readFile('webview/src/DateRangePicker.tsx', 'utf8');
+
+    // flatpickr builds a month <select> plus a year number input into
+    // .flatpickr-current-month. The calendar shows one combined `YYYY-MM` field
+    // instead, so the native pair has to be hidden and the replacement centred
+    // in the header.
+    expect(styles).toMatch(
+      /\.flatpickr-current-month\s+\.flatpickr-monthDropdown-months,\s*\.flatpickr-current-month\s+\.numInputWrapper\s*\{[^}]*display:\s*none;/su,
+    );
+    expect(styles).toMatch(
+      /\.flatpickr-current-month\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/su,
+    );
+    expect(styles).toMatch(
+      /\.flatpickr-current-month\s+\.flatpickr-month-year-input\s*\{[^}]*width:\s*\d+ch;/su,
+    );
+    // The field is injected by the component, so the two sides have to agree on
+    // the class name.
+    expect(picker).toContain('flatpickr-month-year-input');
+  });
+
+  it('compacts the header arrows now that month and year share one control', async () => {
+    const styles = await readFile('webview/src/styles.css', 'utf8');
+
+    expect(styles).toMatch(
+      /\.flatpickr-months\s+\.flatpickr-prev-month,\s*\.flatpickr-months\s+\.flatpickr-next-month\s*\{[^}]*padding:\s*8px;/su,
+    );
+  });
+
+  it('themes the combined month/year field with VS Code colours', async () => {
+    const styles = await readFile('webview/src/styles.css', 'utf8');
+
+    // The field borrows VS Code's input colours so it reads as an editable
+    // control rather than a label.
+    expect(styles).toMatch(
+      /\.flatpickr-current-month\s+\.flatpickr-month-year-input\s*\{[^}]*background:\s*transparent;[^}]*color:\s*inherit;/su,
+    );
+    expect(styles).toMatch(
+      /\.flatpickr-current-month\s+\.flatpickr-month-year-input:focus\s*\{[^}]*border-color:\s*var\(--vscode-focusBorder\);/su,
+    );
+    expect(styles).toMatch(
+      /\.flatpickr-current-month\s+\.flatpickr-month-year-input:focus\s*\{[^}]*color:\s*var\(--vscode-input-foreground\);/su,
+    );
+  });
 });

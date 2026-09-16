@@ -26,6 +26,8 @@ export class RepositoryWatchManager implements WatchDisposable {
 
   replace(repositories: readonly RepositorySummary[]): void {
     this.disposeWatchers();
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
     const targets = new Map<string, { basePath: string; pattern: string; repositoryIds: Set<string> }>();
 
     for (const repository of repositories) {

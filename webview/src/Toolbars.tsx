@@ -1,7 +1,7 @@
-import { useRef } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
 import type { LogFilters } from '../../src/protocol/messages';
 import type { RepositorySummary } from '../../src/shared/models';
+import { DateField } from './DateRangePicker';
 import {
   Archive,
   Branch,
@@ -29,15 +29,6 @@ const dateRangeOptions: readonly {
   { label: 'Last 7 days', kind: 'days', days: 7 },
   { label: 'Last 30 days', kind: 'days', days: 30 },
 ];
-
-const formatDatePickerInput = (rawValue: string): string => {
-  const digits = rawValue.replace(/\D/g, '').slice(0, 8);
-  if (!digits) return '';
-  let value = digits.slice(0, 4);
-  if (digits.length > 4) value += `-${digits.slice(4, 6)}`;
-  if (digits.length > 6) value += `-${digits.slice(6, 8)}`;
-  return value;
-};
 
 export interface AuthorFilterOption {
   key: string;
@@ -361,51 +352,41 @@ export function CommitToolbar({
                 </button>
               ))}
               <div className="custom-date-range">
-                <label>
-                  <span>From</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={10}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="2026-09-07"
-                    aria-label="Custom date from"
-                    value={customDateFrom}
-                    onChange={(event) =>
-                      onCustomDateFromChange(formatDatePickerInput(event.target.value))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>To</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={10}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="2026-09-07"
-                    aria-label="Custom date to"
-                    value={customDateTo}
-                    onChange={(event) =>
-                      onCustomDateToChange(formatDatePickerInput(event.target.value))
-                    }
-                  />
-                </label>
+                <DateField
+                  id="custom-date-from"
+                  label="From"
+                  ariaLabel="Custom date from"
+                  value={customDateFrom}
+                  maxDate={customDateTo || undefined}
+                  onChange={onCustomDateFromChange}
+                />
+                <DateField
+                  id="custom-date-to"
+                  label="To"
+                  ariaLabel="Custom date to"
+                  value={customDateTo}
+                  minDate={customDateFrom || undefined}
+                  onChange={onCustomDateToChange}
+                />
+                {customDateFrom || customDateTo ? (
+                  <div className="custom-date-preview" aria-live="polite">
+                    {`${customDateFrom || '…'} → ${customDateTo || '…'}`}
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   disabled={!customDateFrom && !customDateTo}
-                  onClick={() =>
-                    onApplyDateRange(
-                      customDateFrom
-                        ? Math.floor(new Date(`${customDateFrom}T00:00:00`).getTime() / 1000)
-                        : undefined,
-                      customDateTo
-                        ? Math.floor(new Date(`${customDateTo}T23:59:59`).getTime() / 1000)
-                        : undefined,
-                    )
-                  }
+                  onClick={() => {
+                    // Both fields are flatpickr-backed, so each value is either
+                    // an empty string or a valid 'YYYY-MM-DD' date.
+                    const from = customDateFrom
+                      ? Math.floor(new Date(`${customDateFrom}T00:00:00`).getTime() / 1000)
+                      : undefined;
+                    const to = customDateTo
+                      ? Math.floor(new Date(`${customDateTo}T23:59:59`).getTime() / 1000)
+                      : undefined;
+                    onApplyDateRange(from, to);
+                  }}
                 >
                   Apply custom range
                 </button>

@@ -245,6 +245,7 @@
     "package": "npm run clean && npm run build && vsce package --no-dependencies --allow-missing-repository --no-rewrite-relative-links"
   },
   "dependencies": {
+    "flatpickr": "^4.6.13",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "shiki": "^3.23.0",
