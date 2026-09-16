@@ -17,9 +17,9 @@ import { createWebviewHtml } from './createWebviewHtml';
 import { WorkbenchController } from './WorkbenchController';
 
 const DEFAULT_LAYOUT: WorkbenchLayout = {
-  refsWidth: 220,
+  refsWidth: 160,
   filesWidth: 320,
-  detailsHeight: 156,
+  detailsHeight: 100,
   detailsPlacement: 'bottom',
   filesViewMode: 'tree',
   refsColumnWidth: 150,

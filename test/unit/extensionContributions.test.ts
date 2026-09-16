@@ -45,7 +45,7 @@ describe('extension contributions', () => {
       publisher?: string;
     };
 
-    expect(`${packageJson.publisher}.${packageJson.name}`).toBe('ascenx.git-log');
+    expect(`${packageJson.publisher}.${packageJson.name}`).toBe('anaer.a-git-log');
   });
 
   it('declares VS Code 1.85 and Node 18 as the extension compatibility baseline', async () => {
@@ -86,8 +86,8 @@ describe('extension contributions', () => {
 
     const icon = await readFile(packageJson.icon!);
     expect(icon.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-    expect(icon.readUInt32BE(16)).toBe(128);
-    expect(icon.readUInt32BE(20)).toBe(128);
+    expect(icon.readUInt32BE(16)).toBe(24);
+    expect(icon.readUInt32BE(20)).toBe(24);
   });
 
   it('uses Git Log branding without third-party product references', async () => {
@@ -95,7 +95,7 @@ describe('extension contributions', () => {
       displayName?: string;
       description?: string;
     };
-    expect(packageJson.displayName).toBe('Git Log — Commit Graph & History');
+    expect(packageJson.displayName).toBe('A Git Log — Commit Graph & History');
     expect(packageJson.description).toBe(
       'A visual Git log, commit graph, history browser, and repository operations extension for Visual Studio Code.',
     );
@@ -135,7 +135,7 @@ describe('extension contributions', () => {
       };
     };
 
-    expect(packageJson.version).toBe('0.0.9');
+    expect(packageJson.version).toBe('0.1.1');
     expect(packageJson.contributes?.viewsWelcome).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.activitybar).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.panel).toEqual([

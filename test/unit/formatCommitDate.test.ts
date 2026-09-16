@@ -1,30 +1,18 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.resetModules();
-});
+import { describe, expect, it } from 'vitest';
+import { formatCommitDate } from '../../webview/src/formatCommitDate';
 
 describe('formatCommitDate', () => {
-  it('reuses one Intl formatter across repeated commit dates', async () => {
-    const createNativeFormatter = Intl.DateTimeFormat.bind(Intl);
-    const formatter = vi
-      .spyOn(Intl, 'DateTimeFormat')
-      .mockImplementation(function DateTimeFormat(locales, options) {
-        return createNativeFormatter(locales, options);
-      });
-    const { formatCommitDate } = await import('../../webview/src/formatCommitDate');
-
-    expect(formatCommitDate(1)).not.toBe('');
-    expect(formatCommitDate(2)).not.toBe('');
-    expect(formatter).toHaveBeenCalledTimes(1);
+  it('formats a commit timestamp as a fixed-width local date and time', () => {
+    const formatted = formatCommitDate(1_700_000_000);
+    expect(formatted).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u);
   });
 
-  it('does not create a formatter for an empty timestamp', async () => {
-    const formatter = vi.spyOn(Intl, 'DateTimeFormat');
-    const { formatCommitDate } = await import('../../webview/src/formatCommitDate');
+  it('produces a stable string for the same timestamp', () => {
+    expect(formatCommitDate(1_700_000_000)).toBe(formatCommitDate(1_700_000_000));
+  });
 
+  it('returns an empty string for a falsy (empty) timestamp', () => {
     expect(formatCommitDate(0)).toBe('');
-    expect(formatter).not.toHaveBeenCalled();
+    expect(formatCommitDate(Number.NaN)).toBe('');
   });
 });

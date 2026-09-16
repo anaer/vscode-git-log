@@ -1701,6 +1701,7 @@ function Workbench() {
           openCommitComparison={openCommitComparison}
           openDiff={openDiff}
           openFile={openFile}
+          onFilterByPath={(path) => applyFilters({ ...state.filters, paths: [path] })}
 setSquashOperation={setSquashOperation}
           setAmendDialog={setAmendDialog}
           setNamedOperation={setNamedOperation}

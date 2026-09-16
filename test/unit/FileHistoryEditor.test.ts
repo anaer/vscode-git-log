@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { FileHistoryService } from '../../src/git/FileHistoryService';
 import type { GitService } from '../../src/git/GitService';
 import type { HistoryEntry, RepositorySummary } from '../../src/shared/models';
@@ -115,7 +116,7 @@ describe('FileHistoryEditor', () => {
     expect(panel.webview.html).toContain('data-history-hash="2222222222222222222222222222222222222222"');
     expect(panel.webview.html).toContain('update app');
     expect(panel.webview.html).toContain('Inline Diff');
-    expect(fileHistoryService.getFileHistory).toHaveBeenCalledWith('/repo', 'src/app.ts', [], {
+    expect(fileHistoryService.getFileHistory).toHaveBeenCalledWith(fileURLToPath(repository.rootUri), 'src/app.ts', [], {
       limit: 21,
       skip: 0,
       signal: expect.any(AbortSignal),
@@ -125,7 +126,7 @@ describe('FileHistoryEditor', () => {
     await receiveMessage({ type: 'fileHistoryReady' });
 
     expect(gitService.getFilePatch).toHaveBeenCalledWith(
-      '/repo',
+      fileURLToPath(repository.rootUri),
       first.hash,
       parent,
       'src/app.ts',
@@ -157,7 +158,7 @@ describe('FileHistoryEditor', () => {
     });
     expect(openNativeDiff).toHaveBeenCalledWith(
       repository,
-      '/repo',
+      fileURLToPath(repository.rootUri),
       first,
       parent,
       expect.any(AbortSignal),
@@ -318,7 +319,7 @@ describe('FileHistoryEditor', () => {
     await receiveMessage({ type: 'fileHistoryReady' });
 
     expect(getFilePatch).toHaveBeenCalledWith(
-      '/repo',
+      fileURLToPath(repository.rootUri),
       entry.hash,
       entry.parents[0],
       'B.txt',
@@ -383,7 +384,7 @@ describe('FileHistoryEditor', () => {
     await receiveMessage({ type: 'fileHistoryReady' });
 
     expect(getFilePatch).toHaveBeenCalledWith(
-      '/repo',
+      fileURLToPath(repository.rootUri),
       entry.hash,
       entry.parents[0],
       entry.path,
@@ -466,14 +467,14 @@ describe('FileHistoryEditor', () => {
     await receiveMessage({ type: 'selectFileHistoryCommit', hash: second.hash });
 
     expect(getFilePatch).toHaveBeenCalledWith(
-      '/repo',
+      fileURLToPath(repository.rootUri),
       second.hash,
       second.parents[0],
       'src/app.ts',
       undefined,
       expect.any(AbortSignal),
     );
-    expect(getFileHistory).toHaveBeenLastCalledWith('/repo', 'src/app.ts', [], {
+    expect(getFileHistory).toHaveBeenLastCalledWith(fileURLToPath(repository.rootUri), 'src/app.ts', [], {
       limit: 2,
       skip: 1,
       signal: expect.any(AbortSignal),

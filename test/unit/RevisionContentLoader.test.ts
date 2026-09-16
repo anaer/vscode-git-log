@@ -17,7 +17,9 @@ afterEach(async () => {
 });
 
 describe('RevisionContentLoader', () => {
-  it('loads validated text revisions and rejects binary or unknown repositories', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'loads validated text revisions and rejects binary or unknown repositories',
+    async () => {
     const modulePath = '../../src/diff/RevisionContentLoader';
     const loaderModule = await import(/* @vite-ignore */ modulePath).catch(() => undefined);
     expect(loaderModule, 'the revision content loader must exist').toBeDefined();

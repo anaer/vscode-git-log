@@ -2671,7 +2671,7 @@ describe('WorkbenchApp', () => {
     expect(search).toHaveValue('');
     fireEvent.keyDown(search, { key: 'Escape' });
     expect(screen.getByRole('grid', { name: 'Commit log' })).toHaveFocus();
-    fireEvent.click(screen.getByRole('button', { name: 'Date' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filter by date range' }));
     expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Yesterday' })).toBeInTheDocument();
     expect(screen.getByLabelText('Custom date from')).toBeInTheDocument();
@@ -2679,29 +2679,30 @@ describe('WorkbenchApp', () => {
     vi.useRealTimers();
   });
 
-  it('positions commit filter popovers from the visible commit pane bounds', () => {
+  it('positions commit filter popovers from the clicked filter button', () => {
     const innerWidth = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1000);
     try {
       render(<App />);
-      const commitLog = screen.getByRole('grid', { name: 'Commit log' });
-      commitLog.getBoundingClientRect = () =>
+      const pathButton = screen.getByRole('button', { name: 'Filter by path' });
+      pathButton.getBoundingClientRect = () =>
         ({
-          x: 220,
-          y: 100,
-          top: 100,
-          right: 564,
-          bottom: 600,
-          left: 220,
-          width: 344,
-          height: 500,
+          x: 200,
+          y: 110,
+          top: 110,
+          right: 227,
+          bottom: 134,
+          left: 200,
+          width: 27,
+          height: 24,
           toJSON: () => ({}),
         }) as DOMRect;
 
-      fireEvent.click(screen.getByRole('button', { name: 'Paths' }));
+      fireEvent.click(pathButton);
 
       expect(screen.getByRole('dialog', { name: 'paths filter' })).toHaveStyle({
+        left: '200px',
         top: '138px',
-        right: '444px',
+        right: 'auto',
       });
     } finally {
       innerWidth.mockRestore();
@@ -3429,7 +3430,7 @@ describe('WorkbenchApp', () => {
     expect(screen.getByRole('navigation', { name: 'Git references' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Global Git actions' })).toBeInTheDocument();
     expect(document.querySelector<HTMLElement>('.workspace-grid')?.style.gridTemplateColumns).toBe(
-      '220px 1px minmax(340px, 1fr) 0px 0px',
+      '160px 1px minmax(340px, 1fr) 0px 0px',
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand changed files pane' }));
@@ -4594,6 +4595,8 @@ describe('WorkbenchApp', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open Current File' }));
     fireEvent.contextMenu(screen.getByText('app.ts'));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Path' }));
+    fireEvent.contextMenu(screen.getByText('app.ts'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Filter by Path' }));
 
     expect(postedMessages).toEqual(
       expect.arrayContaining([
@@ -4623,6 +4626,10 @@ describe('WorkbenchApp', () => {
         expect.objectContaining({
           type: 'copyToClipboard',
           text: 'src/app.ts',
+        }),
+        expect.objectContaining({
+          type: 'updateFilters',
+          filters: expect.objectContaining({ paths: ['src/app.ts'] }),
         }),
       ]),
     );
@@ -4695,9 +4702,9 @@ describe('WorkbenchApp', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Hash' }));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'User' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filter by author' }));
     expect(screen.getByRole('dialog', { name: 'user filter' })).toBeInTheDocument();
-    const userButton = screen.getByRole('button', { name: 'User' });
+    const userButton = screen.getByRole('button', { name: 'Filter by author' });
     fireEvent.pointerDown(userButton);
     fireEvent.click(userButton);
     expect(screen.queryByRole('dialog', { name: 'user filter' })).not.toBeInTheDocument();
@@ -4893,7 +4900,7 @@ describe('WorkbenchApp', () => {
       );
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'User' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filter by author' }));
     const authorNames = [
       ...screen.getByRole('dialog', { name: 'user filter' }).querySelectorAll('.filter-option span'),
     ].map((element) => element.textContent);

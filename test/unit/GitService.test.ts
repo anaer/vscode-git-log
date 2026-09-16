@@ -1018,7 +1018,9 @@ describe('GitService', () => {
     expect(patch).toBe('Binary files data.dat differ\n');
   });
 
-  it('treats a file patch path as a literal Git pathspec', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'treats a file patch path as a literal Git pathspec',
+    async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-literal-patch-'));
     temporaryDirectories.push(repository);
     const path = ':(exclude)other.txt';

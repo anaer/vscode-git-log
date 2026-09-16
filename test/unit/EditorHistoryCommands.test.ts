@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { EditorGitContextService } from '../../src/editor/EditorGitContextService';
 import { RepositoryRegistry } from '../../src/repositories/RepositoryRegistry';
 
@@ -43,7 +44,7 @@ describe('EditorHistoryCommands', () => {
     await commands.showFileHistory();
 
     expect(resolve).toHaveBeenCalledWith('/workspace/project/src/app.ts');
-    expect(registry.getRoot('repo-1')).toBe('/workspace/project');
+    expect(registry.getRoot('repo-1')).toBe(fileURLToPath(repository.rootUri));
     expect(openFileHistory).toHaveBeenCalledWith({
       kind: 'file',
       repository,

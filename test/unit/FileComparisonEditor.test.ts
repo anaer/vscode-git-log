@@ -4,6 +4,7 @@ import type { WorkingSnapshotContentProvider } from '../../src/diff/WorkingSnaps
 import type { GitService } from '../../src/git/GitService';
 import { RepositoryRegistry } from '../../src/repositories/RepositoryRegistry';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 const { file } = vi.hoisted(() => ({
   file: vi.fn((path: string) => ({ scheme: 'file', fsPath: path })),
@@ -44,7 +45,7 @@ describe('FileComparisonEditor', () => {
 
     await editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'a'.repeat(40),
       revisionLabel: 'feature',
       path: 'src/app.ts',
@@ -74,7 +75,7 @@ describe('FileComparisonEditor', () => {
 
   it('uses the real file URI and an empty revision side for a saved new file', async () => {
     const { FileComparisonEditor } = await import('../../src/editor/FileComparisonEditor');
-    const workingFileUri = { scheme: 'file', fsPath: '/repo/new.ts' };
+    const workingFileUri = { scheme: 'file', fsPath: join(fileURLToPath(pathToFileURL('/repo')), 'new.ts') };
     file.mockReturnValueOnce(workingFileUri);
     const openWorkingFileAgainstRevision = vi.fn().mockResolvedValue(undefined);
     const create = vi.fn();
@@ -87,13 +88,13 @@ describe('FileComparisonEditor', () => {
 
     await editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'b'.repeat(40),
       revisionLabel: 'v1',
       path: 'new.ts',
     });
 
-    expect(file).toHaveBeenCalledWith('/repo/new.ts');
+    expect(file).toHaveBeenCalledWith(join(fileURLToPath(pathToFileURL('/repo')), 'new.ts'));
     expect(create).not.toHaveBeenCalled();
     expect(openWorkingFileAgainstRevision).toHaveBeenCalledWith('repo-1', {
       revision: 'b'.repeat(40),
@@ -131,7 +132,7 @@ describe('FileComparisonEditor', () => {
 
     const slower = editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'a'.repeat(40),
       revisionLabel: 'old-ref',
       path: 'src/app.ts',
@@ -140,7 +141,7 @@ describe('FileComparisonEditor', () => {
     await vi.waitFor(() => expect(hasFileAtRevision).toHaveBeenCalledOnce());
     await editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'b'.repeat(40),
       revisionLabel: 'latest-ref',
       path: 'src/app.ts',
@@ -176,7 +177,7 @@ describe('FileComparisonEditor', () => {
 
     const first = editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'a'.repeat(40),
       revisionLabel: 'old-ref',
       path: 'src/app.ts',
@@ -185,7 +186,7 @@ describe('FileComparisonEditor', () => {
     await vi.waitFor(() => expect(openWorkingFileAgainstRevision).toHaveBeenCalledOnce());
     const latest = editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'b'.repeat(40),
       revisionLabel: 'latest-ref',
       path: 'src/app.ts',
@@ -227,7 +228,7 @@ describe('FileComparisonEditor', () => {
 
     await editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'a'.repeat(40),
       revisionLabel: 'feature',
       path: 'src/app.ts',
@@ -259,7 +260,7 @@ describe('FileComparisonEditor', () => {
 
     await expect(editor.open({
       repository,
-      cwd: '/repo',
+      cwd: fileURLToPath(pathToFileURL('/repo')),
       revision: 'a'.repeat(40),
       revisionLabel: 'feature',
       path: 'src/app.ts',

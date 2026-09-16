@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DiffManager } from '../../src/diff/DiffManager';
 import { nativeDiffResourceKey } from '../../src/diff/NativeDiffResources';
 import type { GitService } from '../../src/git/GitService';
@@ -53,7 +54,7 @@ describe('HistoryNativeDiffOpener', () => {
     const open = vi.fn().mockImplementation((_repositoryId, request) => {
       request.onWillOpen(original, modified);
       repositories.replace([]);
-      expect(repositories.getRoot('repo-1')).toBe('/repo');
+      expect(repositories.getRoot('repo-1')).toBe(fileURLToPath(repository.rootUri));
       return Promise.resolve();
     });
     const repositories = new RepositoryRegistry();

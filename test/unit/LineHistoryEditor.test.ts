@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { FileHistoryService } from '../../src/git/FileHistoryService';
 import type { GitService } from '../../src/git/GitService';
 import type { RepositorySummary } from '../../src/shared/models';
@@ -133,7 +134,7 @@ describe('LineHistoryEditor', () => {
     expect(panel.webview.html).toContain('const contentOnly = true');
     expect(panel.webview.html).toContain('const changesOnly = false');
     expect(getLineHistory).toHaveBeenCalledWith(
-      '/repo',
+      fileURLToPath(repository.rootUri),
       'src/app.ts',
       8,
       8,
@@ -144,7 +145,7 @@ describe('LineHistoryEditor', () => {
     await receiveMessage({ type: 'fileHistoryReady' });
 
     expect(getFilePatch).toHaveBeenCalledWith(
-      '/repo',
+      fileURLToPath(repository.rootUri),
       hash,
       'b'.repeat(40),
       'src/app.ts',
@@ -175,7 +176,7 @@ describe('LineHistoryEditor', () => {
     await receiveMessage({ type: 'openFileHistoryNativeDiff', hash });
     expect(openNativeDiff).toHaveBeenCalledWith(
       repository,
-      '/repo',
+      fileURLToPath(repository.rootUri),
       expect.objectContaining({ hash, linePatch }),
       'b'.repeat(40),
       expect.any(AbortSignal),

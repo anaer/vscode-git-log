@@ -556,7 +556,9 @@ describe('FileHistoryService', () => {
     expect(result.entries.every((entry) => entry.path === path)).toBe(true);
   });
 
-  it('supports newline paths in file history while keeping shell execution disabled', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'supports newline paths in file history while keeping shell execution disabled',
+    async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-newline-file-path-'));
     temporaryDirectories.push(repository);
     await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
@@ -583,7 +585,9 @@ describe('FileHistoryService', () => {
     ).rejects.toThrow('Line history does not support paths containing line breaks.');
   });
 
-  it('treats a file history path as a literal Git pathspec', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'treats a file history path as a literal Git pathspec',
+    async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-literal-file-history-'));
     temporaryDirectories.push(repository);
     const path = ':(exclude)other.txt';

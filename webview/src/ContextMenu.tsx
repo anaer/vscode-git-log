@@ -24,6 +24,7 @@ interface ContextMenuProps {
   openCommitComparison: (hash: string, mode: 'parent' | 'current', parent?: string) => void;
   openDiff: (file: ChangedFile) => void;
   openFile: (file: ChangedFile, mode: 'revision' | 'current') => void;
+  onFilterByPath(path: string): void;
   setSquashOperation: Dispatch<SetStateAction<SquashOperationState | undefined>>;
   setAmendDialog: Dispatch<SetStateAction<AmendDialogState | undefined>>;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
@@ -47,6 +48,7 @@ export function ContextMenu(props: ContextMenuProps) {
     openCommitComparison,
     openDiff,
     openFile,
+    onFilterByPath,
     setSquashOperation,
     setAmendDialog,
     setNamedOperation,
@@ -463,6 +465,17 @@ export function ContextMenu(props: ContextMenuProps) {
             }}
           >
             Copy Path
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            title="Filter the commit log by this path"
+            onClick={() => {
+              onFilterByPath(contextMenu.file.path);
+              setContextMenu(undefined);
+            }}
+          >
+            Filter by Path
           </button>
         </>
       ) : null}

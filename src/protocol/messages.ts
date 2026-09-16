@@ -44,9 +44,9 @@ export interface WorkbenchLayout {
 }
 
 export const defaultLayout: WorkbenchLayout = {
-  refsWidth: 220,
+  refsWidth: 160,
   filesWidth: 320,
-  detailsHeight: 156,
+  detailsHeight: 100,
   detailsPlacement: 'bottom',
   filesViewMode: 'tree',
   refsColumnWidth: 150,
