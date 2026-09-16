@@ -85,6 +85,63 @@ describe('parseWebviewMessage', () => {
     expect(request({ kind: 'squashCommits', hashes, message: 'x'.repeat(100_001) })).toBeUndefined();
   });
 
+  it('validates editCommitMessages edits and single-commit message requests', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const request = (operation: Record<string, unknown>) =>
+      parseWebviewMessage({
+        type: 'runOperation',
+        requestId: 'edit-messages',
+        repositoryId: 'repository-1',
+        operation,
+      });
+    const edit = (hash: string, message: string) => ({ hash, message });
+
+    expect(
+      request({ kind: 'editCommitMessages', edits: [edit('a'.repeat(40), 'rewritten subject')] }),
+    ).toBeDefined();
+    expect(
+      request({
+        kind: 'editCommitMessages',
+        edits: [edit('a'.repeat(40), 'subject\nbody')],
+      }),
+    ).toBeDefined();
+    expect(request({ kind: 'editCommitMessages', edits: [] })).toBeUndefined();
+    expect(
+      request({
+        kind: 'editCommitMessages',
+        edits: [edit('short', 'subject')],
+      }),
+    ).toBeUndefined();
+    expect(
+      request({ kind: 'editCommitMessages', edits: [edit('a'.repeat(40), '   ')] }),
+    ).toBeUndefined();
+    expect(
+      request({ kind: 'editCommitMessages', edits: [edit('a'.repeat(40), '\0unsafe')] }),
+    ).toBeUndefined();
+    expect(
+      request({
+        kind: 'editCommitMessages',
+        edits: [edit('a'.repeat(40), 'x'.repeat(100_001))],
+      }),
+    ).toBeUndefined();
+    expect(
+      request({
+        kind: 'editCommitMessages',
+        edits: Array.from({ length: 101 }, (_, i) => edit(i.toString(16).padStart(40, '0'), 'm')),
+      }),
+    ).toBeUndefined();
+
+    // requestCommitMessages accepts a single selected commit.
+    expect(
+      parseWebviewMessage({
+        type: 'requestCommitMessages',
+        requestId: 'commit-messages',
+        repositoryId: 'repository-1',
+        hashes: ['a'.repeat(40)],
+      }),
+    ).toBeDefined();
+  });
+
   it('accepts known typed messages and rejects malformed payloads', async () => {
     const modulePath = '../../src/protocol/messages';
     const protocol = await import(/* @vite-ignore */ modulePath).catch(() => undefined);

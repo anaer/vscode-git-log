@@ -12,6 +12,7 @@
 | **热路径** | 频繁执行的代码路径 |
 | **God Component** | 包含过多职责的单一组件（反模式） |
 | **Operation Queue** | 操作队列，串行化 Git 写操作避免并发冲突 |
+| **提交对象重建** | 用 `git hash-object -t commit -w --stdin` 按新消息与 parent 重建 commit 对象，用于批量改写历史（见 ADR-0006） |
 
 ## 技术术语
 
@@ -24,3 +25,4 @@
 | **onStartupFinished** | VSCode 扩展激活事件，在启动完成后立即激活 |
 | **AbortController** | 用于取消异步操作的 API |
 | **generation counter** | 生成计数器，用于追踪请求新鲜度 |
+| **CAS update-ref** | `git update-ref` 携带期望旧值原子切换分支，防止并发改写冲突（见 ADR-0006） |

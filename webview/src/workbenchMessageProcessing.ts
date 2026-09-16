@@ -178,6 +178,20 @@ export function createMessageProcessor(
               }
             : current,
         );
+        effects.setEditCommitMessages((current) =>
+          current &&
+          current.requestId === message.requestId &&
+          current.repositoryId === message.repositoryId
+            ? {
+                ...current,
+                loading: false,
+                edits: message.messages.map((entry) => ({
+                  hash: entry.hash,
+                  message: entry.message.replace(/\r?\n$/u, ''),
+                })),
+              }
+            : current,
+        );
         break;
       case 'stashStateLoaded':
         effects.setStashDialog((current) =>
@@ -538,6 +552,7 @@ export function createMessageProcessor(
           if (race.activeCommitMessagesRequest === message.requestId) {
             race.activeCommitMessagesRequest = undefined;
             effects.setSquashOperation(undefined);
+            effects.setEditCommitMessages(undefined);
           }
           if (race.pendingFilters?.requestId === message.requestId) {
             race.pendingFilters = undefined;

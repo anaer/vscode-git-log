@@ -61,6 +61,7 @@ import {
 } from './workbenchStore';
 import type {
   AmendDialogState,
+  EditCommitMessagesState,
   HistoryParentPickerState,
   SquashOperationState,
   StashDialogState,
@@ -148,6 +149,7 @@ function Workbench() {
     CSSProperties | undefined
   >();
   const [squashOperation, setSquashOperation] = useState<SquashOperationState>();
+  const [editCommitMessages, setEditCommitMessages] = useState<EditCommitMessagesState>();
 
   const [namedOperation, setNamedOperation] = useState<NamedOperationState>();
 
@@ -450,6 +452,7 @@ function Workbench() {
     storeApi.getState().bindEffects({
       setCommitSelection,
       setSquashOperation,
+      setEditCommitMessages,
       setStashDialog,
       setAmendDialog,
       setResponsiveExpanded,
@@ -618,6 +621,7 @@ function Workbench() {
     race.activeCommitMessagesRequest = undefined;
     setCommitSelection(emptyCommitSelection);
     setSquashOperation(undefined);
+    setEditCommitMessages(undefined);
     setStashDialog(undefined);
     setAmendDialog(undefined);
     stashDialogRepository.current = undefined;
@@ -1767,6 +1771,7 @@ function Workbench() {
           openFile={openFile}
           onFilterByPath={(path) => applyFilters({ ...state.filters, paths: [path] })}
 setSquashOperation={setSquashOperation}
+          setEditCommitMessages={setEditCommitMessages}
           setAmendDialog={setAmendDialog}
           setNamedOperation={setNamedOperation}
           setActiveCommitMessagesRequest={(value) => {
@@ -1786,6 +1791,8 @@ setSquashOperation={setSquashOperation}
         historyParentChoicesRef={historyParentChoices}
         squashOperation={squashOperation}
         setSquashOperation={setSquashOperation}
+        editCommitMessages={editCommitMessages}
+        setEditCommitMessages={setEditCommitMessages}
         setActiveCommitMessagesRequest={(value) => {
             race.activeCommitMessagesRequest = value;
           }}

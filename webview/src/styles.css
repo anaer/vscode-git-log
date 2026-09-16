@@ -1425,6 +1425,50 @@ select:focus-visible,
   width: min(680px, calc(100vw - 32px));
 }
 
+.operation-dialog.edit-commit-messages-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+}
+
+.edit-commit-messages-dialog .edit-commit-messages-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.edit-commit-messages-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit-commit-messages-nav button {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  line-height: 1;
+}
+
+.edit-commit-messages-nav code {
+  font-family: var(--vscode-editor-font-family);
+}
+
+.edit-commit-messages-count {
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.edit-commit-messages-loading {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.edit-commit-messages-editor textarea {
+  min-height: calc(1.4em * 6 + 14px);
+  height: auto;
+  resize: vertical;
+}
+
 .operation-dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -1791,8 +1835,4 @@ select:focus-visible,
 .details-body {
   margin-top: 10px;
   white-space: pre-wrap;
-}
-
-.details-body p {
-  margin: 3px 0;
 }

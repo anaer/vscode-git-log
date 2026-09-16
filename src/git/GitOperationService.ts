@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
-import { normalize } from 'node:path';
+import { normalize, join } from 'node:path';
+import { stat } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import type { GitOperationRequest } from '../protocol/messages';
 import type { RepositorySummary } from '../shared/models';
 import { inspectRepository } from '../repositories/discoverRepositories';
@@ -55,6 +57,29 @@ function isRebaseControlOperation(operation: GitOperationRequest): boolean {
     operation.kind === 'rebaseSkip' ||
     operation.kind === 'rebaseAbort'
   );
+}
+
+/** Treats the buffer as a sequence of `\n`-terminated lines (the final line may lack a terminator) and returns each line without the trailing `\n`. */
+function splitBufferLines(buffer: Buffer): Buffer[] {
+  const lines: Buffer[] = [];
+  let start = 0;
+  for (let index = 0; index < buffer.length; index += 1) {
+    if (buffer[index] === 0x0a) {
+      lines.push(buffer.subarray(start, index));
+      start = index + 1;
+    }
+  }
+  if (start < buffer.length) lines.push(buffer.subarray(start));
+  return lines;
+}
+
+/** ASCII header keywords are safe to compare after decoding the buffer with latin1. */
+function headerLineStartsWith(line: Buffer, prefix: string): boolean {
+  if (line.length < prefix.length) return false;
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (line[index] !== prefix.charCodeAt(index)) return false;
+  }
+  return true;
 }
 
 export function buildOperationArguments(
@@ -168,6 +193,7 @@ export function buildOperationArguments(
       return ['commit', '--amend', '-m', validateCommitMessage(operation.message, 'amend message')];
     case 'dropCommits':
     case 'squashCommits':
+    case 'editCommitMessages':
       throw new Error(`${operation.kind} requires a validated history rewrite plan.`);
     case 'abortCherryPick':
       return ['cherry-pick', '--abort'];
@@ -260,6 +286,15 @@ export function getOperationConfirmation(
       destructive: true,
     };
   }
+  if (operation.kind === 'editCommitMessages') {
+    const count = operation.edits.length;
+    return {
+      title: `Rewrite ${String(count)} commit message${count === 1 ? '' : 's'}?`,
+      detail: `Repository “${repository.displayName}” will replace ${String(count)} commit message${count === 1 ? '' : 's'} and rewrite every affected commit on the current branch, amending their hashes.`,
+      confirmLabel: 'Rewrite Commit Messages',
+      destructive: true,
+    };
+  }
   if (operation.kind === 'amendCommit') {
     return {
       title: 'Amend the current HEAD commit?',
@@ -294,6 +329,13 @@ interface CommitRangeRewritePlan {
   newest: string;
   oldest: string;
   baseParent: string;
+}
+
+interface MessageRewritePlan {
+  cwd: string;
+  branch: string;
+  expectedHead: string;
+  edits: Map<string, string>;
 }
 
 export class GitOperationService {
@@ -462,6 +504,10 @@ export class GitOperationService {
         if (operation.kind === 'dropCommits' || operation.kind === 'squashCommits') {
           rewritePlan = await this.planCommitRangeRewrite(freshRepository, operation.hashes);
         }
+        let messageRewritePlan: MessageRewritePlan | undefined;
+        if (operation.kind === 'editCommitMessages') {
+          messageRewritePlan = await this.planMessageRewrite(freshRepository, operation.edits);
+        }
         let preparedOperation = operation;
         let forceSourceHash: string | undefined;
         if (operation.kind === 'push' && operation.forceWithLease) {
@@ -505,6 +551,22 @@ export class GitOperationService {
           }
           rewritePlan = revalidatedPlan;
         }
+        if (messageRewritePlan && operation.kind === 'editCommitMessages') {
+          await this.assertMessageRewriteStillCurrent(messageRewritePlan);
+          const revalidatedMessagePlan = await this.planMessageRewrite(
+            freshRepository,
+            operation.edits,
+          );
+          if (
+            revalidatedMessagePlan.branch !== messageRewritePlan.branch ||
+            revalidatedMessagePlan.expectedHead !== messageRewritePlan.expectedHead
+          ) {
+            throw new Error(
+              'The current branch or HEAD changed during confirmation; select the commits again.',
+            );
+          }
+          messageRewritePlan = revalidatedMessagePlan;
+        }
         if (rewritePlan && preparedOperation.kind === 'dropCommits') {
           await this.rebaseCommitRange(rewritePlan, rewritePlan.baseParent);
         } else if (rewritePlan && preparedOperation.kind === 'squashCommits') {
@@ -513,6 +575,8 @@ export class GitOperationService {
             preparedOperation.message,
           );
           await this.rebaseCommitRange(rewritePlan, squashedHash);
+        } else if (messageRewritePlan && preparedOperation.kind === 'editCommitMessages') {
+          await this.rewriteCommitMessages(messageRewritePlan);
         } else {
           await this.runner.run(buildOperationArguments(preparedOperation, forceSourceHash), {
             cwd: fileURLToPath(freshRepository.rootUri),
@@ -675,6 +739,217 @@ export class GitOperationService {
         plan.newest,
       ],
       { cwd: plan.cwd, timeoutMs: 10 * 60_000 },
+    );
+  }
+
+  private async planMessageRewrite(
+    repository: RepositorySummary,
+    edits: readonly { hash: string; message: string }[],
+  ): Promise<MessageRewritePlan> {
+    const cwd = fileURLToPath(repository.rootUri);
+    const branchResult = await this.runner.run(['branch', '--show-current'], {
+      cwd,
+      timeoutMs: 30_000,
+    });
+    const branch = branchResult.stdout.toString('utf8').trim();
+    if (!branch) throw new Error('Commit message rewriting is unavailable while HEAD is detached.');
+    if (edits.length < 1 || edits.length > 100) {
+      throw new Error('Select between 1 and 100 commits.');
+    }
+    const headResult = await this.runner.run(['rev-parse', '--verify', 'HEAD'], {
+      cwd,
+      timeoutMs: 30_000,
+    });
+    const expectedHead = validateHash(headResult.stdout.toString('utf8').trim());
+    const logResult = await this.runner.run(['log', '-100', '--format=%H', expectedHead], {
+      cwd,
+      timeoutMs: 30_000,
+    });
+    const reachable = new Set(logResult.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean));
+    const editMap = new Map<string, string>();
+    for (const edit of edits) {
+      const hash = validateHash(edit.hash);
+      if (editMap.has(hash)) throw new Error('Duplicate commit hashes are not allowed.');
+      if (!reachable.has(hash)) {
+        throw new Error('Edits must refer to commits reachable from the current branch tip.');
+      }
+      editMap.set(hash, validateCommitMessage(edit.message, 'commit message'));
+    }
+    return { cwd, branch: validateToken(branch, 'branch name'), expectedHead, edits: editMap };
+  }
+
+  private async patchMessageRewrite(
+    plan: MessageRewritePlan,
+  ): Promise<{ affected: string[]; mapping: Map<string, string> }> {
+    const revResult = await this.runner.run(
+      ['rev-list', '--topo-order', '--reverse', '--parents', plan.expectedHead],
+      { cwd: plan.cwd, timeoutMs: 30_000 },
+    );
+    const rows = revResult.stdout
+      .toString('utf8')
+      .trim()
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/u));
+    const affected = new Set<string>();
+    const work: string[] = [];
+    for (const [oid, ...parents] of rows) {
+      if (!oid) continue;
+      if (plan.edits.has(oid) || parents.some((parent) => affected.has(parent))) {
+        affected.add(oid);
+        work.push(oid);
+      }
+    }
+    const mapping = new Map<string, string>();
+    for (const oid of work) {
+      const rawResult = await this.runner.run(['cat-file', 'commit', oid], {
+        cwd: plan.cwd,
+        timeoutMs: 30_000,
+        maxStdoutBytes: 100 * 1024,
+      });
+      const raw = rawResult.stdout;
+      const separator = raw.indexOf(Buffer.from('\n\n', 'utf8'));
+      const header = separator < 0 ? raw : raw.subarray(0, separator);
+      const originalMessage = separator < 0 ? Buffer.alloc(0) : raw.subarray(separator + 2);
+      const newMessage = plan.edits.get(oid);
+      const output: Buffer[] = [];
+      let skip = false;
+      for (const line of splitBufferLines(header)) {
+        const isContinuation = line.length > 0 && line[0] === 0x20;
+        if (isContinuation) {
+          if (!skip) output.push(Buffer.concat([line, Buffer.from('\n', 'utf8')]));
+          continue;
+        }
+        skip =
+          headerLineStartsWith(line, 'gpgsig ') ||
+          headerLineStartsWith(line, 'gpgsig-sha256 ') ||
+          headerLineStartsWith(line, 'mergetag ');
+        if (skip) continue;
+        if (headerLineStartsWith(line, 'parent ')) {
+          const parent = line.subarray('parent '.length).toString('latin1');
+          const mapped = mapping.get(parent);
+          output.push(
+            Buffer.concat([
+              Buffer.from('parent ', 'utf8'),
+              Buffer.from(mapped ?? parent, 'utf8'),
+              Buffer.from('\n', 'utf8'),
+            ]),
+          );
+        } else {
+          output.push(Buffer.concat([line, Buffer.from('\n', 'utf8')]));
+        }
+      }
+      const body = Buffer.concat([
+        Buffer.concat(output),
+        Buffer.from('\n', 'utf8'),
+        newMessage === undefined ? originalMessage : Buffer.from(newMessage, 'utf8'),
+      ]);
+      const hashed = await this.runner.run(
+        ['hash-object', '-t', 'commit', '-w', '--stdin'],
+        { cwd: plan.cwd, timeoutMs: 30_000, input: body, maxStdoutBytes: 4096 },
+      );
+      mapping.set(oid, validateHash(hashed.stdout.toString('utf8').trim()));
+    }
+    return { affected: work, mapping };
+  }
+
+  private async assertMessageRewriteStillCurrent(plan: MessageRewritePlan): Promise<void> {
+    const [branchResult, headResult, shallowResult, conflictsResult] = await Promise.all([
+      this.runner.run(['branch', '--show-current'], { cwd: plan.cwd, timeoutMs: 30_000 }),
+      this.runner.run(['rev-parse', '--verify', 'HEAD'], { cwd: plan.cwd, timeoutMs: 30_000 }),
+      this.runner.run(['rev-parse', '--is-shallow-repository'], {
+        cwd: plan.cwd,
+        timeoutMs: 30_000,
+        maxStdoutBytes: 4096,
+      }),
+      this.runner.run(['ls-files', '--unmerged'], { cwd: plan.cwd, timeoutMs: 30_000 }),
+    ]);
+    const branch = branchResult.stdout.toString('utf8').trim();
+    const head = headResult.stdout.toString('utf8').trim();
+    if (branch !== plan.branch || head !== plan.expectedHead) {
+      throw new Error('The current branch or HEAD changed during confirmation; select the commits again.');
+    }
+    if (shallowResult.stdout.toString('utf8').trim() === 'true') {
+      throw new Error('A complete clone is required; this repository is shallow.');
+    }
+    if (conflictsResult.stdout.length > 0) {
+      throw new Error('Resolve index conflicts before rewriting.');
+    }
+    for (const marker of [
+      'MERGE_HEAD',
+      'CHERRY_PICK_HEAD',
+      'REVERT_HEAD',
+      'rebase-merge',
+      'rebase-apply',
+      'BISECT_LOG',
+      'sequencer',
+    ]) {
+      const pathResult = await this.runner.run(['rev-parse', '--git-path', marker], {
+        cwd: plan.cwd,
+        timeoutMs: 30_000,
+        maxStdoutBytes: 4096,
+      });
+      const markerPath = pathResult.stdout.toString('utf8').trim();
+      if (markerPath.includes('..')) throw new Error(`Unusable Git marker path: ${marker}`);
+      if (await this.pathExists(normalize(join(plan.cwd, markerPath)))) {
+        throw new Error('Finish the active Git operation before rewriting.');
+      }
+    }
+    const worktreesResult = await this.runner.run(['worktree', 'list', '--porcelain'], {
+      cwd: plan.cwd,
+      timeoutMs: 30_000,
+    });
+    const currentToplevel = (await this.runner.run(['rev-parse', '--show-toplevel'], {
+      cwd: plan.cwd,
+      timeoutMs: 30_000,
+      maxStdoutBytes: 4096,
+    })).stdout.toString('utf8').trim();
+    const ref = `refs/heads/${plan.branch}`;
+    for (const record of worktreesResult.stdout.toString('utf8').split(/\r?\n\n/u)) {
+      const lines = record.split(/\r?\n/u);
+      const worktreeLine = lines.find((line) => line.startsWith('worktree '));
+      if (lines.includes(`branch ${ref}`) && worktreeLine) {
+        const worktreePath = normalize(worktreeLine.slice('worktree '.length));
+        if (worktreePath !== normalize(currentToplevel)) {
+          throw new Error(
+            'The current branch is checked out in another worktree; run this operation there.',
+          );
+        }
+      }
+    }
+  }
+
+  private async pathExists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private timestampedBranchName(prefix: string): string {
+    const stamp = new Date().toISOString().replace(/[:.]/gu, '-');
+    return `${prefix}/${stamp}-${randomBytes(3).toString('hex')}`;
+  }
+
+  private async rewriteCommitMessages(plan: MessageRewritePlan): Promise<void> {
+    await this.assertMessageRewriteStillCurrent(plan);
+    const backup = this.timestampedBranchName('commit-rewrite-backup');
+    await this.runner.run(
+      ['update-ref', `refs/heads/${backup}`, plan.expectedHead, '0'.repeat(plan.expectedHead.length)],
+      { cwd: plan.cwd, timeoutMs: 30_000 },
+    );
+    const { affected, mapping } = await this.patchMessageRewrite(plan);
+    if (!affected.includes(plan.expectedHead)) {
+      throw new Error('The current branch tip is not among the affected commits.');
+    }
+    const newTip = mapping.get(plan.expectedHead);
+    if (!newTip) throw new Error('The current branch tip could not be rewritten.');
+    await this.assertMessageRewriteStillCurrent(plan);
+    await this.runner.run(
+      ['update-ref', '-m', `Git Log: rewrite commit messages (backup ${backup})`, `refs/heads/${plan.branch}`, newTip, plan.expectedHead],
+      { cwd: plan.cwd, timeoutMs: 30_000 },
     );
   }
 

@@ -97,6 +97,115 @@ code --install-extension ascenx.git-log
 - 完整键盘导航、搜索框双层 `Escape`、`Ctrl/Cmd+C` 复制 Hash，以及浅色、深色和高对比主题支持。
 - 当前分支顶端的 Commit 支持 Amend HEAD，可编辑提交信息并包含已暂存变更。
 
+## 命令与菜单
+
+以下为本扩展在 `package.json` 中贡献的全部命令与菜单，可在命令面板（`Ctrl/Cmd+Shift+P`）或对应右键菜单中使用。所有命令的分类均为 `Git Log`。
+
+### 命令
+
+| 命令（Title） | 命令 ID | 命令面板 | 中文说明 |
+|---|---|---|---|
+| Open Log | `gitLogWorkbench.openLog` | ✅ | 打开底部 Git Log 面板主界面。 |
+| Show History for Current Line | `gitLogWorkbench.editor.showLineHistory` | ✅ | 在独立编辑器 Tab 查看光标所在行的提交历史。 |
+| Show History for Selection | `gitLogWorkbench.editor.showSelectionHistory` | ✅ | 查看当前编辑器选区的提交历史。 |
+| Show File History | `gitLogWorkbench.editor.showFileHistory` | ✅ | 打开当前文件的完整提交历史。 |
+| Compare File with Branch or Tag… | `gitLogWorkbench.editor.compareFileWithRef` | ✅ | 将当前文件与某个分支或标签中的同路径文件进行比较。 |
+| Show Folder History | `gitLogWorkbench.explorer.showFolderHistory` | ❌（仅右键菜单） | 在资源管理器中对文件夹按目录递归过滤提交；不在命令面板显示。 |
+
+### 右键菜单
+
+| 菜单位置 | 子菜单 | 菜单项（命令） | 显示条件 | 分组 |
+|---|---|---|---|---|
+| 编辑器右键（`editor/context`） | `Git Log` | Show History for Current Line | 文件且无选区 | `1_history@1` |
+| 编辑器右键（`editor/context`） | `Git Log` | Show History for Selection | 文件且有选区 | `1_history@1` |
+| 编辑器右键（`editor/context`） | `Git Log` | Show File History | 文件 | `1_history@2` |
+| 编辑器右键（`editor/context`） | `Git Log` | Compare File with Branch or Tag… | 文件 | `2_compare@1` |
+| 资源管理器右键（`explorer/context`） | `Git Log` | Show File History | 文件（非文件夹） | `1_history@1` |
+| 资源管理器右键（`explorer/context`） | `Git Log` | Show Folder History | 文件夹 | `1_history@1` |
+
+> `Git Log` 子菜单仅在右键目标为本地文件（`resourceScheme == file`）时出现。
+
+### 视图
+
+| 位置 | 名称 | 类型 | 说明 |
+|---|---|---|---|
+| 底部面板（Panel） | Git Log | webview | Git Log 主界面，作为底部面板 Tab 呈现，不占用活动栏。 |
+
+### 插件界面内的右键菜单（Webview）
+
+以下是在 Git Log 界面内右键弹出的上下文菜单，按右键目标分组。标注「裸仓库 / 进行中操作」的项在裸仓库或有变基等操作进行中时不可用；若仓库有进行中的操作或为裸仓库，工具栏菜单只显示提示文字。
+
+**工具栏右键**
+
+| 菜单项 | 说明 |
+|---|---|
+| Pull | 拉取当前分支（需存在当前分支）。 |
+| Push | 推送当前分支（需存在当前分支）。 |
+| Force Push with Lease… | 以 `--force-with-lease` 强制推送（需存在当前分支）。 |
+
+**提交行右键（Commit）**
+
+| 菜单项 | 可用条件 | 说明 |
+|---|---|---|
+| Drop commits… | 连续多选、≤100 条、非裸/无进行中 | 丢弃选中的多个提交。 |
+| Squash commits… | 连续多选、≤100 条、非裸/无进行中 | 将选中的多个提交压缩为一个。 |
+| Edit Commit Messages… | 选中 ≥1、≤100 条、非裸/无进行中 | 批量改写提交信息。 |
+| Compare with Parent | 非根提交 | 与父提交比较，打开全部变更文本文件。 |
+| Compare with Current | 该提交非当前 HEAD | 与当前 HEAD 比较。 |
+| Checkout Revision | 单选、非裸/无进行中 | 以 detached HEAD 检出该提交。 |
+| Amend HEAD… | 单选且为当前 HEAD 且有当前分支 | 修改 HEAD 提交信息并纳入已暂存变更。 |
+| New Branch… | 非裸/无进行中 | 基于该提交新建分支。 |
+| New Tag… | 非裸/无进行中 | 基于该提交新建标签。 |
+| Cherry-pick | 非裸/无进行中 | 将该提交摘取到当前分支。 |
+| Revert | 非裸/无进行中 | 撤销该提交。 |
+| Merge into Current | 该提交非当前 HEAD | 将该提交合并进当前分支。 |
+| Rebase Current onto This | 该提交非当前 HEAD | 把当前分支变基到该提交。 |
+| Soft Reset | 存在当前分支 | 软重置到该提交。 |
+| Mixed Reset | 存在当前分支 | 混合重置到该提交。 |
+| Hard Reset… | 存在当前分支 | 硬重置到该提交（需二次确认）。 |
+| Copy Hash | 始终 | 复制提交哈希。 |
+| Copy Subject | 始终 | 复制提交标题。 |
+| Copy Full Message | 已加载该提交详情 | 复制完整提交信息。 |
+
+**变更文件右键（File）**
+
+| 菜单项 | 可用条件 | 说明 |
+|---|---|---|
+| Show Diff | 非二进制文件 | 打开文本差异编辑器。 |
+| Open File at Revision | 非二进制；删除文件需有父版本 | 打开该提交版本的文件内容。 |
+| Open Current File | 始终 | 打开工作区中的当前文件。 |
+| Copy Path | 始终 | 复制文件路径。 |
+| Filter by Path | 始终 | 按该文件路径过滤提交日志。 |
+
+**引用右键（Ref，分支 / 远程 / 标签树）**
+
+| 菜单项 | 适用对象 | 可用条件 | 说明 |
+|---|---|---|---|
+| Compare with Current | 全部 | 非当前 HEAD | 与当前 HEAD 比较。 |
+| Copy Name | 全部 | 始终 | 复制引用短名。 |
+| New Branch from… | 全部 | 非裸/无进行中 | 基于该引用新建分支。 |
+| Checkout | 本地分支、标签 | 本地分支非当前 | 检出该分支/标签。 |
+| Merge into Current | 本地分支 | 有当前分支且非当前分支 | 合并进当前分支。 |
+| Rebase Current onto | 本地分支 | 有当前分支且非当前分支 | 把当前分支变基到该分支。 |
+| Push | 本地分支 | 仅当前分支 | 推送该分支。 |
+| Rename… | 本地分支 | 非裸/无进行中 | 重命名分支。 |
+| Delete… | 本地分支 | 非当前分支 | 删除分支（未合并失败时提供强制删除）。 |
+| Checkout as New Local… | 远程分支 | 非裸/无进行中、非 `…/HEAD` | 基于远程分支新建并检出本地分支。 |
+| Fetch | 远程分支 | 非裸/无进行中 | 从该远程拉取。 |
+| Delete Remote Branch… | 远程分支 | 非裸/无进行中 | 删除远程分支（需确认）。 |
+| Delete Local Tag… | 标签 | 非裸/无进行中 | 删除本地标签（需确认）。 |
+
+**HEAD 行右键（Head）**
+
+| 菜单项 | 可用条件 | 说明 |
+|---|---|---|
+| Copy Revision | 始终 | 复制 HEAD 修订号。 |
+| Create Branch… | 非裸/无进行中 | 基于 HEAD 新建分支。 |
+| Create Tag… | 非裸/无进行中 | 基于 HEAD 新建标签。 |
+| Reset Current Branch (soft) | 存在当前分支 | 将当前分支软重置到 HEAD。 |
+| Reset Current Branch (mixed) | 存在当前分支 | 将当前分支混合重置到 HEAD。 |
+| Reset Current Branch (hard)… | 存在当前分支 | 将当前分支硬重置到 HEAD（需确认）。 |
+
 ## 本地开发
 
 ```text

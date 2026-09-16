@@ -96,6 +96,12 @@ function CommitDetailsPane({
   selectedRepository: { isBare?: boolean; operationState?: string } | undefined;
   selectedOperationInFlight: boolean;
 }) {
+  // Render the body verbatim (minus the subject line shown separately) so the
+  // author's line breaks, blank-line paragraph breaks, bullet lists and
+  // trailers are preserved under `white-space: pre-wrap`.
+  const bodyText = details
+    ? details.body.split(/\r?\n/u).slice(1).join('\n').trim()
+    : '';
   return (
     <section
       className="details-pane pane"
@@ -219,14 +225,7 @@ function CommitDetailsPane({
             ) : null}
             <span>Signature: {details.signature}</span>
           </div>
-          <div className="details-body">
-            {details.body
-              .split(/\r?\n/u)
-              .filter((line, index) => index > 0 && line.length > 0)
-              .map((line, index) => (
-                <p key={`${String(index)}:${line}`}>{line}</p>
-              ))}
-          </div>
+          {bodyText ? <div className="details-body">{bodyText}</div> : null}
         </div>
       ) : (
         <div>

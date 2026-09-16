@@ -3,6 +3,7 @@ import type { ChangedFile, RepositorySummary } from '../../src/shared/models';
 import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/protocol/messages';
 import type {
   AmendDialogState,
+  EditCommitMessagesState,
   SquashOperationState,
 } from './workbenchEffects';
 import type { ContextMenuState, NamedOperationState } from './App';
@@ -26,6 +27,7 @@ interface ContextMenuProps {
   openFile: (file: ChangedFile, mode: 'revision' | 'current') => void;
   onFilterByPath(path: string): void;
   setSquashOperation: Dispatch<SetStateAction<SquashOperationState | undefined>>;
+  setEditCommitMessages: Dispatch<SetStateAction<EditCommitMessagesState | undefined>>;
   setAmendDialog: Dispatch<SetStateAction<AmendDialogState | undefined>>;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
   setActiveCommitMessagesRequest: (requestId: string | undefined) => void;
@@ -50,6 +52,7 @@ export function ContextMenu(props: ContextMenuProps) {
     openFile,
     onFilterByPath,
     setSquashOperation,
+    setEditCommitMessages,
     setAmendDialog,
     setNamedOperation,
     setActiveCommitMessagesRequest,
@@ -173,6 +176,44 @@ export function ContextMenu(props: ContextMenuProps) {
               >
                 Squash commits…              </button>
             </>
+          ) : null}
+          {contextMenu.commits.length >= 1 &&
+          !selectedRepository?.isBare &&
+          !selectedRepository?.operationState ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={
+                !selectedRepository?.currentBranch ||
+                selectedOperationInFlight ||
+                contextMenu.commits.length > 100
+              }
+              title={
+                contextMenu.commits.length > 100
+                  ? 'Select no more than 100 commits'
+                  : undefined
+              }
+              onClick={() => {
+                const hashes = contextMenu.commits.map((commit) => commit.hash);
+                const messageRequestId = requestId('commit-messages');
+                setActiveCommitMessagesRequest(messageRequestId);
+                setEditCommitMessages({
+                  repositoryId: contextMenu.repositoryId,
+                  requestId: messageRequestId,
+                  edits: hashes.map((hash) => ({ hash, message: '' })),
+                  loading: true,
+                });
+                send({
+                  type: 'requestCommitMessages',
+                  requestId: messageRequestId,
+                  repositoryId: contextMenu.repositoryId,
+                  hashes,
+                });
+                setContextMenu(undefined);
+              }}
+            >
+              Edit Commit Messages…
+            </button>
           ) : null}
           <button
             type="button"

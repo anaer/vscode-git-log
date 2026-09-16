@@ -184,6 +184,7 @@ export type GitOperationRequest =
   | { kind: 'amendCommit'; message: string }
   | { kind: 'dropCommits'; hashes: string[] }
   | { kind: 'squashCommits'; hashes: string[]; message: string }
+  | { kind: 'editCommitMessages'; edits: Array<{ hash: string; message: string }> }
   | { kind: 'abortCherryPick' }
   | { kind: 'abortRevert' };
 
@@ -335,6 +336,25 @@ function isCommitSelection(value: unknown, selectedHash: string): value is strin
     value.every(isHash) &&
     new Set(value).size === value.length &&
     value.includes(selectedHash)
+  );
+}
+
+function isMessageEdits(
+  value: unknown,
+): value is Array<{ hash: string; message: string }> {
+  return (
+    Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= MAX_COMMIT_RANGE &&
+    value.every(
+      (entry) =>
+        isRecord(entry) &&
+        isHash(entry.hash) &&
+        typeof entry.message === 'string' &&
+        entry.message.trim().length > 0 &&
+        entry.message.length <= MAX_COMMIT_MESSAGE_LENGTH &&
+        !entry.message.includes('\0'),
+    )
   );
 }
 
@@ -567,6 +587,8 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
         value.message.length <= MAX_COMMIT_MESSAGE_LENGTH &&
         !value.message.includes('\0')
       );
+    case 'editCommitMessages':
+      return isMessageEdits(value.edits);
     case 'abortCherryPick':
     case 'abortRevert':
       return true;
@@ -607,7 +629,12 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
           }
         : undefined;
     case 'requestCommitMessages':
-      return hasRepository(value) && isCommitRange(value.hashes)
+      return hasRepository(value) &&
+        Array.isArray(value.hashes) &&
+        value.hashes.length >= 1 &&
+        value.hashes.length <= MAX_COMMIT_RANGE &&
+        value.hashes.every(isHash) &&
+        new Set(value.hashes).size === value.hashes.length
         ? {
             type: value.type,
             requestId: value.requestId,

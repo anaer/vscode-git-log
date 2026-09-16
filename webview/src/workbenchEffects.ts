@@ -41,6 +41,13 @@ export interface SquashOperationState {
   loading: boolean;
 }
 
+export interface EditCommitMessagesState {
+  repositoryId: string;
+  requestId: string;
+  edits: Array<{ hash: string; message: string }>;
+  loading: boolean;
+}
+
 export interface StashDialogState {
   repositoryId: string;
   stashes: StashEntry[];
@@ -76,6 +83,12 @@ export interface WorkbenchEffects {
       | SquashOperationState
       | undefined
       | ((current: SquashOperationState | undefined) => SquashOperationState | undefined),
+  ) => void;
+  setEditCommitMessages: (
+    next:
+      | EditCommitMessagesState
+      | undefined
+      | ((current: EditCommitMessagesState | undefined) => EditCommitMessagesState | undefined),
   ) => void;
   setStashDialog: (
     next:
@@ -131,6 +144,7 @@ export function createNoopEffects(): WorkbenchEffects {
   return {
     setCommitSelection: noop,
     setSquashOperation: noop,
+    setEditCommitMessages: noop,
     setStashDialog: noop,
     setAmendDialog: noop,
     setResponsiveExpanded: noop,

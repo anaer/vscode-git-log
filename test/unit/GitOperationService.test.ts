@@ -1,8 +1,8 @@
-﻿import { execFile } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitRunner as RealGitRunner } from '../../src/git/GitRunner';
@@ -32,6 +32,11 @@ const successfulResult: GitRunResult = {
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
+// Mirror how GitOperationService derives the working directory from a repository's rootUri
+// so assertions stay correct on both Windows (backslashes) and POSIX (forward slashes).
+const projectPath = fileURLToPath('file:///C:/workspace/project');
+const otherPath = fileURLToPath('file:///C:/workspace/other');
+const featurePath = fileURLToPath('file:///C:/workspace/project-feature');
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })));
@@ -300,6 +305,127 @@ describe('GitOperationService', () => {
     await expect(stat(join(fixture.path, 'descendant.txt'))).resolves.toBeDefined();
   });
 
+  it('rewrites selected commit messages and affected descendants on the current branch', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-edit-messages-');
+    const oldest = await commitFile(fixture.path, 'oldest.txt', 'oldest\n', 'oldest subject');
+    await commitFile(fixture.path, 'middle.txt', 'middle\n', 'unselected middle');
+    const newest = await commitFile(fixture.path, 'newest.txt', 'newest\n', 'newest subject');
+    await commitFile(fixture.path, 'descendant.txt', 'descendant\n', 'keep descendant');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(
+      fixture.summary,
+      {
+        kind: 'editCommitMessages',
+        edits: [
+          { hash: newest, message: 'newest rewritten' },
+          { hash: oldest, message: 'oldest rewritten' },
+        ],
+      },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    expect((await git(fixture.path, 'log', '--format=%s')).split('\n')).toEqual([
+      'keep descendant',
+      'newest rewritten',
+      'unselected middle',
+      'oldest rewritten',
+      'base',
+    ]);
+    // Files are preserved during the commit-object rewrite.
+    await expect(stat(join(fixture.path, 'oldest.txt'))).resolves.toBeDefined();
+    await expect(stat(join(fixture.path, 'newest.txt'))).resolves.toBeDefined();
+    await expect(stat(join(fixture.path, 'descendant.txt'))).resolves.toBeDefined();
+    // The rewritten history diverges from the previous tip but stays on branch main.
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).not.toBe(newest);
+    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    // An explicit backup branch is created for the pre-rewrite tip.
+    expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).not.toBe('');
+  });
+
+  it('rewrites a single commit that is the current HEAD', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-edit-single-head-');
+    const head = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(
+      fixture.summary,
+      {
+        kind: 'editCommitMessages',
+        edits: [{ hash: head, message: 'base edited' }],
+      },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('base edited');
+    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+  });
+
+  it('rejects edits that target commits unreachable from the current branch', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-edit-unreachable-');
+    await git(fixture.path, 'branch', 'other');
+    const head = await git(fixture.path, 'rev-parse', 'HEAD');
+    await git(fixture.path, 'checkout', 'other');
+    await commitFile(fixture.path, 'other.txt', 'other\n', 'other commit');
+    await git(fixture.path, 'checkout', 'main');
+    const service = new GitOperationService(new RealGitRunner());
+
+    const reachableOther = await git(fixture.path, 'rev-parse', 'other');
+    await expect(
+      service.run(
+        fixture.summary,
+        {
+          kind: 'editCommitMessages',
+          edits: [{ hash: reachableOther, message: 'rewritten' }],
+        },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow('reachable');
+    expect(await git(fixture.path, 'rev-parse', 'main')).toBe(head);
+  });
+
+  it('requires destructive confirmation before rewriting commit messages', async () => {
+    const { getOperationConfirmation } = await import('../../src/git/GitOperationService');
+    expect(
+      getOperationConfirmation(repository, {
+        kind: 'editCommitMessages',
+        edits: [{ hash: 'a'.repeat(40), message: 'rewritten' }],
+      }),
+    ).toMatchObject({ destructive: true, confirmLabel: 'Rewrite Commit Messages' });
+  });
+
+  it('refuses to rewrite when the current branch changes during confirmation', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-edit-stale-head-');
+    await commitFile(fixture.path, 'oldest.txt', 'oldest\n', 'oldest');
+    await commitFile(fixture.path, 'second.txt', 'second\n', 'second');
+    const second = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(
+        fixture.summary,
+        {
+          kind: 'editCommitMessages',
+          edits: [{ hash: second, message: 'rewritten' }],
+        },
+        {
+          confirm: async () => {
+            await git(fixture.path, 'commit', '--amend', '-m', 'amended during confirmation');
+            return true;
+          },
+        },
+      ),
+    ).rejects.toThrow('changed during confirmation');
+    // The amended commit is preserved; nothing was rewritten.
+    expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('amended during confirmation');
+    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).toBe('');
+  });
+
   it('rejects non-contiguous commit ranges and dirty worktrees before rewriting history', async () => {
     const { GitOperationService } = await import('../../src/git/GitOperationService');
     const fixture = await createFixtureRepository('git-operation-invalid-range-');
@@ -514,15 +640,15 @@ describe('GitOperationService', () => {
     await vi.waitFor(() => expect(started).toHaveLength(2));
     expect(started).toEqual(
       expect.arrayContaining([
-        '/workspace/project:checkout one --',
-        '/workspace/other:checkout other --',
+        `${projectPath}:checkout one --`,
+        `${otherPath}:checkout other --`,
       ]),
     );
     expect(started.some((entry) => entry.includes('checkout two'))).toBe(false);
 
     finishFirst?.();
     await Promise.all([firstRun, secondRun, otherRun]);
-    expect(started.at(-1)).toBe('/workspace/project:checkout two --');
+    expect(started.at(-1)).toBe(`${projectPath}:checkout two --`);
   });
 
   it('serializes linked worktrees that share a common Git directory', async () => {
@@ -556,13 +682,13 @@ describe('GitOperationService', () => {
     const mainRun = service.run(mainWorktree, { kind: 'checkout', ref: 'main' });
     const linkedRun = service.run(linkedWorktree, { kind: 'checkout', ref: 'feature' });
     await vi.waitFor(() => expect(started).toHaveLength(1));
-    expect(started).toEqual(['/workspace/project:checkout main --']);
+    expect(started).toEqual([`${projectPath}:checkout main --`]);
 
     finishFirst?.();
     await Promise.all([mainRun, linkedRun]);
     expect(started).toEqual([
-      '/workspace/project:checkout main --',
-      '/workspace/project-feature:checkout feature --',
+      `${projectPath}:checkout main --`,
+      `${featurePath}:checkout feature --`,
     ]);
   });
 
@@ -869,6 +995,8 @@ describe('GitOperationService', () => {
     await git(remote, 'init', '--bare');
     await git(fixture.path, 'remote', 'add', 'origin', remote);
     await git(fixture.path, 'config', 'push.default', 'simple');
+    // Pin autoSetupRemote off locally so a global push.autoSetupRemote=true cannot change the outcome.
+    await git(fixture.path, 'config', 'push.autoSetupRemote', 'false');
 
     const service = new GitOperationService(new RealGitRunner());
     await expect(
