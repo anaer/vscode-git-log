@@ -2,6 +2,12 @@
 
 All notable changes to Git Log are documented in this file.
 
+## 26.916.1624
+
+### Changed
+
+- The **Folder History** toolbar's close button now sits directly next to the title instead of being pushed to the far right, and renders as a dedicated `Close` SVG icon unified in `icons.tsx`.
+
 ## 26.916.1516
 
 ### Added

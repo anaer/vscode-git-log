@@ -164,13 +164,24 @@ select:focus-visible,
   white-space: nowrap;
 }
 
+/* Folder History 关闭按钮紧贴标题，不再用 space-between 推到右侧 */
+.history-toolbar--folder {
+  justify-content: flex-start;
+}
+
 .history-toolbar .history-toolbar-close {
   flex: 0 0 27px;
   width: 27px;
+  height: 27px;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--vscode-icon-foreground, var(--vscode-foreground));
-  font-size: 20px;
-  line-height: 1;
+}
+
+.history-toolbar .history-toolbar-close svg {
+  display: block;
 }
 
 .history-stats {

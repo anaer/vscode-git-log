@@ -6,6 +6,7 @@ import {
   Archive,
   Branch,
   Calendar,
+  Close,
   CloudDownload,
   More,
   PanelLeft,
@@ -166,7 +167,7 @@ export function CommitToolbar({
         </div>
       ) : null}
       {folderHistory ? (
-        <div className="history-toolbar">
+        <div className="history-toolbar history-toolbar--folder">
           <strong>
             Folder History ·{' '}
             {folderHistory.path === '.' ? 'Repository Root' : folderHistory.path}
@@ -178,7 +179,7 @@ export function CommitToolbar({
             title="Restore the previous Git log filters"
             onClick={onCloseFolderHistory}
           >
-            <span aria-hidden="true">×</span>
+            {Close}
           </button>
         </div>
       ) : null}
