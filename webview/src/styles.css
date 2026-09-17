@@ -1003,7 +1003,10 @@ select:focus-visible,
 .log-header {
   z-index: 1;
   display: grid;
-  min-width: max(100%, var(--log-content-width, 690px));
+  min-width: max(
+    calc(100% - var(--scrollbar-width, 0px)),
+    var(--log-content-width, 690px)
+  );
   grid-template-columns: var(
     --log-grid-columns,
     minmax(260px, var(--commit-max-width, 700px))
@@ -1126,6 +1129,7 @@ select:focus-visible,
 .commit-viewport {
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .commit-row {

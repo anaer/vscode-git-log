@@ -91,6 +91,23 @@ export type ContextMenuState =
   | { kind: 'toolbar'; repositoryId: string; x: number; y: number }
   | { kind: 'head'; repositoryId: string; hash: string; x: number; y: number };
 
+/**
+ * Width of a classic (non-overlay) vertical scrollbar in the webview. The
+ * commit body scrolls in an `overflow: auto` viewport while the header does
+ * not, so the two grids otherwise resolve `100%` against different widths and
+ * their column lines drift apart. Exposing this width lets the header reserve
+ * the same gutter as the body.
+ */
+const verticalScrollbarWidth = ((): number => {
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:absolute;width:100px;height:100px;overflow:scroll;visibility:hidden;pointer-events:none';
+  document.body.appendChild(probe);
+  const width = probe.offsetWidth - probe.clientWidth;
+  probe.remove();
+  return width;
+})();
+
 export type FolderDeleteState = {
   repositoryId: string;
   path: string;
@@ -1567,6 +1584,7 @@ function Workbench() {
               '--date-column-width': `${String(state.layout.dateColumnWidth ?? 150)}px`,
               '--log-content-width': `${String(logContentWidth)}px`,
               '--commit-max-width': '700px',
+              '--scrollbar-width': `${String(verticalScrollbarWidth)}px`,
               userSelect: 'none',
               '--log-grid-columns': `${
                 state.layout.commitColumnWidth
