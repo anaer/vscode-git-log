@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitCommandError, GitRunner } from '../../src/git/GitRunner';
 import { FileHistoryService } from '../../src/git/FileHistoryService';
@@ -1071,9 +1072,15 @@ describe('WorkbenchController', () => {
     await older;
 
     const initializeMessages = messages.filter((message) => message.type === 'initialize');
+    // rootUri is derived from git's canonical repository path, while tmpdir() can hand back a
+    // Windows 8.3 short name, so the fixture has to be normalised before comparing.
     expect(initializeMessages.at(-1)).toMatchObject({
       type: 'initialize',
-      repositories: [expect.objectContaining({ rootUri: expect.stringContaining(secondRepository) })],
+      repositories: [
+        expect.objectContaining({
+          rootUri: pathToFileURL(await realpath(secondRepository)).toString(),
+        }),
+      ],
     });
     expect(initializeMessages.some((message) => message.requestId === 'older-initialize')).toBe(false);
   });
@@ -2860,7 +2867,14 @@ describe('WorkbenchController', () => {
     expect(opened?.type === 'historyOpened' ? opened.entries[0] : undefined).not.toHaveProperty(
       'linePatch',
     );
-    expect(getLineHistory).toHaveBeenCalledWith('/repo', 'src/app.ts', 4, 5, [], expect.anything());
+    expect(getLineHistory).toHaveBeenCalledWith(
+      fileURLToPath(repository.rootUri),
+      'src/app.ts',
+      4,
+      5,
+      [],
+      expect.anything(),
+    );
 
     await controller.openEditorHistory({
       kind: 'line',
@@ -3048,7 +3062,11 @@ describe('WorkbenchController', () => {
       parent: secondParent,
     });
 
-    expect(getChangedFiles).toHaveBeenCalledWith('/repo', hash, secondParent);
+    expect(getChangedFiles).toHaveBeenCalledWith(
+      fileURLToPath(repository.rootUri),
+      hash,
+      secondParent,
+    );
     expect(openDiff).toHaveBeenCalledWith(
       repository,
       expect.objectContaining({ hash, parent: secondParent, path: 'src/app.ts' }),
@@ -3113,7 +3131,11 @@ describe('WorkbenchController', () => {
       hash,
     });
 
-    expect(getChangedFiles).toHaveBeenCalledWith('/repo', hash, undefined);
+    expect(getChangedFiles).toHaveBeenCalledWith(
+      fileURLToPath(repository.rootUri),
+      hash,
+      undefined,
+    );
     expect(openDiff).toHaveBeenCalledWith(
       repository,
       expect.objectContaining({ hash, path: 'src/app.ts', status: 'A' }),
@@ -3231,7 +3253,7 @@ describe('WorkbenchController', () => {
     await controller.notifyRepositoryChanged(repository.id);
 
     expect(getFileHistory).toHaveBeenCalledTimes(2);
-    expect(invalidate).toHaveBeenCalledWith('/repo');
+    expect(invalidate).toHaveBeenCalledWith(fileURLToPath(repository.rootUri));
   });
 
   it('cancels an older direct editor-history request without surfacing a cancellation error', async () => {
@@ -3376,14 +3398,14 @@ describe('WorkbenchController', () => {
     });
     expect(getFileHistory).toHaveBeenNthCalledWith(
       1,
-      '/repo',
+      fileURLToPath(repository.rootUri),
       'src/app.ts',
       [],
       expect.objectContaining({ limit: 3, skip: 0 }),
     );
     expect(getFileHistory).toHaveBeenNthCalledWith(
       2,
-      '/repo',
+      fileURLToPath(repository.rootUri),
       'src/app.ts',
       [],
       expect.objectContaining({ limit: 3, skip: 2 }),

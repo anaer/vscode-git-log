@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { FileHistoryService } from '../../src/git/FileHistoryService';
 import type { GitService } from '../../src/git/GitService';
 import type { HistoryEntry, RepositorySummary } from '../../src/shared/models';

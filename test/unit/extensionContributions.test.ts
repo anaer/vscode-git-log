@@ -39,13 +39,13 @@ describe('extension contributions', () => {
     expect(missing).toEqual([]);
   });
 
-  it('uses ascenx.git-log as the extension identifier', async () => {
+  it('uses anaer.git-log-0 as the extension identifier', async () => {
     const packageJson = JSON.parse(await readFile('package.json', 'utf8')) as {
       name?: string;
       publisher?: string;
     };
 
-    expect(`${packageJson.publisher}.${packageJson.name}`).toBe('anaer.a-git-log');
+    expect(`${packageJson.publisher}.${packageJson.name}`).toBe('anaer.git-log-0');
   });
 
   it('declares VS Code 1.85 and Node 18 as the extension compatibility baseline', async () => {
@@ -95,7 +95,7 @@ describe('extension contributions', () => {
       displayName?: string;
       description?: string;
     };
-    expect(packageJson.displayName).toBe('A Git Log — Commit Graph & History');
+    expect(packageJson.displayName).toBe('0: Git Log — Commit Graph & History');
     expect(packageJson.description).toBe(
       'A visual Git log, commit graph, history browser, and repository operations extension for Visual Studio Code.',
     );
@@ -135,7 +135,9 @@ describe('extension contributions', () => {
       };
     };
 
-    expect(packageJson.version).toBe('26.916.1516');
+    // This literal is a release gate: the release workflow rewrites package.json from the pushed
+    // tag and then runs the test suite, so a mismatch blocks publishing with a stale version.
+    expect(packageJson.version).toBe('26.916.1624');
     expect(packageJson.contributes?.viewsWelcome).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.activitybar).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.panel).toEqual([

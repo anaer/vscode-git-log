@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { EditorGitContextService } from '../../src/editor/EditorGitContextService';
 import { RepositoryRegistry } from '../../src/repositories/RepositoryRegistry';
 

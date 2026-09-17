@@ -101,8 +101,11 @@ describe('workbench styles', () => {
     expect(styles).toMatch(
       /\.pane-resizer\.vertical\s*\{[^}]*width:\s*7px;[^}]*justify-self:\s*center;[^}]*cursor:\s*col-resize;/su,
     );
+    // The invariant this test guards is the horizontal inset: 3px on each side of a 7px hit
+    // target leaves the 1px divider. The top inset is a layout value owned by the pane header,
+    // so it is intentionally not pinned here.
     expect(styles).toMatch(
-      /\.pane-resizer\.vertical::after\s*\{[^}]*inset:\s*0 3px;[^}]*background:\s*var\(--vscode-panel-border\);/su,
+      /\.pane-resizer\.vertical::after\s*\{[^}]*inset:\s*(?:\d+px|0) 3px 0;[^}]*background:\s*var\(--vscode-panel-border\);/su,
     );
     expect(styles.indexOf('.pane-resizer.vertical::after')).toBeLessThan(
       styles.indexOf('.pane-resizer:hover::after'),

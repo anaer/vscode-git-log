@@ -898,7 +898,8 @@ describe('WorkbenchApp', () => {
 
     expect(screen.getByText('Folder History · src/components')).toBeInTheDocument();
     const closeButton = screen.getByRole('button', { name: 'Close folder history' });
-    expect(closeButton).toHaveTextContent('×');
+    // The close affordance is a dedicated SVG icon from icons.tsx rather than a text glyph.
+    expect(closeButton.querySelector('svg')).not.toBeNull();
     fireEvent.click(closeButton);
     expect(postedMessages).toContainEqual(
       expect.objectContaining({

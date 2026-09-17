@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { DiffManager } from '../../src/diff/DiffManager';
 import { nativeDiffResourceKey } from '../../src/diff/NativeDiffResources';
 import type { GitService } from '../../src/git/GitService';
@@ -66,7 +66,9 @@ describe('HistoryNativeDiffOpener', () => {
 
     await opener.open(repository, '/repo', entry, entry.parents[0]);
 
-    expect(repositories.getRoot('repo-1')).toBe('/repo');
+    // The registry root is derived from repository.rootUri, not from the cwd argument, so it
+    // must be compared in platform path form rather than as a POSIX literal.
+    expect(repositories.getRoot('repo-1')).toBe(fileURLToPath(repository.rootUri));
     expect(open).toHaveBeenCalledWith('repo-1', {
       hash: entry.hash,
       parent: entry.parents[0],

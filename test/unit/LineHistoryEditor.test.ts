@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { FileHistoryService } from '../../src/git/FileHistoryService';
 import type { GitService } from '../../src/git/GitService';
 import type { RepositorySummary } from '../../src/shared/models';
@@ -158,7 +158,7 @@ describe('LineHistoryEditor', () => {
       type: 'fileHistoryDiffLoaded',
       hash,
       subject: 'update target',
-      subtitle: 'src/app.ts 路 line 8',
+      subtitle: 'src/app.ts · line 8',
       patch: contextualPatch,
       binary: false,
       lineHistoryTarget: {
@@ -499,7 +499,7 @@ describe('LineHistoryEditor', () => {
 
     expect(createWebviewPanel).toHaveBeenCalledWith(
       'gitLog.lineHistory',
-      'Selection History: referral_v3_home.page.dart:37鈥?5',
+      'Selection History: referral_v3_home.page.dart:37–55',
       1,
       expect.any(Object),
     );

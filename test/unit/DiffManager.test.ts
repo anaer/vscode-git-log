@@ -118,12 +118,12 @@ describe('DiffManager', () => {
     expect(panel.webview.html).toContain('<summary>src</summary>');
     expect(panel.webview.html).toContain('<summary>features</summary>');
     expect(panel.webview.html).toContain('app.dart');
-    expect(panel.webview.html).toContain('data-file-icon="dart"');
-    expect(panel.webview.html).toContain('data-file-icon="typescript"');
+    expect(panel.webview.html).toContain('class="file-type-icon file-type-dart"');
+    expect(panel.webview.html).toContain('class="file-type-icon file-type-typescript"');
     expect(panel.webview.html).toContain('<symbol id="file-icon-dart"');
     expect(panel.webview.html).toContain('<symbol id="file-icon-typescript"');
     expect(panel.webview.html).toContain('<use href="#file-icon-dart"');
-    expect(panel.webview.html).not.toContain('class="file-icon-sheet"');
+    expect(panel.webview.html).not.toContain('class="file-type-icon file-type-sheet"');
     expect(panel.webview.html).toContain('--explorer-row-height: 22px;');
     expect(panel.webview.html).toContain('.file-directory > summary::before');
     expect(panel.webview.html).toContain('.file-directory[open] > summary::before');
