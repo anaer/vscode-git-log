@@ -12,6 +12,18 @@ const refGroups: readonly { label: string; kind: RefKind }[] = [
   { label: 'Tags', kind: 'tag' },
 ];
 
+function collectFolderLeafRefs(nodes: readonly RefTreeNode[]): RefLabel[] {
+  const leaves: RefLabel[] = [];
+  for (const node of nodes) {
+    if (node.type === 'ref') {
+      leaves.push(node.ref);
+    } else {
+      leaves.push(...collectFolderLeafRefs(node.children));
+    }
+  }
+  return leaves;
+}
+
 function RefTreeNodes({
   nodes,
   depth,
@@ -23,6 +35,7 @@ function RefTreeNodes({
   onSelect,
   onKeyDown,
   onContextMenu,
+  onFolderContextMenu,
 }: {
   nodes: RefTreeNode[];
   depth: number;
@@ -34,6 +47,7 @@ function RefTreeNodes({
   onSelect(ref: RefLabel): void;
   onKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, ref: RefLabel): void;
   onContextMenu(ref: RefLabel, x: number, y: number): void;
+  onFolderContextMenu(refs: RefLabel[], path: string, x: number, y: number): void;
 }) {
   return nodes.map((node) => {
     if (node.type === 'directory') {
@@ -63,6 +77,10 @@ function RefTreeNodes({
             }
             disabled={forceExpanded}
             onClick={() => onToggleFolder(folderKey)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              onFolderContextMenu(collectFolderLeafRefs(node.children), node.path, event.clientX, event.clientY);
+            }}
           >
             <span className="ref-folder-chevron" aria-hidden="true">
               {collapsed ? ChevronRight : ChevronDown}
@@ -81,6 +99,7 @@ function RefTreeNodes({
               onSelect={onSelect}
               onKeyDown={onKeyDown}
               onContextMenu={onContextMenu}
+              onFolderContextMenu={onFolderContextMenu}
             />
           ) : null}
         </div>
@@ -132,6 +151,7 @@ export interface RefsPaneProps {
   onOpenBranchCleanup(): void;
   onOpenHeadContextMenu(x: number, y: number): void;
   onOpenRefContextMenu(ref: RefLabel, x: number, y: number): void;
+  onOpenRefFolderContextMenu(refs: RefLabel[], path: string, x: number, y: number): void;
   hidden: boolean;
   refsWidth: number;
   onResizeStart(event: ReactPointerEvent<HTMLDivElement>): void;
@@ -154,6 +174,7 @@ export function RefsPane({
   onOpenBranchCleanup,
   onOpenHeadContextMenu,
   onOpenRefContextMenu,
+  onOpenRefFolderContextMenu,
   hidden,
   refsWidth,
   onResizeStart,
@@ -285,6 +306,7 @@ export function RefsPane({
                     onSelect={onSelectRef}
                     onKeyDown={onRefKeyDown}
                     onContextMenu={onOpenRefContextMenu}
+                    onFolderContextMenu={onOpenRefFolderContextMenu}
                   />
                 ) : null}
               </section>

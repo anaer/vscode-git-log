@@ -1875,4 +1875,117 @@ describe('GitOperationService', () => {
     expect(confirmation?.detail).toContain('+refs/heads/*:refs/remotes/origin/*');
     expect(confirmation?.detail).toContain('+refs/heads/main:refs/remotes/origin/main');
   });
+
+  it('creates an orphan branch, removing tracked files while keeping untracked ones', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-orphan-');
+    await writeFile(join(fixture.path, 'untracked.txt'), 'keep\n');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(
+      fixture.summary,
+      { kind: 'createOrphanBranch', name: 'website' },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    expect(await git(fixture.path, 'symbolic-ref', '--short', 'HEAD')).toBe('website');
+    // Tracked base.txt is gone from the working tree; the untracked file survives.
+    await expect(stat(join(fixture.path, 'base.txt'))).rejects.toThrow();
+    expect((await stat(join(fixture.path, 'untracked.txt'))).isFile()).toBe(true);
+    // The branch has no ref until its first commit.
+    expect(await git(fixture.path, 'for-each-ref', 'refs/heads/website')).toBe('');
+    await commitFile(fixture.path, 'page.html', '<html></html>\n', 'first orphan commit');
+    const parents = (await git(fixture.path, 'rev-list', '--parents', '-1', 'HEAD')).trim();
+    expect(parents.split(/\s+/u)).toHaveLength(1);
+  });
+
+  it('refuses to create an orphan branch whose name already exists', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-orphan-dup-');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(
+        fixture.summary,
+        { kind: 'createOrphanBranch', name: 'main' },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow();
+    expect(await git(fixture.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+  });
+
+  it('refuses to create an orphan branch while another operation is in progress', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-orphan-busy-');
+    const busy: RepositorySummary = {
+      ...fixture.summary,
+      currentBranch: 'main',
+      operationState: 'rebase',
+    };
+    const service = new GitOperationService(new RealGitRunner(), passthroughInspection);
+
+    await expect(
+      service.run(
+        busy,
+        { kind: 'createOrphanBranch', name: 'website' },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow(/in progress/u);
+  });
+
+  it('names the current and target branch in the orphan confirmation', () => {
+    const confirmation = getOperationConfirmation(
+      { ...repository, currentBranch: 'main' },
+      { kind: 'createOrphanBranch', name: 'website' },
+    );
+    expect(confirmation?.destructive).toBe(true);
+    expect(confirmation?.title).toContain('website');
+    expect(confirmation?.detail).toContain('main');
+    expect(confirmation?.detail).toMatch(/untracked/iu);
+  });
+
+  it('deletes local branches, tags, and remote branches together, reporting per-item failures', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-deleteref-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    // Merged local branch sits at the main tip; an unmerged one diverges ahead.
+    await git(fixture.path, 'branch', 'done');
+    await git(fixture.path, 'checkout', '-b', 'dirty');
+    await commitFile(fixture.path, 'x.txt', 'x\n', 'unmerged work');
+    await git(fixture.path, 'checkout', 'main');
+    await git(fixture.path, 'tag', 'tag-x');
+    await git(fixture.path, 'push', 'origin', 'done:to-deploy');
+
+    const service = new GitOperationService(new RealGitRunner());
+    const result = await service.run(
+      fixture.summary,
+      {
+        kind: 'deleteRefs',
+        local: [
+          { name: 'done', force: false },
+          { name: 'dirty', force: false },
+        ],
+        remote: [{ remote: 'origin', branch: 'to-deploy' }],
+        tags: ['tag-x'],
+      },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    expect(result.deletedRefs).toEqual(
+      expect.arrayContaining([
+        'refs/heads/done',
+        'refs/tags/tag-x',
+        'refs/remotes/origin/to-deploy',
+      ]),
+    );
+    expect(result.deletedRefs).not.toContain('refs/heads/dirty');
+    expect(result.message).toContain('Deleted 3 of 4');
+    expect(result.message).toContain('dirty');
+    // Verified against git: merged branch and tag gone, unmerged branch kept, remote branch deleted.
+    expect(await git(fixture.path, 'branch', '--list', 'done')).toBe('');
+    expect(await git(fixture.path, 'tag', '--list', 'tag-x')).toBe('');
+    expect(await git(fixture.path, 'branch', '--list', 'dirty')).toContain('dirty');
+    await expect(git(remote, 'show-ref', '--verify', 'refs/heads/to-deploy')).rejects.toBeDefined();
+  });
 });

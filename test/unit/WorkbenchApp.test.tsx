@@ -1737,6 +1737,79 @@ describe('WorkbenchApp', () => {
     expect(screen.queryByText('Invalid Git operation parameters.')).not.toBeInTheDocument();
   });
 
+  it('deletes all branches under a folder via the context menu and preview dialog', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-folder',
+            repositories: [
+              {
+                id: 'repo-folder',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                currentBranch: 'main',
+                head: 'a'.repeat(40),
+              },
+            ],
+            selectedRepositoryId: 'repo-folder',
+            pageSize: 50,
+            maxCachedCommits: 50,
+            layout: { refsWidth: 220, filesWidth: 320, detailsHeight: 156, filesViewMode: 'tree' },
+          },
+        }),
+      );
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'repositoryData',
+            requestId: 'ready-folder',
+            repositoryId: 'repo-folder',
+            refs: [
+              { fullName: 'refs/heads/main', shortName: 'main', kind: 'local', target: 'a'.repeat(40), ahead: 0, behind: 0, isCurrent: true },
+              { fullName: 'refs/heads/feature/a', shortName: 'feature/a', kind: 'local', target: 'b'.repeat(40), ahead: 0, behind: 0, isCurrent: false },
+              { fullName: 'refs/heads/feature/b', shortName: 'feature/b', kind: 'local', target: 'c'.repeat(40), ahead: 0, behind: 0, isCurrent: false },
+            ],
+            commits: [],
+            filters: { text: '', branches: [], authors: [], paths: [] },
+            replace: true,
+            hasMore: false,
+          },
+        }),
+      );
+    });
+    postedMessages.length = 0;
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /folder feature/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete 2 items in feature/…' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Delete references in feature' });
+    expect(within(dialog).getByRole('button', { name: 'Delete 0 items' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Delete feature/a' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Delete feature/b' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete 2 items' }));
+
+    const operations = postedMessages.filter((message) => message.type === 'runOperation');
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      type: 'runOperation',
+      repositoryId: 'repo-folder',
+      operation: {
+        kind: 'deleteRefs',
+        local: [
+          { name: 'feature/a', force: false },
+          { name: 'feature/b', force: false },
+        ],
+        remote: [],
+        tags: [],
+      },
+    });
+    expect(screen.queryByText('Invalid Git operation parameters.')).not.toBeInTheDocument();
+  });
   it('cancels stale deep-window anchors when a filter resets the log window', async () => {
     vi.useFakeTimers();
     render(<App />);
@@ -4797,6 +4870,16 @@ describe('WorkbenchApp', () => {
     expect(within(headMenu).getByRole('menuitem', { name: 'Copy Revision' })).toBeEnabled();
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Branch…' })).toBeEnabled();
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Tag…' })).toBeEnabled();
+    expect(within(headMenu).getByRole('menuitem', { name: 'Create Orphan Branch…' })).toBeEnabled();
+
+    completeLatestOperation();
+    fireEvent.click(within(headMenu).getByRole('menuitem', { name: 'Create Orphan Branch…' }));
+    const orphanDialog = screen.getByRole('dialog', { name: 'Create Orphan Branch' });
+    expect(orphanDialog).toHaveTextContent(/no parent commit/iu);
+    fireEvent.change(within(orphanDialog).getByRole('textbox', { name: 'Branch name' }), {
+      target: { value: 'gh-pages' },
+    });
+    fireEvent.click(within(orphanDialog).getByRole('button', { name: 'Create Orphan Branch' }));
 
     expect(postedMessages).toEqual(
       expect.arrayContaining([
@@ -4819,6 +4902,10 @@ describe('WorkbenchApp', () => {
             remote: 'origin',
             branch: 'feature',
           },
+        }),
+        expect.objectContaining({
+          type: 'runOperation',
+          operation: { kind: 'createOrphanBranch', name: 'gh-pages' },
         }),
       ]),
     );

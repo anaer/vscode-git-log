@@ -11,7 +11,7 @@ import type {
   SquashOperationState,
   StashDialogState,
 } from './workbenchEffects';
-import type { NamedOperationState } from './App';
+import type { FolderDeleteState, NamedOperationState } from './App';
 import { formatCommitDate } from './formatCommitDate';
 import { requestId } from './webviewUtils';
 
@@ -24,6 +24,9 @@ interface DialogsProps {
   branchCleanup: BranchCleanupDialogState | undefined;
   setBranchCleanup: Dispatch<SetStateAction<BranchCleanupDialogState | undefined>>;
   submitBranchCleanup: () => void;
+  folderDelete: FolderDeleteState | undefined;
+  setFolderDelete: Dispatch<SetStateAction<FolderDeleteState | undefined>>;
+  submitFolderDelete: () => void;
   historyParentPicker: HistoryParentPickerState | undefined;
   setHistoryParentPicker: Dispatch<SetStateAction<HistoryParentPickerState | undefined>>;
   historyParentChoicesRef: RefObject<Map<string, string>>;
@@ -53,6 +56,9 @@ export function Dialogs(props: DialogsProps) {
     branchCleanup,
     setBranchCleanup,
     submitBranchCleanup,
+    folderDelete,
+    setFolderDelete,
+    submitFolderDelete,
     historyParentPicker,
     setHistoryParentPicker,
     historyParentChoicesRef,
@@ -493,11 +499,13 @@ export function Dialogs(props: DialogsProps) {
             aria-label={
               namedOperation.kind === 'createBranch'
                 ? 'Create Branch'
-                : namedOperation.kind === 'createTag'
-                  ? 'Create Tag'
-                  : namedOperation.kind === 'checkoutRemote'
-                    ? 'Checkout Remote Branch'
-                    : 'Rename Branch'
+                : namedOperation.kind === 'createOrphanBranch'
+                  ? 'Create Orphan Branch'
+                  : namedOperation.kind === 'createTag'
+                    ? 'Create Tag'
+                    : namedOperation.kind === 'checkoutRemote'
+                      ? 'Checkout Remote Branch'
+                      : 'Rename Branch'
             }
             onSubmit={(event) => {
               event.preventDefault();
@@ -506,7 +514,8 @@ export function Dialogs(props: DialogsProps) {
           >
             <label>
               <span>
-                {namedOperation.kind === 'createBranch'
+                {namedOperation.kind === 'createBranch' ||
+                namedOperation.kind === 'createOrphanBranch'
                   ? 'Branch name'
                   : namedOperation.kind === 'createTag'
                     ? 'Tag name'
@@ -517,7 +526,8 @@ export function Dialogs(props: DialogsProps) {
               <input
                 autoFocus
                 aria-label={
-                  namedOperation.kind === 'createBranch'
+                  namedOperation.kind === 'createBranch' ||
+                  namedOperation.kind === 'createOrphanBranch'
                     ? 'Branch name'
                     : namedOperation.kind === 'createTag'
                       ? 'Tag name'
@@ -533,6 +543,13 @@ export function Dialogs(props: DialogsProps) {
                 }
               />
             </label>
+            {namedOperation.kind === 'createOrphanBranch' ? (
+              <p className="named-operation-note">
+                Creates a branch with no parent commit. All tracked files are removed from the
+                working tree (untracked and ignored files are kept), and the branch appears in the
+                ref tree only after its first commit.
+              </p>
+            ) : null}
             <div className="operation-dialog-actions">
               <button type="button" onClick={() => setNamedOperation(undefined)}>
                 Cancel
@@ -540,11 +557,13 @@ export function Dialogs(props: DialogsProps) {
               <button type="submit" disabled={!namedOperation.value.trim()}>
                 {namedOperation.kind === 'createBranch'
                   ? 'Create Branch'
-                  : namedOperation.kind === 'createTag'
-                    ? 'Create Tag'
-                    : namedOperation.kind === 'checkoutRemote'
-                      ? 'Checkout'
-                      : 'Rename Branch'}
+                  : namedOperation.kind === 'createOrphanBranch'
+                    ? 'Create Orphan Branch'
+                    : namedOperation.kind === 'createTag'
+                      ? 'Create Tag'
+                      : namedOperation.kind === 'checkoutRemote'
+                        ? 'Checkout'
+                        : 'Rename Branch'}
               </button>
             </div>
           </form>
@@ -625,6 +644,65 @@ export function Dialogs(props: DialogsProps) {
                 {branchCleanup.selected.size === 1
                   ? 'Delete 1 Branch'
                   : `Delete ${String(branchCleanup.selected.size)} Branches`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {folderDelete ? (
+        <div className="operation-dialog-backdrop">
+          <div
+            className="operation-dialog branch-cleanup-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Delete references in ${folderDelete.path}`}
+          >
+            <strong>Delete references in “{folderDelete.path}/”</strong>
+            <ul className="branch-cleanup-list">
+              {folderDelete.refs.map((ref) => (
+                <li key={ref.fullName}>
+                  <label className="branch-cleanup-row">
+                    <input
+                      type="checkbox"
+                      aria-label={`Delete ${ref.shortName}`}
+                      checked={folderDelete.selected.has(ref.fullName)}
+                      onChange={(event) =>
+                        setFolderDelete((current) => {
+                          if (!current) return current;
+                          const selected = new Set(current.selected);
+                          if (event.target.checked) selected.add(ref.fullName);
+                          else selected.delete(ref.fullName);
+                          return { ...current, selected };
+                        })
+                      }
+                    />
+                    <span className="branch-cleanup-name" title={ref.fullName}>
+                      {ref.shortName}
+                    </span>
+                    <span className="branch-cleanup-badge merged">{ref.kind}</span>
+                    {ref.gone ? (
+                      <span className="branch-cleanup-badge gone">upstream gone</span>
+                    ) : null}
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <p className="branch-cleanup-note">
+              Nothing is selected by default. Selecting a remote entry deletes that branch on the
+              shared remote; unmerged local branches are refused, not force-deleted.
+            </p>
+            <div className="operation-dialog-actions">
+              <button type="button" onClick={() => setFolderDelete(undefined)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={folderDelete.selected.size === 0}
+                onClick={submitFolderDelete}
+              >
+                Delete {String(folderDelete.selected.size)} item
+                {folderDelete.selected.size === 1 ? '' : 's'}
               </button>
             </div>
           </div>

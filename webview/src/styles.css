@@ -1627,7 +1627,8 @@ select:focus-visible,
 }
 
 .branch-cleanup-note,
-.branch-cleanup-empty {
+.branch-cleanup-empty,
+.named-operation-note {
   margin: 0;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;

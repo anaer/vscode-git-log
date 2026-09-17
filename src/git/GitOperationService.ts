@@ -99,6 +99,8 @@ export function buildOperationArguments(
         validateToken(operation.name, 'branch name'),
         validateToken(operation.startPoint, 'start point'),
       ];
+    case 'createOrphanBranch':
+      return ['switch', '--orphan', validateToken(operation.name, 'branch name')];
     case 'createTag':
       return [
         'tag',
@@ -190,6 +192,8 @@ export function buildOperationArguments(
       ];
     case 'deleteBranches':
       throw new Error('deleteBranches must be expanded into single branch deletions.');
+    case 'deleteRefs':
+      throw new Error('deleteRefs must be expanded into per-category deletions.');
     case 'createStash': {
       const message = operation.message.trim() || 'Git Log stash';
       if (message.length > 10_000 || message.includes('\0')) {
@@ -235,6 +239,18 @@ export function getOperationConfirmation(
       destructive: true,
     };
   }
+  if (operation.kind === 'createOrphanBranch') {
+    return {
+      title: `Create orphan branch “${operation.name}”?`,
+      detail:
+        `Repository “${repository.displayName}” will run “git switch --orphan” from ` +
+        `“${repository.currentBranch ?? 'the detached HEAD'}” to “${operation.name}”, removing all tracked files ` +
+        `from the working tree. Uncommitted tracked changes cannot be recovered; untracked and ignored files are kept. ` +
+        `The new branch appears in the ref tree only after its first commit.`,
+      confirmLabel: 'Create Orphan Branch',
+      destructive: true,
+    };
+  }
   if (operation.kind === 'deleteBranch') {
     return {
       title: `Delete branch “${operation.name}”?`,
@@ -260,6 +276,36 @@ export function getOperationConfirmation(
           ? ` ${String(unmergedCount)} of them are not merged into the current branch; their commits become unreachable.`
           : ''),
       confirmLabel: `Delete ${String(total)} Branches`,
+      destructive: true,
+    };
+  }
+  if (operation.kind === 'deleteRefs') {
+    const { local, remote, tags } = operation;
+    const parts: string[] = [];
+    if (local.length > 0) {
+      parts.push(`${String(local.length)} local branch${local.length === 1 ? '' : 'es'}`);
+    }
+    if (remote.length > 0) {
+      parts.push(`${String(remote.length)} remote branch${remote.length === 1 ? '' : 's'}`);
+    }
+    if (tags.length > 0) {
+      parts.push(`${String(tags.length)} tag${tags.length === 1 ? '' : 's'}`);
+    }
+    const unmerged = local.filter((branch) => branch.force).length;
+    const detail =
+      `Repository “${repository.displayName}” will delete ${parts.join(', ')}. ` +
+      (remote.length > 0
+        ? 'Remote entries are deleted on the shared remote and affect other users. '
+        : '') +
+      (unmerged > 0
+        ? ` ${String(unmerged)} local branch(es) are not merged into the current branch and will be force-deleted; their commits become unreachable.`
+        : 'Any unmerged local branch is refused and reported rather than force-deleted.');
+    return {
+      title: `Delete ${String(local.length + remote.length + tags.length)} reference${
+        local.length + remote.length + tags.length === 1 ? '' : 's'
+      }?`,
+      detail,
+      confirmLabel: 'Delete References',
       destructive: true,
     };
   }
@@ -898,6 +944,15 @@ export class GitOperationService {
             preparedOperation.branches,
             fileURLToPath(freshRepository.rootUri),
           );
+        } else if (preparedOperation.kind === 'deleteRefs') {
+          batchDeletion = await this.deleteRefs(
+            {
+              local: preparedOperation.local,
+              remote: preparedOperation.remote,
+              tags: preparedOperation.tags,
+            },
+            fileURLToPath(freshRepository.rootUri),
+          );
         } else {
           await this.runner.run(buildOperationArguments(preparedOperation, forceSourceHash), {
             cwd: fileURLToPath(freshRepository.rootUri),
@@ -1383,6 +1438,77 @@ export class GitOperationService {
     }
     return {
       message: `Deleted ${String(deleted)} of ${String(branches.length)} branches; failed: ${failures.join('; ')}.`,
+      deletedRefs,
+    };
+  }
+
+  private async deleteRefs(
+    refs: {
+      local: ReadonlyArray<{ name: string; force: boolean }>;
+      remote: ReadonlyArray<{ remote: string; branch: string }>;
+      tags: readonly string[];
+    },
+    cwd: string,
+  ): Promise<BatchDeletionOutcome> {
+    const deletedRefs: string[] = [];
+    const failures: string[] = [];
+    const total = refs.local.length + refs.remote.length + refs.tags.length;
+
+    for (const branch of refs.local) {
+      try {
+        await this.runner.run(
+          buildOperationArguments({
+            kind: 'deleteBranch',
+            name: branch.name,
+            force: branch.force,
+          }),
+          { cwd, timeoutMs: 30_000 },
+        );
+        deletedRefs.push(`refs/heads/${branch.name}`);
+      } catch (error) {
+        const reason =
+          error instanceof GitCommandError ? classifyGitError(error).message : undefined;
+        failures.push(`${branch.name} (${reason ?? 'unknown error'})`);
+      }
+    }
+    for (const entry of refs.remote) {
+      try {
+        await this.runner.run(
+          buildOperationArguments({
+            kind: 'deleteRemoteBranch',
+            remote: entry.remote,
+            branch: entry.branch,
+          }),
+          // Terminal-prompt suppression is centralized in GitRunner, so an auth prompt fails
+          // fast and is reported per-item instead of hanging the whole batch.
+          { cwd, timeoutMs: 10 * 60_000 },
+        );
+        deletedRefs.push(`refs/remotes/${entry.remote}/${entry.branch}`);
+      } catch (error) {
+        const reason =
+          error instanceof GitCommandError ? classifyGitError(error).message : undefined;
+        failures.push(`${entry.remote}/${entry.branch} (${reason ?? 'unknown error'})`);
+      }
+    }
+    for (const tag of refs.tags) {
+      try {
+        await this.runner.run(buildOperationArguments({ kind: 'deleteTag', name: tag }), {
+          cwd,
+          timeoutMs: 30_000,
+        });
+        deletedRefs.push(`refs/tags/${tag}`);
+      } catch (error) {
+        const reason =
+          error instanceof GitCommandError ? classifyGitError(error).message : undefined;
+        failures.push(`${tag} (${reason ?? 'unknown error'})`);
+      }
+    }
+
+    if (failures.length === 0) {
+      return { message: `Deleted ${String(deletedRefs.length)} of ${String(total)} references.`, deletedRefs };
+    }
+    return {
+      message: `Deleted ${String(deletedRefs.length)} of ${String(total)} references; failed: ${failures.join('; ')}.`,
       deletedRefs,
     };
   }

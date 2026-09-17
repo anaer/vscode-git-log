@@ -7,7 +7,7 @@ import type {
   RewriteAuthorIdentityState,
   SquashOperationState,
 } from './workbenchEffects';
-import type { ContextMenuState, NamedOperationState } from './App';
+import type { ContextMenuState, FolderDeleteState, NamedOperationState } from './App';
 import { contextMenuPosition, requestId } from './webviewUtils';
 
 interface ContextMenuProps {
@@ -33,6 +33,7 @@ interface ContextMenuProps {
   setRewriteAuthorIdentity: Dispatch<SetStateAction<RewriteAuthorIdentityState | undefined>>;
   setAmendDialog: Dispatch<SetStateAction<AmendDialogState | undefined>>;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
+  setFolderDelete: Dispatch<SetStateAction<FolderDeleteState | undefined>>;
   setActiveCommitMessagesRequest: (requestId: string | undefined) => void;
 }
 
@@ -60,6 +61,7 @@ export function ContextMenu(props: ContextMenuProps) {
     setRewriteAuthorIdentity,
     setAmendDialog,
     setNamedOperation,
+    setFolderDelete,
     setActiveCommitMessagesRequest,
   } = props;
 
@@ -570,6 +572,35 @@ export function ContextMenu(props: ContextMenuProps) {
           </button>
         </>
       ) : null}
+      {contextMenu.kind === 'refFolder' ? (
+        <button
+          type="button"
+          role="menuitem"
+          disabled={
+            selectedOperationInFlight ||
+            Boolean(selectedRepository?.isBare) ||
+            Boolean(selectedRepository?.operationState)
+          }
+          title={
+            selectedRepository?.isBare
+              ? 'Read-only in a bare repository'
+              : selectedRepository?.operationState
+                ? 'Finish or abort the running operation first'
+                : `Delete all references under ${contextMenu.path}/`
+          }
+          onClick={() => {
+            setFolderDelete({
+              repositoryId: contextMenu.repositoryId,
+              path: contextMenu.path,
+              refs: contextMenu.refs,
+              selected: new Set<string>(),
+            });
+          }}
+        >
+          Delete {String(contextMenu.refs.length)} item
+          {contextMenu.refs.length === 1 ? '' : 's'} in {contextMenu.path}/…
+        </button>
+      ) : null}
       {contextMenu.kind === 'ref' ? (
         <>
           <button
@@ -818,6 +849,19 @@ export function ContextMenu(props: ContextMenuProps) {
                 }}
               >
                 Create Branch…              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setNamedOperation({
+                    kind: 'createOrphanBranch',
+                    repositoryId: contextMenu.repositoryId,
+                    value: '',
+                  });
+                  setContextMenu(undefined);
+                }}
+              >
+                Create Orphan Branch…              </button>
               <button
                 type="button"
                 role="menuitem"

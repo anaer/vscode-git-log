@@ -28,6 +28,20 @@ describe('GitRunner', () => {
     expect(result.stderr.length).toBe(0);
   });
 
+  it('disables interactive terminal prompts so credential input fails fast instead of hanging', async () => {
+    const runnerModule = await import(/* @vite-ignore */ '../../src/git/GitRunner');
+    const cwd = await mkdtemp(join(tmpdir(), 'git-log-workbench-runner-env-'));
+    temporaryDirectories.push(cwd);
+    const runner = new runnerModule.GitRunner({ executable: process.execPath });
+
+    const result = await runner.run(
+      ['-e', 'process.stdout.write(process.env.GIT_TERMINAL_PROMPT ?? "<unset>")'],
+      { cwd },
+    );
+
+    expect(result.stdout.toString('utf8')).toBe('0');
+  });
+
   it('rejects with structured diagnostics when Git exits unsuccessfully', async () => {
     const modulePath = '../../src/git/GitRunner';
     const runnerModule = await import(/* @vite-ignore */ modulePath).catch(() => undefined);

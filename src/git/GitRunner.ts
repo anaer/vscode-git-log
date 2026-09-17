@@ -94,6 +94,10 @@ export class GitRunner {
           ...process.env,
           GIT_PAGER: 'cat',
           PAGER: 'cat',
+          // No TTY is allocated and stdin is ignored, so git must not wait on an interactive
+          // terminal credential prompt (it would hang). Fail fast instead; GIT_ASKPASS still
+          // handles real interactive authentication when a helper is configured.
+          GIT_TERMINAL_PROMPT: '0',
           ...options.env,
         },
         stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],

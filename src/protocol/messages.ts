@@ -164,6 +164,7 @@ export type WebviewToExtensionMessage =
 export type GitOperationRequest =
   | { kind: 'checkout'; ref: string }
   | { kind: 'createBranch'; name: string; startPoint: string }
+  | { kind: 'createOrphanBranch'; name: string }
   | { kind: 'createTag'; name: string; target: string }
   | { kind: 'deleteTag'; name: string }
   | { kind: 'checkoutRemote'; name: string; startPoint: string }
@@ -184,6 +185,12 @@ export type GitOperationRequest =
   | { kind: 'renameBranch'; oldName: string; newName: string }
   | { kind: 'deleteBranch'; name: string; force: boolean }
   | { kind: 'deleteBranches'; branches: Array<{ name: string; force: boolean }> }
+  | {
+      kind: 'deleteRefs';
+      local: Array<{ name: string; force: boolean }>;
+      remote: Array<{ remote: string; branch: string }>;
+      tags: string[];
+    }
   | { kind: 'createStash'; message: string; includeUntracked: boolean }
   | { kind: 'applyStash'; stash: string }
   | { kind: 'popStash'; stash: string }
@@ -367,6 +374,39 @@ function isBranchDeletionList(
     new Set(value.map((entry) => (isRecord(entry) ? String(entry.name) : ''))).size ===
       value.length
   );
+}
+
+function isRefDeletionPayload(value: {
+  local: unknown;
+  remote: unknown;
+  tags: unknown;
+}): boolean {
+  const { local, remote, tags } = value;
+  if (!Array.isArray(local) || !Array.isArray(remote) || !Array.isArray(tags)) return false;
+
+  const localOk =
+    local.length <= MAX_BRANCH_BATCH &&
+    local.every(
+      (entry) => isRecord(entry) && isGitRefName(entry.name) && typeof entry.force === 'boolean',
+    ) &&
+    new Set(local.map((entry) => (isRecord(entry) ? String(entry.name) : ''))).size === local.length;
+  const remoteOk =
+    remote.length <= MAX_BRANCH_BATCH &&
+    remote.every(
+      (entry) => isRecord(entry) && isSafeGitToken(entry.remote) && isRemoteBranchName(entry.branch),
+    ) &&
+    new Set(
+      remote.map((entry) =>
+        isRecord(entry) ? `${String(entry.remote)}\u0000${String(entry.branch)}` : '',
+      ),
+    ).size === remote.length;
+  const tagsOk =
+    tags.length <= MAX_BRANCH_BATCH &&
+    tags.every((tag) => isGitRefName(tag)) &&
+    new Set(tags.map((tag) => String(tag))).size === tags.length;
+
+  const total = local.length + remote.length + tags.length;
+  return localOk && remoteOk && tagsOk && total >= 1 && total <= MAX_BRANCH_BATCH;
 }
 
 function isMessageEdits(
@@ -572,6 +612,8 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       return isSafeGitToken(value.ref);
     case 'createBranch':
       return isGitRefName(value.name) && isSafeGitToken(value.startPoint);
+    case 'createOrphanBranch':
+      return isGitRefName(value.name);
     case 'createTag':
       return isGitRefName(value.name) && isSafeGitToken(value.target);
     case 'deleteTag':
@@ -619,6 +661,12 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       return isGitRefName(value.name) && typeof value.force === 'boolean';
     case 'deleteBranches':
       return isBranchDeletionList(value.branches);
+    case 'deleteRefs':
+      return isRefDeletionPayload({
+        local: value.local,
+        remote: value.remote,
+        tags: value.tags,
+      });
     case 'createStash':
       return (
         typeof value.message === 'string' &&

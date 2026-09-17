@@ -75,11 +75,13 @@ code --install-extension ascenx.git-log
 - Refs / Commit Graph / Changed Files / Commit Details 四区联动。
 - Branch 区域提供独立搜索，并将名称中带 `/` 的 Local、Remote、Tag 引用递归分组为可展开/收起的文件夹；本身包含 `/` 的 Remote 名称仍作为独立的顶层文件夹。
 - Branches 标题行提供批量清理入口：对话框一次列出「上游已消失」与「已合并入当前分支」两类本地分支，逐条展示未合并提交数与最后提交时间。`gone` 分支默认勾选，未合并分支默认不勾选；删除按分支逐条执行，失败项照常列出而不会中断其余分支。
+- 在 Local / Remote / Tags 分组中右键按 `/` 分组的目录节点，会打开预览框列出该目录下的所有分支：默认全不勾选，勾选前「删除」按钮禁用；确认后以一次跨类型批量删除执行（本地 `git branch -d`、远程 `git push --delete`、标签 `git tag -d`），逐条失败照常报告而不中断其余。
 - Git Log 作为 VS Code 底部 Panel 的独立 Tab 展示，与问题、输出、终端等工具窗口并列；点击 `Open Log` 会直接聚焦该 Tab，不再打开编辑器页或经过中间欢迎页。
 - 分页日志、有界滑动窗口、自定义 DAG lane、跨窗口 graph continuation、固定行高虚拟滚动和大列表性能基准；深分页的全局 offset、选择和相对滚动位置可恢复。`Go to HEAD` 会在当前筛选后的 Commit 列表中定位已 Checkout 的 HEAD，并将其对齐到首个可见行，不会切换当前 Branch 筛选。
 - Text/Hash、Branch、User、Date、Path 组合过滤，旧查询取消和过期响应拒绝；仓库状态刷新不会覆盖正在编辑的搜索草稿；文本查询按 canonical `git log --date-order` 顺序扫描完整正文、作者姓名与邮箱，保留 child-before-parent 拓扑。
 - Root、Merge、Rename、Copy、Binary 等 changed-files 场景及 VS Code 原生 Diff；多选 Commit 时会合并展示所有选中 Commit 的变更文件，并为每个文件保留正确的 Commit 与 Parent 上下文。
 - Checkout、Checkout Revision、Branch、Tag、Fetch、Pull、Push、Cherry-pick、Revert、Merge、Rebase、Reset、Rename/Delete Branch，以及 Commit/Local/Remote/Tag/HEAD 对应的上下文菜单。
+- HEAD 右键菜单提供 **Create Orphan Branch…**，以 `git switch --orphan` 创建无父提交的孤儿分支：移除工作区内全部已跟踪文件（未跟踪与忽略文件保留），需二次确认，且该分支在首次提交后才会出现在引用树中。
 - 浅克隆仓库会在 Commit 列表上方显示「历史被截断」提示，并提供 **Fetch full history** 动作，执行 `git fetch --unshallow` 拉取完整历史；对 fetch refspec 只覆盖单一分支的单分支克隆，确认框会逐字列出改动，补全后把该 refspec 扩展为覆盖全部分支，使此前不可见的远程分支显示出来。
 - 提供完整 Stash 管理：可选择是否包含未跟踪文件，并支持查看 Stash 变更、Apply、Pop 和确认后 Drop。
 - 单击或双击分支只会选择该分支并展示对应 Commit，不会自动 Checkout；Checkout 保留在 Ref 右键菜单中，必须显式执行。

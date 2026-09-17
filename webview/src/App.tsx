@@ -79,12 +79,28 @@ export type ContextMenuState =
       y: number;
     }
   | { kind: 'ref'; repositoryId: string; ref: RefLabel; x: number; y: number }
+  | {
+      kind: 'refFolder';
+      repositoryId: string;
+      path: string;
+      refs: RefLabel[];
+      x: number;
+      y: number;
+    }
   | { kind: 'file'; repositoryId: string; file: ChangedFile; x: number; y: number }
   | { kind: 'toolbar'; repositoryId: string; x: number; y: number }
   | { kind: 'head'; repositoryId: string; hash: string; x: number; y: number };
 
+export type FolderDeleteState = {
+  repositoryId: string;
+  path: string;
+  refs: RefLabel[];
+  selected: ReadonlySet<string>;
+};
+
 export type NamedOperationState =
   | { kind: 'createBranch'; repositoryId: string; target: string; value: string }
+  | { kind: 'createOrphanBranch'; repositoryId: string; value: string }
   | { kind: 'createTag'; repositoryId: string; target: string; value: string }
   | { kind: 'renameBranch'; repositoryId: string; oldName: string; value: string }
   | { kind: 'checkoutRemote'; repositoryId: string; startPoint: string; value: string };
@@ -166,6 +182,7 @@ function Workbench() {
     useState<RewriteAuthorIdentityState>();
 
   const [namedOperation, setNamedOperation] = useState<NamedOperationState>();
+  const [folderDelete, setFolderDelete] = useState<FolderDeleteState>();
 
   const [historyParentPicker, setHistoryParentPicker] = useState<HistoryParentPickerState>();
 
@@ -1090,6 +1107,11 @@ function Workbench() {
         { kind: 'createBranch', name: value, startPoint: namedOperation.target },
         namedOperation.repositoryId,
       );
+    } else if (namedOperation.kind === 'createOrphanBranch') {
+      runOperation(
+        { kind: 'createOrphanBranch', name: value },
+        namedOperation.repositoryId,
+      );
     } else if (namedOperation.kind === 'createTag') {
       runOperation(
         { kind: 'createTag', name: value, target: namedOperation.target },
@@ -1107,6 +1129,32 @@ function Workbench() {
       );
     }
     setNamedOperation(undefined);
+  };
+
+  const submitFolderDelete = (): void => {
+    if (!folderDelete) return;
+    const chosen = folderDelete.refs.filter((ref) => folderDelete.selected.has(ref.fullName));
+    if (chosen.length === 0) return;
+    const local: Array<{ name: string; force: boolean }> = [];
+    const remote: Array<{ remote: string; branch: string }> = [];
+    const tags: string[] = [];
+    for (const ref of chosen) {
+      if (ref.kind === 'local') {
+        local.push({ name: ref.shortName, force: false });
+      } else if (ref.kind === 'remote') {
+        const remoteName = ref.remote ?? '';
+        const prefix = `${remoteName}/`;
+        const branch =
+          remoteName && ref.shortName.startsWith(prefix)
+            ? ref.shortName.slice(prefix.length)
+            : ref.shortName;
+        remote.push({ remote: remoteName, branch });
+      } else {
+        tags.push(ref.shortName);
+      }
+    }
+    runOperation({ kind: 'deleteRefs', local, remote, tags }, folderDelete.repositoryId);
+    setFolderDelete(undefined);
   };
 
   const logContentWidth =
@@ -1142,6 +1190,7 @@ function Workbench() {
       setFilterPopup(undefined);
       setHistoryParentPicker(undefined);
       setBranchCleanup(undefined);
+      setFolderDelete(undefined);
     }
   };
 
@@ -1487,6 +1536,21 @@ function Workbench() {
               kind: 'ref',
               repositoryId: state.selectedRepositoryId,
               ref,
+              x,
+              y,
+            });
+          }}
+          onOpenRefFolderContextMenu={(refs, path, x, y) => {
+            if (!state.selectedRepositoryId) return;
+            const deletable = refs.filter(
+              (ref) => !(ref.kind === 'local' && ref.isCurrent) && !ref.fullName.endsWith('/HEAD'),
+            );
+            if (deletable.length === 0) return;
+            setContextMenu({
+              kind: 'refFolder',
+              repositoryId: state.selectedRepositoryId,
+              path,
+              refs: deletable,
               x,
               y,
             });
@@ -1839,6 +1903,7 @@ setSquashOperation={setSquashOperation}
           setRewriteAuthorIdentity={setRewriteAuthorIdentity}
           setAmendDialog={setAmendDialog}
           setNamedOperation={setNamedOperation}
+          setFolderDelete={setFolderDelete}
           setActiveCommitMessagesRequest={(value) => {
             race.activeCommitMessagesRequest = value;
           }}
@@ -1854,6 +1919,9 @@ setSquashOperation={setSquashOperation}
         branchCleanup={branchCleanup}
         setBranchCleanup={setBranchCleanup}
         submitBranchCleanup={submitBranchCleanup}
+        folderDelete={folderDelete}
+        setFolderDelete={setFolderDelete}
+        submitFolderDelete={submitFolderDelete}
         historyParentPicker={historyParentPicker}
         setHistoryParentPicker={setHistoryParentPicker}
         historyParentChoicesRef={historyParentChoices}

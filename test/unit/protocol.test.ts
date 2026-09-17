@@ -88,6 +88,72 @@ describe('parseWebviewMessage', () => {
     ).toBeUndefined();
   });
 
+  it('validates orphan branch creation requests', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const operation = (value: Record<string, unknown>) =>
+      parseWebviewMessage({
+        type: 'runOperation',
+        requestId: 'operation',
+        repositoryId: 'repository-1',
+        operation: value,
+      });
+
+    expect(operation({ kind: 'createOrphanBranch', name: 'gh-pages' })).toBeDefined();
+    expect(operation({ kind: 'createOrphanBranch', name: '-oops' })).toBeUndefined();
+    expect(operation({ kind: 'createOrphanBranch', name: 'a..b' })).toBeUndefined();
+    expect(operation({ kind: 'createOrphanBranch', name: 'bad\nname' })).toBeUndefined();
+  });
+
+  it('validates cross-kind reference deletion payloads', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const operation = (value: Record<string, unknown>) =>
+      parseWebviewMessage({
+        type: 'runOperation',
+        requestId: 'operation',
+        repositoryId: 'repository-1',
+        operation: value,
+      });
+
+    expect(
+      operation({
+        kind: 'deleteRefs',
+        local: [{ name: 'feature/x', force: false }],
+        remote: [{ remote: 'origin', branch: 'feature/x' }],
+        tags: ['v1'],
+      }),
+    ).toBeDefined();
+    // Nothing selected is rejected.
+    expect(operation({ kind: 'deleteRefs', local: [], remote: [], tags: [] })).toBeUndefined();
+    // Duplicate local names are rejected.
+    expect(
+      operation({
+        kind: 'deleteRefs',
+        local: [
+          { name: 'dup', force: false },
+          { name: 'dup', force: false },
+        ],
+        remote: [],
+        tags: [],
+      }),
+    ).toBeUndefined();
+    // Option-like remote is rejected.
+    expect(
+      operation({ kind: 'deleteRefs', local: [], remote: [{ remote: '-x', branch: 'b' }], tags: [] }),
+    ).toBeUndefined();
+    // More than 100 combined items are rejected.
+    expect(
+      operation({
+        kind: 'deleteRefs',
+        local: Array.from({ length: 101 }, (_unused, index) => ({
+          name: `b${String(index)}`,
+          force: false,
+        })),
+        remote: [],
+        tags: [],
+      }),
+    ).toBeUndefined();
+  });
+
   it('validates batch branch cleanup requests and the batch delete operation', async () => {
     const { parseWebviewMessage } = await import('../../src/protocol/messages');
     const operation = (value: Record<string, unknown>) =>
