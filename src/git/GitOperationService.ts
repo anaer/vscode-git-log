@@ -6,10 +6,13 @@ import type { GitOperationRequest } from '../protocol/messages';
 import type { RepositorySummary } from '../shared/models';
 import { inspectRepository } from '../repositories/discoverRepositories';
 import { GitCommandError, type GitRunner } from './GitRunner';
+import { classifyGitError } from './classifyGitError';
 
 export interface GitOperationResult {
   message: string;
   cancelled?: boolean;
+  /** Ref names removed by a batch deletion, so callers can drop them from their filters. */
+  deletedRefs?: string[];
 }
 
 export interface GitOperationRunOptions {
@@ -124,6 +127,11 @@ export function buildOperationArguments(
       return operation.remote
         ? ['fetch', validateToken(operation.remote, 'remote')]
         : ['fetch', '--all', '--prune'];
+    case 'fetchFullHistory':
+      if (!operation.remote) {
+        throw new Error('Fetch remote must be resolved before execution.');
+      }
+      return ['fetch', '--unshallow', validateToken(operation.remote, 'remote')];
     case 'pull':
       return ['pull'];
     case 'push':
@@ -139,6 +147,16 @@ export function buildOperationArguments(
         ];
       }
       return ['push'];
+    case 'publishBranch':
+      if (!operation.remote || !operation.branch) {
+        throw new Error('Publish target must be resolved before execution.');
+      }
+      return [
+        'push',
+        '--set-upstream',
+        validateToken(operation.remote, 'push remote'),
+        validateToken(operation.branch, 'branch name'),
+      ];
     case 'cherryPick':
       return ['cherry-pick', validateHash(operation.hash)];
     case 'revert':
@@ -170,6 +188,8 @@ export function buildOperationArguments(
         '--',
         validateToken(operation.name, 'branch name'),
       ];
+    case 'deleteBranches':
+      throw new Error('deleteBranches must be expanded into single branch deletions.');
     case 'createStash': {
       const message = operation.message.trim() || 'Git Log stash';
       if (message.length > 10_000 || message.includes('\0')) {
@@ -194,6 +214,7 @@ export function buildOperationArguments(
     case 'dropCommits':
     case 'squashCommits':
     case 'editCommitMessages':
+    case 'rewriteAuthorIdentity':
       throw new Error(`${operation.kind} requires a validated history rewrite plan.`);
     case 'abortCherryPick':
       return ['cherry-pick', '--abort'];
@@ -219,6 +240,40 @@ export function getOperationConfirmation(
       title: `Delete branch “${operation.name}”?`,
       detail: `Repository “${repository.displayName}” will delete local branch “${operation.name}”${operation.force ? ' even if it is not merged' : ''}.`,
       confirmLabel: operation.force ? 'Force Delete Branch' : 'Delete Branch',
+      destructive: true,
+    };
+  }
+  if (operation.kind === 'deleteBranches') {
+    const total = operation.branches.length;
+    const unmergedCount = operation.branches.filter((branch) => branch.force).length;
+    const listed = operation.branches
+      .slice(0, 8)
+      .map((branch) => `${branch.name}${branch.force ? ' (not merged)' : ''}`)
+      .join(', ');
+    const remaining = total - 8;
+    return {
+      title: `Delete ${String(total)} local branches?`,
+      detail:
+        `Repository “${repository.displayName}” will delete: ${listed}` +
+        `${remaining > 0 ? `, and ${String(remaining)} more` : ''}.` +
+        (unmergedCount > 0
+          ? ` ${String(unmergedCount)} of them are not merged into the current branch; their commits become unreachable.`
+          : ''),
+      confirmLabel: `Delete ${String(total)} Branches`,
+      destructive: true,
+    };
+  }
+  if (operation.kind === 'fetchFullHistory') {
+    const refspecChange =
+      operation.refspecTo !== undefined
+        ? ` It will also change “remote.${operation.remote}.fetch” from “${operation.refspecFrom}” to “${operation.refspecTo}” so other branches become visible.`
+        : '';
+    return {
+      title: 'Fetch full history?',
+      detail:
+        `Repository “${repository.displayName}” will run “git fetch --unshallow” against remote “${operation.remote}” to download the complete history. ` +
+        `This contacts the remote and can take a long time and use significant disk space.${refspecChange}`,
+      confirmLabel: 'Fetch Full History',
       destructive: true,
     };
   }
@@ -295,6 +350,15 @@ export function getOperationConfirmation(
       destructive: true,
     };
   }
+  if (operation.kind === 'rewriteAuthorIdentity') {
+    const count = operation.hashes.length;
+    return {
+      title: `Rewrite author identity of ${String(count)} commit${count === 1 ? '' : 's'}?`,
+      detail: `Repository “${repository.displayName}” will replace the author and committer of ${String(count)} commit${count === 1 ? '' : 's'} with “${operation.name} <${operation.email}>” and rewrite every affected commit on the current branch, amending their hashes.`,
+      confirmLabel: 'Rewrite Author Identity',
+      destructive: true,
+    };
+  }
   if (operation.kind === 'amendCommit') {
     return {
       title: 'Amend the current HEAD commit?',
@@ -331,11 +395,50 @@ interface CommitRangeRewritePlan {
   baseParent: string;
 }
 
-interface MessageRewritePlan {
+interface AuthorIdentity {
+  name: string;
+  email: string;
+}
+
+interface CommitPatchPlan {
   cwd: string;
   branch: string;
   expectedHead: string;
-  edits: Map<string, string>;
+  messageEdits: Map<string, string>;
+  identityEdits: Map<string, AuthorIdentity>;
+}
+
+interface BatchDeletionOutcome {
+  message: string;
+  deletedRefs: string[];
+}
+
+function validateIdentity(value: string, label: string): string {
+  if (!value.trim() || value.length > 512 || /[<>]|[\0\r\n]/u.test(value)) {
+    throw new Error(`Invalid ${label}.`);
+  }
+  return value;
+}
+
+/** Replaces the name and email of an `author` / `committer` header line, preserving its date. */
+function rewriteIdentityLine(line: Buffer, identity: AuthorIdentity): Buffer {
+  const opening = line.indexOf(0x3c); // '<'
+  const closing = opening < 0 ? -1 : line.indexOf(0x3e, opening); // '>'
+  if (opening <= 0 || closing <= opening) return line;
+  const keywordLength = headerLineStartsWith(line, 'author ')
+    ? 'author '.length
+    : headerLineStartsWith(line, 'committer ')
+      ? 'committer '.length
+      : 0;
+  if (keywordLength === 0) return line;
+  return Buffer.concat([
+    line.subarray(0, keywordLength),
+    Buffer.from(identity.name, 'utf8'),
+    Buffer.from(' <', 'utf8'),
+    Buffer.from(identity.email, 'utf8'),
+    Buffer.from('>', 'utf8'),
+    line.subarray(closing + 1),
+  ]);
 }
 
 export class GitOperationService {
@@ -360,6 +463,33 @@ export class GitOperationService {
     return { remote: plan.remote, targetRef: plan.targetRef };
   }
 
+  /** Reads a single-valued Git config key; an unset key resolves to `undefined` rather than throwing. */
+  private async readConfig(cwd: string, key: string): Promise<string | undefined> {
+    try {
+      const result = await this.runner.run(['config', '--get', key], { cwd, timeoutMs: 30_000 });
+      return result.stdout.toString('utf8').trim() || undefined;
+    } catch (error) {
+      if (error instanceof GitCommandError && error.exitCode === 1 && !error.cancelled) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  /** Reads a multi-valued Git config key; an unset key resolves to an empty list. */
+  private async readAllConfig(cwd: string, key: string): Promise<string[]> {
+    try {
+      const result = await this.runner.run(['config', '--get-all', key], {
+        cwd,
+        timeoutMs: 30_000,
+      });
+      return result.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean);
+    } catch (error) {
+      if (error instanceof GitCommandError && error.exitCode === 1 && !error.cancelled) return [];
+      throw error;
+    }
+  }
+
   private async resolvePushPlan(
     repository: RepositorySummary,
   ): Promise<{ remote: string; targetRef: string; sourceRef: string }> {
@@ -367,32 +497,9 @@ export class GitOperationService {
     const cwd = fileURLToPath(repository.rootUri);
     const branch = repository.currentBranch;
     if (!branch) throw new Error('Force push is unavailable while HEAD is detached.');
-    const readConfig = async (key: string): Promise<string | undefined> => {
-      try {
-        const result = await this.runner.run(['config', '--get', key], { cwd, timeoutMs: 30_000 });
-        return result.stdout.toString('utf8').trim() || undefined;
-      } catch (error) {
-        if (error instanceof GitCommandError && error.exitCode === 1 && !error.cancelled) {
-          return undefined;
-        }
-        throw error;
-      }
-    };
-    const readAllConfig = async (key: string): Promise<string[]> => {
-      try {
-        const result = await this.runner.run(['config', '--get-all', key], {
-          cwd,
-          timeoutMs: 30_000,
-        });
-        return result.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean);
-      } catch (error) {
-        if (error instanceof GitCommandError && error.exitCode === 1 && !error.cancelled) return [];
-        throw error;
-      }
-    };
-    const pushRemote = await readConfig(`branch.${branch}.pushRemote`);
-    const defaultRemote = await readConfig('remote.pushDefault');
-    const upstreamRemote = await readConfig(`branch.${branch}.remote`);
+    const pushRemote = await this.readConfig(cwd, `branch.${branch}.pushRemote`);
+    const defaultRemote = await this.readConfig(cwd, 'remote.pushDefault');
+    const upstreamRemote = await this.readConfig(cwd, `branch.${branch}.remote`);
     let remote = pushRemote ?? defaultRemote ?? upstreamRemote;
     if (!remote) {
       const remotesResult = await this.runner.run(['remote'], { cwd, timeoutMs: 30_000 });
@@ -401,11 +508,11 @@ export class GitOperationService {
     }
     if (!remote) throw new Error('Git could not resolve a unique push remote.');
     if (remote === '.') throw new Error('Force push to the local repository is not supported.');
-    if ((await readConfig(`remote.${remote}.mirror`)) === 'true') {
+    if ((await this.readConfig(cwd, `remote.${remote}.mirror`)) === 'true') {
       throw new Error(`Force push is unavailable because remote “${remote}” is configured as a mirror.`);
     }
 
-    const configuredRefspecs = await readAllConfig(`remote.${remote}.push`);
+    const configuredRefspecs = await this.readAllConfig(cwd, `remote.${remote}.push`);
     if (configuredRefspecs.length > 1) {
       throw new Error(`Force push is unavailable because remote “${remote}” has multiple push refspecs.`);
     }
@@ -413,9 +520,9 @@ export class GitOperationService {
       return this.parseConfiguredPushRefspec(remote, configuredRefspecs[0]);
     }
 
-    const pushDefault = (await readConfig('push.default')) ?? 'simple';
-    const upstreamRef = await readConfig(`branch.${branch}.merge`);
-    const autoSetupRemote = (await readConfig('push.autoSetupRemote')) === 'true';
+    const pushDefault = (await this.readConfig(cwd, 'push.default')) ?? 'simple';
+    const upstreamRef = await this.readConfig(cwd, `branch.${branch}.merge`);
+    const autoSetupRemote = (await this.readConfig(cwd, 'push.autoSetupRemote')) === 'true';
     let targetRef: string;
     switch (pushDefault) {
       case 'nothing':
@@ -464,6 +571,202 @@ export class GitOperationService {
     };
   }
 
+  /**
+   * Resolves a one-off `git push --set-upstream <remote> <branch>` for a branch that has no
+   * upstream yet. Unlike the force-push plan this never falls back to `origin`: a repository with
+   * several remotes and no configured push default has no unambiguous publish target.
+   */
+  private async resolvePublishPlan(
+    repository: RepositorySummary,
+  ): Promise<{ remote: string; branch: string }> {
+    if (repository.isBare) throw new Error(`Bare repository “${repository.displayName}” is read-only.`);
+    const cwd = fileURLToPath(repository.rootUri);
+    const currentBranch = repository.currentBranch;
+    if (!currentBranch) throw new Error('Publishing is unavailable while HEAD is detached.');
+    const branch = validateToken(currentBranch, 'branch name');
+
+    const upstreamRemote = await this.readConfig(cwd, `branch.${branch}.remote`);
+    const upstreamRef = await this.readConfig(cwd, `branch.${branch}.merge`);
+    if (upstreamRemote && upstreamRef) {
+      const upstreamName = upstreamRef.replace(/^refs\/heads\//u, '');
+      throw new Error(
+        `Branch “${branch}” already tracks “${upstreamRemote}/${upstreamName}”; use Push instead.`,
+      );
+    }
+    if (upstreamRemote || upstreamRef) {
+      throw new Error(
+        `Branch “${branch}” has an incomplete upstream configuration; run “git branch --unset-upstream ${branch}” first.`,
+      );
+    }
+
+    // `--verify --quiet` reports a missing ref with exit code 1 instead of an unhelpful Git error.
+    try {
+      await this.runner.run(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
+        cwd,
+        timeoutMs: 30_000,
+        maxStdoutBytes: 4096,
+      });
+    } catch (error) {
+      if (error instanceof GitCommandError && error.exitCode === 1 && !error.cancelled) {
+        throw new Error(`Branch “${branch}” has no commits yet; create a commit before publishing.`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+
+    const pushRemote = await this.readConfig(cwd, `branch.${branch}.pushRemote`);
+    const defaultRemote = await this.readConfig(cwd, 'remote.pushDefault');
+    let remote = pushRemote ?? defaultRemote;
+    if (!remote) {
+      const remotesResult = await this.runner.run(['remote'], { cwd, timeoutMs: 30_000 });
+      const remotes = remotesResult.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean);
+      if (remotes.length === 1) remote = remotes[0];
+    }
+    if (!remote) {
+      throw new Error(
+        'Git could not resolve a unique push remote; configure remote.pushDefault or branch.<name>.pushRemote.',
+      );
+    }
+    // Validate before the remote is interpolated into further config keys: `readConfig` treats
+    // exit code 1 as "unset", so a key that git rejects would silently skip the mirror guard below.
+    const validatedRemote = validateToken(remote, 'push remote');
+    if (validatedRemote === '.') {
+      throw new Error('Publishing to the local repository is not supported.');
+    }
+    if ((await this.readConfig(cwd, `remote.${validatedRemote}.mirror`)) === 'true') {
+      throw new Error(
+        `Publishing is unavailable because remote “${validatedRemote}” is configured as a mirror.`,
+      );
+    }
+    return { remote: validatedRemote, branch };
+  }
+
+  /**
+   * `git push --set-upstream` writes the upstream configuration, but it only creates the
+   * `refs/remotes/<remote>/<branch>` ref when the remote's fetch refspec covers that branch.
+   * Repositories cloned with `--single-branch` (and remotes whose fetch refspec was narrowed)
+   * therefore publish successfully while no tracking ref exists: the branch never appears in the
+   * remote group, and refreshing cannot help because there is nothing to read. Fetch the branch
+   * into the default tracking namespace so a published branch becomes visible.
+   */
+  private async materializePublishedTrackingRef(
+    repository: RepositorySummary,
+    remote: string,
+    branch: string,
+  ): Promise<void> {
+    // Both tokens were validated before the push ran; a Git ref name cannot contain the `:` that
+    // would otherwise let a branch name forge an extra refspec field.
+    const validatedRemote = validateToken(remote, 'push remote');
+    const validatedBranch = validateToken(branch, 'branch name');
+    const cwd = fileURLToPath(repository.rootUri);
+    try {
+      const upstream = await this.runner.run(
+        ['for-each-ref', '--format=%(upstream)', `refs/heads/${validatedBranch}`],
+        { cwd, timeoutMs: 30_000 },
+      );
+      if (upstream.stdout.toString('utf8').trim()) return;
+      await this.runner.run(
+        [
+          'fetch',
+          '--no-tags',
+          validatedRemote,
+          `+refs/heads/${validatedBranch}:refs/remotes/${validatedRemote}/${validatedBranch}`,
+        ],
+        { cwd, timeoutMs: 10 * 60_000 },
+      );
+    } catch (error) {
+      // The push already succeeded, so a missing tracking ref must not be reported as a failed
+      // operation; the published branch simply stays invisible until the user repairs the refspec.
+      if (error instanceof GitCommandError && error.cancelled) return;
+      console.warn(
+        `[git-log] failed to materialize the tracking ref for ${validatedRemote}/${validatedBranch}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Resolves what a full-history fetch needs: which remote to unshallow against, and whether that
+   * remote's fetch refspec is narrowed to a single branch. For a `--single-branch` clone the
+   * refspec maps one specific source, so `git fetch --unshallow` restores history but other
+   * branches stay invisible; only then is a change to the default wildcard refspec planned. The
+   * change is never applied here — the caller surfaces it verbatim in the confirmation and applies
+   * it after a successful unshallow.
+   */
+  private async planFullHistory(
+    repository: RepositorySummary,
+  ): Promise<{ remote: string; refspecFrom?: string; refspecTo?: string }> {
+    const cwd = fileURLToPath(repository.rootUri);
+    const remotesResult = await this.runner.run(['remote'], { cwd, timeoutMs: 30_000 });
+    const remotes = remotesResult.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean);
+
+    let remote = repository.currentBranch
+      ? await this.readConfig(
+          cwd,
+          `branch.${validateToken(repository.currentBranch, 'branch name')}.remote`,
+        )
+      : undefined;
+    if (!remote) remote = await this.readConfig(cwd, 'remote.pushDefault');
+    if (!remote && remotes.length === 1) remote = remotes[0];
+    if (!remote) {
+      throw new Error(
+        'Git could not resolve a single remote to fetch the full history from; configure a remote first.',
+      );
+    }
+    const validatedRemote = validateToken(remote, 'remote');
+    if (!remotes.includes(validatedRemote)) {
+      throw new Error(`Remote “${validatedRemote}” is not configured in this repository.`);
+    }
+
+    const configuredRefspecs = await this.readAllConfig(cwd, `remote.${validatedRemote}.fetch`);
+    const narrowed = configuredRefspecs.find((spec) => {
+      const source = spec.replace(/^\+/u, '').split(':')[0] ?? '';
+      return !source.includes('*');
+    });
+    if (narrowed !== undefined) {
+      return {
+        remote: validatedRemote,
+        refspecFrom: narrowed,
+        refspecTo: `+refs/heads/*:refs/remotes/${validatedRemote}/*`,
+      };
+    }
+    return { remote: validatedRemote };
+  }
+
+  /**
+   * After `--unshallow` succeeded, broaden a narrowed fetch refspec to the default wildcard and
+   * re-fetch so other branches appear. The history is already restored, so this is best-effort: a
+   * failure is logged, never reported as a failed operation.
+   */
+  private async applyFetchRefspec(
+    repository: RepositorySummary,
+    remote: string,
+    to: string,
+  ): Promise<void> {
+    const validatedRemote = validateToken(remote, 'remote');
+    const validatedTo = validateToken(to, 'fetch refspec');
+    const cwd = fileURLToPath(repository.rootUri);
+    try {
+      await this.runner.run(
+        ['config', '--replace-all', `remote.${validatedRemote}.fetch`, validatedTo],
+        { cwd, timeoutMs: 30_000 },
+      );
+      await this.runner.run(['fetch', '--prune', validatedRemote], {
+        cwd,
+        timeoutMs: 10 * 60_000,
+      });
+    } catch (error) {
+      if (error instanceof GitCommandError && error.cancelled) return;
+      console.warn(
+        `[git-log] unshallow succeeded but extending the fetch refspec for ${validatedRemote} failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   run(
     repository: RepositorySummary,
     operation: GitOperationRequest,
@@ -504,12 +807,16 @@ export class GitOperationService {
         if (operation.kind === 'dropCommits' || operation.kind === 'squashCommits') {
           rewritePlan = await this.planCommitRangeRewrite(freshRepository, operation.hashes);
         }
-        let messageRewritePlan: MessageRewritePlan | undefined;
-        if (operation.kind === 'editCommitMessages') {
-          messageRewritePlan = await this.planMessageRewrite(freshRepository, operation.edits);
+        let commitPatchPlan: CommitPatchPlan | undefined;
+        if (
+          operation.kind === 'editCommitMessages' ||
+          operation.kind === 'rewriteAuthorIdentity'
+        ) {
+          commitPatchPlan = await this.planCommitPatch(freshRepository, operation);
         }
         let preparedOperation = operation;
         let forceSourceHash: string | undefined;
+        let batchDeletion: BatchDeletionOutcome | undefined;
         if (operation.kind === 'push' && operation.forceWithLease) {
           const plan = await this.resolvePushPlan(freshRepository);
           preparedOperation = {
@@ -523,6 +830,18 @@ export class GitOperationService {
             { cwd: fileURLToPath(freshRepository.rootUri), timeoutMs: 30_000 },
           );
           forceSourceHash = source.stdout.toString('utf8').trim();
+        }
+        if (operation.kind === 'publishBranch') {
+          const plan = await this.resolvePublishPlan(freshRepository);
+          preparedOperation = {
+            ...operation,
+            remote: plan.remote,
+            branch: plan.branch,
+          };
+        }
+        if (operation.kind === 'fetchFullHistory') {
+          const plan = await this.planFullHistory(freshRepository);
+          preparedOperation = { ...operation, ...plan };
         }
         const confirmation = getOperationConfirmation(freshRepository, preparedOperation);
         if (confirmation) {
@@ -551,21 +870,18 @@ export class GitOperationService {
           }
           rewritePlan = revalidatedPlan;
         }
-        if (messageRewritePlan && operation.kind === 'editCommitMessages') {
-          await this.assertMessageRewriteStillCurrent(messageRewritePlan);
-          const revalidatedMessagePlan = await this.planMessageRewrite(
-            freshRepository,
-            operation.edits,
-          );
+        if (commitPatchPlan) {
+          await this.assertCommitPatchStillCurrent(commitPatchPlan);
+          const revalidatedCommitPatchPlan = await this.planCommitPatch(freshRepository, operation);
           if (
-            revalidatedMessagePlan.branch !== messageRewritePlan.branch ||
-            revalidatedMessagePlan.expectedHead !== messageRewritePlan.expectedHead
+            revalidatedCommitPatchPlan.branch !== commitPatchPlan.branch ||
+            revalidatedCommitPatchPlan.expectedHead !== commitPatchPlan.expectedHead
           ) {
             throw new Error(
               'The current branch or HEAD changed during confirmation; select the commits again.',
             );
           }
-          messageRewritePlan = revalidatedMessagePlan;
+          commitPatchPlan = revalidatedCommitPatchPlan;
         }
         if (rewritePlan && preparedOperation.kind === 'dropCommits') {
           await this.rebaseCommitRange(rewritePlan, rewritePlan.baseParent);
@@ -575,8 +891,13 @@ export class GitOperationService {
             preparedOperation.message,
           );
           await this.rebaseCommitRange(rewritePlan, squashedHash);
-        } else if (messageRewritePlan && preparedOperation.kind === 'editCommitMessages') {
-          await this.rewriteCommitMessages(messageRewritePlan);
+        } else if (commitPatchPlan) {
+          await this.applyCommitPatch(commitPatchPlan);
+        } else if (preparedOperation.kind === 'deleteBranches') {
+          batchDeletion = await this.deleteBranches(
+            preparedOperation.branches,
+            fileURLToPath(freshRepository.rootUri),
+          );
         } else {
           await this.runner.run(buildOperationArguments(preparedOperation, forceSourceHash), {
             cwd: fileURLToPath(freshRepository.rootUri),
@@ -585,6 +906,36 @@ export class GitOperationService {
               ? { env: { GIT_EDITOR: 'true' } }
               : {}),
           });
+          if (
+            preparedOperation.kind === 'publishBranch' &&
+            preparedOperation.remote &&
+            preparedOperation.branch
+          ) {
+            await this.materializePublishedTrackingRef(
+              freshRepository,
+              preparedOperation.remote,
+              preparedOperation.branch,
+            );
+          }
+          if (
+            preparedOperation.kind === 'fetchFullHistory' &&
+            preparedOperation.remote &&
+            preparedOperation.refspecTo
+          ) {
+            await this.applyFetchRefspec(
+              freshRepository,
+              preparedOperation.remote,
+              preparedOperation.refspecTo,
+            );
+          }
+        }
+        if (batchDeletion) {
+          return {
+            message: batchDeletion.message,
+            ...(batchDeletion.deletedRefs.length > 0
+              ? { deletedRefs: batchDeletion.deletedRefs }
+              : {}),
+          };
         }
         return { message: `${operation.kind} completed.` };
       });
@@ -742,19 +1093,19 @@ export class GitOperationService {
     );
   }
 
-  private async planMessageRewrite(
+  private async planCommitPatch(
     repository: RepositorySummary,
-    edits: readonly { hash: string; message: string }[],
-  ): Promise<MessageRewritePlan> {
+    operation: GitOperationRequest,
+  ): Promise<CommitPatchPlan> {
     const cwd = fileURLToPath(repository.rootUri);
     const branchResult = await this.runner.run(['branch', '--show-current'], {
       cwd,
       timeoutMs: 30_000,
     });
     const branch = branchResult.stdout.toString('utf8').trim();
-    if (!branch) throw new Error('Commit message rewriting is unavailable while HEAD is detached.');
-    if (edits.length < 1 || edits.length > 100) {
-      throw new Error('Select between 1 and 100 commits.');
+    if (!branch) throw new Error('Commit history rewriting is unavailable while HEAD is detached.');
+    if (operation.kind !== 'editCommitMessages' && operation.kind !== 'rewriteAuthorIdentity') {
+      throw new Error('Invalid commit history rewrite operation.');
     }
     const headResult = await this.runner.run(['rev-parse', '--verify', 'HEAD'], {
       cwd,
@@ -766,20 +1117,50 @@ export class GitOperationService {
       timeoutMs: 30_000,
     });
     const reachable = new Set(logResult.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean));
-    const editMap = new Map<string, string>();
-    for (const edit of edits) {
-      const hash = validateHash(edit.hash);
-      if (editMap.has(hash)) throw new Error('Duplicate commit hashes are not allowed.');
-      if (!reachable.has(hash)) {
-        throw new Error('Edits must refer to commits reachable from the current branch tip.');
+    const messageEdits = new Map<string, string>();
+    const identityEdits = new Map<string, AuthorIdentity>();
+    if (operation.kind === 'editCommitMessages') {
+      if (operation.edits.length < 1 || operation.edits.length > 100) {
+        throw new Error('Select between 1 and 100 commits.');
       }
-      editMap.set(hash, validateCommitMessage(edit.message, 'commit message'));
+      for (const edit of operation.edits) {
+        const hash = validateHash(edit.hash);
+        if (messageEdits.has(hash)) throw new Error('Duplicate commit hashes are not allowed.');
+        if (!reachable.has(hash)) {
+          throw new Error('Edits must refer to commits reachable from the current branch tip.');
+        }
+        messageEdits.set(hash, validateCommitMessage(edit.message, 'commit message'));
+      }
+    } else {
+      if (operation.hashes.length < 1 || operation.hashes.length > 100) {
+        throw new Error('Select between 1 and 100 commits.');
+      }
+      const identity = {
+        name: validateIdentity(operation.name, 'author name'),
+        email: validateIdentity(operation.email, 'author email'),
+      };
+      for (const hash of operation.hashes) {
+        const validatedHash = validateHash(hash);
+        if (identityEdits.has(validatedHash)) {
+          throw new Error('Duplicate commit hashes are not allowed.');
+        }
+        if (!reachable.has(validatedHash)) {
+          throw new Error('Edits must refer to commits reachable from the current branch tip.');
+        }
+        identityEdits.set(validatedHash, identity);
+      }
     }
-    return { cwd, branch: validateToken(branch, 'branch name'), expectedHead, edits: editMap };
+    return {
+      cwd,
+      branch: validateToken(branch, 'branch name'),
+      expectedHead,
+      messageEdits,
+      identityEdits,
+    };
   }
 
-  private async patchMessageRewrite(
-    plan: MessageRewritePlan,
+  private async patchCommitObjects(
+    plan: CommitPatchPlan,
   ): Promise<{ affected: string[]; mapping: Map<string, string> }> {
     const revResult = await this.runner.run(
       ['rev-list', '--topo-order', '--reverse', '--parents', plan.expectedHead],
@@ -795,7 +1176,11 @@ export class GitOperationService {
     const work: string[] = [];
     for (const [oid, ...parents] of rows) {
       if (!oid) continue;
-      if (plan.edits.has(oid) || parents.some((parent) => affected.has(parent))) {
+      if (
+        plan.messageEdits.has(oid) ||
+        plan.identityEdits.has(oid) ||
+        parents.some((parent) => affected.has(parent))
+      ) {
         affected.add(oid);
         work.push(oid);
       }
@@ -811,7 +1196,8 @@ export class GitOperationService {
       const separator = raw.indexOf(Buffer.from('\n\n', 'utf8'));
       const header = separator < 0 ? raw : raw.subarray(0, separator);
       const originalMessage = separator < 0 ? Buffer.alloc(0) : raw.subarray(separator + 2);
-      const newMessage = plan.edits.get(oid);
+      const newMessage = plan.messageEdits.get(oid);
+      const identity = plan.identityEdits.get(oid);
       const output: Buffer[] = [];
       let skip = false;
       for (const line of splitBufferLines(header)) {
@@ -835,6 +1221,11 @@ export class GitOperationService {
               Buffer.from('\n', 'utf8'),
             ]),
           );
+        } else if (
+          identity &&
+          (headerLineStartsWith(line, 'author ') || headerLineStartsWith(line, 'committer '))
+        ) {
+          output.push(Buffer.concat([rewriteIdentityLine(line, identity), Buffer.from('\n', 'utf8')]));
         } else {
           output.push(Buffer.concat([line, Buffer.from('\n', 'utf8')]));
         }
@@ -853,7 +1244,7 @@ export class GitOperationService {
     return { affected: work, mapping };
   }
 
-  private async assertMessageRewriteStillCurrent(plan: MessageRewritePlan): Promise<void> {
+  private async assertCommitPatchStillCurrent(plan: CommitPatchPlan): Promise<void> {
     const [branchResult, headResult, shallowResult, conflictsResult] = await Promise.all([
       this.runner.run(['branch', '--show-current'], { cwd: plan.cwd, timeoutMs: 30_000 }),
       this.runner.run(['rev-parse', '--verify', 'HEAD'], { cwd: plan.cwd, timeoutMs: 30_000 }),
@@ -933,24 +1324,67 @@ export class GitOperationService {
     return `${prefix}/${stamp}-${randomBytes(3).toString('hex')}`;
   }
 
-  private async rewriteCommitMessages(plan: MessageRewritePlan): Promise<void> {
-    await this.assertMessageRewriteStillCurrent(plan);
-    const backup = this.timestampedBranchName('commit-rewrite-backup');
+  private async applyCommitPatch(plan: CommitPatchPlan): Promise<void> {
+    await this.assertCommitPatchStillCurrent(plan);
+    const backup = this.timestampedBranchName(
+      plan.identityEdits.size > 0 ? 'identity-rewrite-backup' : 'commit-rewrite-backup',
+    );
     await this.runner.run(
       ['update-ref', `refs/heads/${backup}`, plan.expectedHead, '0'.repeat(plan.expectedHead.length)],
       { cwd: plan.cwd, timeoutMs: 30_000 },
     );
-    const { affected, mapping } = await this.patchMessageRewrite(plan);
+    const { affected, mapping } = await this.patchCommitObjects(plan);
     if (!affected.includes(plan.expectedHead)) {
       throw new Error('The current branch tip is not among the affected commits.');
     }
     const newTip = mapping.get(plan.expectedHead);
     if (!newTip) throw new Error('The current branch tip could not be rewritten.');
-    await this.assertMessageRewriteStillCurrent(plan);
+    await this.assertCommitPatchStillCurrent(plan);
+    const label = plan.identityEdits.size > 0 ? 'rewrite author identity' : 'rewrite commit messages';
     await this.runner.run(
-      ['update-ref', '-m', `Git Log: rewrite commit messages (backup ${backup})`, `refs/heads/${plan.branch}`, newTip, plan.expectedHead],
+      ['update-ref', '-m', `Git Log: ${label} (backup ${backup})`, `refs/heads/${plan.branch}`, newTip, plan.expectedHead],
       { cwd: plan.cwd, timeoutMs: 30_000 },
     );
+  }
+
+  /**
+   * Deletes branches one at a time so a single failure (a branch that is not fully merged, or
+   * one that disappeared between the dialog and the confirmation) cannot abort the rest of the
+   * batch. Successful and failed branches are both reported back to the caller.
+   */
+  private async deleteBranches(
+    branches: ReadonlyArray<{ name: string; force: boolean }>,
+    cwd: string,
+  ): Promise<BatchDeletionOutcome> {
+    const deletedRefs: string[] = [];
+    const failures: string[] = [];
+    for (const branch of branches) {
+      try {
+        await this.runner.run(
+          buildOperationArguments({
+            kind: 'deleteBranch',
+            name: branch.name,
+            force: branch.force,
+          }),
+          { cwd, timeoutMs: 30_000 },
+        );
+        deletedRefs.push(`refs/heads/${branch.name}`);
+      } catch (error) {
+        const reason =
+          error instanceof GitCommandError ? classifyGitError(error).message : undefined;
+        failures.push(`${branch.name} (${reason ?? 'unknown error'})`);
+      }
+    }
+
+    const deleted = deletedRefs.length;
+    const noun = deleted === 1 ? 'branch' : 'branches';
+    if (failures.length === 0) {
+      return { message: `Deleted ${String(deleted)} ${noun}.`, deletedRefs };
+    }
+    return {
+      message: `Deleted ${String(deleted)} of ${String(branches.length)} branches; failed: ${failures.join('; ')}.`,
+      deletedRefs,
+    };
   }
 
   private async validateRemoteBranchDeletion(

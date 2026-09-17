@@ -3411,4 +3411,118 @@ describe('WorkbenchController', () => {
       expect.objectContaining({ limit: 3, skip: 2 }),
     );
   });
+
+  it('reports the merged branches of the selected repository for the cleanup dialog', async () => {
+    const repository = await createRepository();
+    await execFileAsync('git', ['branch', 'merged-branch'], { cwd: repository });
+    const messages: ExtensionToWebviewMessage[] = [];
+    const runner = new GitRunner();
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService: new GitService(runner),
+      gitRunner: runner,
+      operationService: new GitOperationService(runner),
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: {
+        refsWidth: 220,
+        filesWidth: 320,
+        detailsHeight: 156,
+        filesViewMode: 'tree',
+      },
+      postMessage(message: ExtensionToWebviewMessage) {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+    });
+    await controller.handleMessage({ type: 'ready', requestId: 'ready-branch-cleanup' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    expect(initialized?.type).toBe('initialize');
+    if (!initialized || initialized.type !== 'initialize' || !initialized.selectedRepositoryId) return;
+
+    await controller.handleMessage({
+      type: 'requestBranchCleanup',
+      requestId: 'branch-cleanup',
+      repositoryId: initialized.selectedRepositoryId,
+    });
+
+    expect(messages.at(-1)).toMatchObject({
+      type: 'branchCleanupLoaded',
+      requestId: 'branch-cleanup',
+      repositoryId: initialized.selectedRepositoryId,
+      candidates: [
+        expect.objectContaining({ name: 'merged-branch', merged: true, gone: false }),
+      ],
+    });
+  });
+
+  it('drops every deleted branch from the filters after a batch cleanup', async () => {
+    const repository = await createRepository();
+    await execFileAsync('git', ['branch', 'keep-branch'], { cwd: repository });
+    await execFileAsync('git', ['branch', 'drop-branch'], { cwd: repository });
+    const messages: ExtensionToWebviewMessage[] = [];
+    const runner = new GitRunner();
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService: new GitService(runner),
+      gitRunner: runner,
+      operationService: new GitOperationService(runner),
+      confirmOperation: () => Promise.resolve(true),
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: {
+        refsWidth: 220,
+        filesWidth: 320,
+        detailsHeight: 156,
+        filesViewMode: 'tree',
+      },
+      postMessage(message: ExtensionToWebviewMessage) {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+    });
+    await controller.handleMessage({ type: 'ready', requestId: 'ready-batch-cleanup' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    expect(initialized?.type).toBe('initialize');
+    if (!initialized || initialized.type !== 'initialize' || !initialized.selectedRepositoryId) return;
+
+    await controller.handleMessage({
+      type: 'updateFilters',
+      requestId: 'filter-before-batch-cleanup',
+      repositoryId: initialized.selectedRepositoryId,
+      filters: {
+        text: '',
+        branches: ['refs/heads/keep-branch', 'refs/heads/drop-branch'],
+        authors: [],
+        paths: [],
+      },
+    });
+    messages.length = 0;
+
+    await controller.handleMessage({
+      type: 'runOperation',
+      requestId: 'delete-batch',
+      repositoryId: initialized.selectedRepositoryId,
+      operation: { kind: 'deleteBranches', branches: [{ name: 'drop-branch', force: false }] },
+    });
+
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'repositoryData',
+          repositoryId: initialized.selectedRepositoryId,
+          filters: expect.objectContaining({ branches: ['refs/heads/keep-branch'] }),
+        }),
+        expect.objectContaining({
+          type: 'operationCompleted',
+          requestId: 'delete-batch',
+          message: 'Deleted 1 branch.',
+        }),
+      ]),
+    );
+  });
 });

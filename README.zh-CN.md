@@ -74,11 +74,13 @@ code --install-extension ascenx.git-log
 - 多根工作区仓库发现，支持普通仓库、bare repository、linked worktree 和 detached HEAD。
 - Refs / Commit Graph / Changed Files / Commit Details 四区联动。
 - Branch 区域提供独立搜索，并将名称中带 `/` 的 Local、Remote、Tag 引用递归分组为可展开/收起的文件夹；本身包含 `/` 的 Remote 名称仍作为独立的顶层文件夹。
+- Branches 标题行提供批量清理入口：对话框一次列出「上游已消失」与「已合并入当前分支」两类本地分支，逐条展示未合并提交数与最后提交时间。`gone` 分支默认勾选，未合并分支默认不勾选；删除按分支逐条执行，失败项照常列出而不会中断其余分支。
 - Git Log 作为 VS Code 底部 Panel 的独立 Tab 展示，与问题、输出、终端等工具窗口并列；点击 `Open Log` 会直接聚焦该 Tab，不再打开编辑器页或经过中间欢迎页。
 - 分页日志、有界滑动窗口、自定义 DAG lane、跨窗口 graph continuation、固定行高虚拟滚动和大列表性能基准；深分页的全局 offset、选择和相对滚动位置可恢复。`Go to HEAD` 会在当前筛选后的 Commit 列表中定位已 Checkout 的 HEAD，并将其对齐到首个可见行，不会切换当前 Branch 筛选。
 - Text/Hash、Branch、User、Date、Path 组合过滤，旧查询取消和过期响应拒绝；仓库状态刷新不会覆盖正在编辑的搜索草稿；文本查询按 canonical `git log --date-order` 顺序扫描完整正文、作者姓名与邮箱，保留 child-before-parent 拓扑。
 - Root、Merge、Rename、Copy、Binary 等 changed-files 场景及 VS Code 原生 Diff；多选 Commit 时会合并展示所有选中 Commit 的变更文件，并为每个文件保留正确的 Commit 与 Parent 上下文。
 - Checkout、Checkout Revision、Branch、Tag、Fetch、Pull、Push、Cherry-pick、Revert、Merge、Rebase、Reset、Rename/Delete Branch，以及 Commit/Local/Remote/Tag/HEAD 对应的上下文菜单。
+- 浅克隆仓库会在 Commit 列表上方显示「历史被截断」提示，并提供 **Fetch full history** 动作，执行 `git fetch --unshallow` 拉取完整历史；对 fetch refspec 只覆盖单一分支的单分支克隆，确认框会逐字列出改动，补全后把该 refspec 扩展为覆盖全部分支，使此前不可见的远程分支显示出来。
 - 提供完整 Stash 管理：可选择是否包含未跟踪文件，并支持查看 Stash 变更、Apply、Pop 和确认后 Drop。
 - 单击或双击分支只会选择该分支并展示对应 Commit，不会自动 Checkout；Checkout 保留在 Ref 右键菜单中，必须显式执行。
 - 支持使用 Shift+单击或 Shift+方向键连续多选 Commit，也可使用 Ctrl/Cmd+单击逐个切换非连续选区；Changed Files 会合并所有选中 Commit，`Drop commits…` 和 `Squash commits…` 仍仅对连续选区开放。Squash 输入框会按界面从上到下预填所有选中 Commit 的完整消息。历史改写要求工作区干净并二次确认，同时拒绝 Root Commit、Merge Commit、过期选区，以及确认期间发生的当前分支或 HEAD 变化。
@@ -133,7 +135,7 @@ code --install-extension ascenx.git-log
 
 ### 插件界面内的右键菜单（Webview）
 
-以下是在 Git Log 界面内右键弹出的上下文菜单，按右键目标分组。标注「裸仓库 / 进行中操作」的项在裸仓库或有变基等操作进行中时不可用；若仓库有进行中的操作或为裸仓库，工具栏菜单只显示提示文字。
+以下是在 Git Log 界面内右键弹出的上下文菜单，按右键目标分组。标注「裸仓库 / 进行中操作」的项在裸仓库或有变基等操作进行中时不可用；若仓库有进行中的操作或为裸仓库，工具栏菜单只显示提示文字。当前分支尚未建立上游时，工具栏右键与本地分支右键的 Push 项显示为 Publish Branch。
 
 **工具栏右键**
 
@@ -141,6 +143,7 @@ code --install-extension ascenx.git-log
 |---|---|
 | Pull | 拉取当前分支（需存在当前分支）。 |
 | Push | 推送当前分支（需存在当前分支）。 |
+| Publish Branch | 发布当前分支：推送并建立上游（当前分支无上游时替代 Push，需存在当前分支）。 |
 | Force Push with Lease… | 以 `--force-with-lease` 强制推送（需存在当前分支）。 |
 
 **提交行右键（Commit）**
@@ -188,6 +191,7 @@ code --install-extension ascenx.git-log
 | Merge into Current | 本地分支 | 有当前分支且非当前分支 | 合并进当前分支。 |
 | Rebase Current onto | 本地分支 | 有当前分支且非当前分支 | 把当前分支变基到该分支。 |
 | Push | 本地分支 | 仅当前分支 | 推送该分支。 |
+| Publish Branch | 本地分支 | 仅当前分支且无上游 | 发布该分支：推送并建立上游，仅写入该分支的上游绑定。 |
 | Rename… | 本地分支 | 非裸/无进行中 | 重命名分支。 |
 | Delete… | 本地分支 | 非当前分支 | 删除分支（未合并失败时提供强制删除）。 |
 | Checkout as New Local… | 远程分支 | 非裸/无进行中、非 `…/HEAD` | 基于远程分支新建并检出本地分支。 |

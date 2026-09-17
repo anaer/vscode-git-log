@@ -33,13 +33,14 @@ function classifyRef(fullName: string, remoteNames: readonly string[]): {
   return null;
 }
 
-function parseTracking(track: string): { ahead: number; behind: number } {
+function parseTracking(track: string): { ahead: number; behind: number; gone: boolean } {
   const ahead = /ahead (\d+)/u.exec(track)?.[1];
   const behind = /behind (\d+)/u.exec(track)?.[1];
 
   return {
     ahead: ahead ? Number.parseInt(ahead, 10) : 0,
     behind: behind ? Number.parseInt(behind, 10) : 0,
+    gone: /\[gone\]/u.test(track),
   };
 }
 
@@ -80,6 +81,7 @@ export function parseRefs(
       isCurrent: classified.kind === 'local' && classified.shortName === currentBranch,
       ...(classified.remote ? { remote: classified.remote } : {}),
       ...(upstream ? { upstream: shortenUpstream(upstream) } : {}),
+      ...(track.gone ? { gone: true } : {}),
     });
   }
 

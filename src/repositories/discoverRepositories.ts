@@ -201,7 +201,7 @@ export async function inspectRepository(
     : await runOptional(runner, ['rev-parse', '--show-toplevel'], candidate);
   if (!root) return undefined;
 
-  const [currentBranch, head, commonGitDir, userName, userEmail] = await Promise.all([
+  const [currentBranch, head, commonGitDir, userName, userEmail, shallow] = await Promise.all([
     isBare
       ? Promise.resolve(undefined)
       : runOptional(runner, ['symbolic-ref', '--quiet', '--short', 'HEAD'], root),
@@ -209,6 +209,7 @@ export async function inspectRepository(
     runOptional(runner, ['rev-parse', '--git-common-dir'], root),
     runOptional(runner, ['config', '--get', 'user.name'], root),
     runOptional(runner, ['config', '--get', 'user.email'], root),
+    runOptional(runner, ['rev-parse', '--is-shallow-repository'], root),
   ]);
   const operationState = isBare ? undefined : await detectOperationState(gitDir);
   const hasUnresolvedConflicts = operationState
@@ -231,6 +232,7 @@ export async function inspectRepository(
     ...(userEmail ? { userEmail } : {}),
     ...(operationState ? { operationState } : {}),
     ...(hasUnresolvedConflicts !== undefined ? { hasUnresolvedConflicts } : {}),
+    ...(shallow === 'true' ? { isShallow: true } : {}),
   };
 }
 

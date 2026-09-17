@@ -25,6 +25,7 @@ export function buildLogArguments(options: BuildLogArgumentsOptions): string[] {
     'log',
     '--date-order',
     '--no-color',
+    '--use-mailmap',
     `--format=${options.format}`,
     `--max-count=${String(options.limit)}`,
     `--skip=${String(options.skip)}`,

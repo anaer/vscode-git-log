@@ -79,6 +79,50 @@ describe('Git machine-readable parsers', () => {
     expect(ref).not.toHaveProperty('remote');
   });
 
+  it('marks a local branch whose upstream is gone and leaves other tracking fields intact', async () => {
+    const { parseRefs } = await import('../../src/git/parsers/parseRefs');
+    const output = Buffer.from(
+      [
+        'refs/heads/feature/gone\0aaaaaaaa\0\0refs/remotes/origin/feature/gone\0[gone]\0',
+        '\nrefs/heads/main\0bbbbbbbb\0\0refs/remotes/origin/main\0[ahead 1]\0\n',
+      ].join(''),
+    );
+
+    expect(parseRefs(output, 'main')).toEqual([
+      {
+        fullName: 'refs/heads/feature/gone',
+        shortName: 'feature/gone',
+        kind: 'local',
+        target: 'aaaaaaaa',
+        upstream: 'origin/feature/gone',
+        ahead: 0,
+        behind: 0,
+        isCurrent: false,
+        gone: true,
+      },
+      {
+        fullName: 'refs/heads/main',
+        shortName: 'main',
+        kind: 'local',
+        target: 'bbbbbbbb',
+        upstream: 'origin/main',
+        ahead: 1,
+        behind: 0,
+        isCurrent: true,
+      },
+    ]);
+  });
+
+  it('does not flag a branch without an upstream as gone', async () => {
+    const { parseRefs } = await import('../../src/git/parsers/parseRefs');
+    const output = Buffer.from('refs/heads/local-only\0aaaaaaaa\0\0\0\0\n');
+
+    const [ref] = parseRefs(output, undefined);
+
+    expect(ref).not.toHaveProperty('gone');
+    expect(ref).not.toHaveProperty('upstream');
+  });
+
   it('parses paged log records without losing unicode or parent hashes', async () => {
     const modulePath = '../../src/git/parsers/parseLog';
     const parser = await import(/* @vite-ignore */ modulePath).catch(() => undefined);

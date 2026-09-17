@@ -13,7 +13,7 @@
 | **God Component** | 包含过多职责的单一组件（反模式） |
 | **Operation Queue** | 操作队列，串行化 Git 写操作避免并发冲突 |
 | **提交对象重建** | 用 `git hash-object -t commit -w --stdin` 按新消息与 parent 重建 commit 对象，用于批量改写历史（见 ADR-0006） |
-| **发布分支** | 对尚无上游的本地分支执行一次性 `git push --set-upstream <remote> <branch>`，只对本次推送生效、不写入 git 配置（见 ADR-0007） |
+| **发布分支** | 对尚无上游的本地分支执行一次性 `git push --set-upstream <remote> <branch>`；仅写入该分支的上游绑定（`branch.<name>.remote` / `.merge`），不改写 `push.autoSetupRemote`（见 ADR-0007） |
 | **gone 分支** | 上游远程分支已被删除、`%(upstream:track)` 显示 `[gone]` 的本地分支（见 ADR-0008） |
 | **mailmap** | Git 身份别名映射文件，把同一作者的不同姓名与邮箱归并为一个显示身份（见 ADR-0009） |
 | **作者身份改写** | 在提交对象重建闭环中重写 commit 的 `author` 与 `committer` 行，改变受影响 commit 的 oid（见 ADR-0009） |
@@ -22,6 +22,10 @@
 | **补丁导出** | 把对比结果写成 `.patch` 文件，二进制文件被排除（见 ADR-0011） |
 | **孤儿分支** | 通过 `git switch --orphan` 创建、无父提交且与既有历史无共同祖先的分支；首个提交前不存在对应 ref（见 ADR-0012） |
 | **未出生分支** | HEAD 已指向某分支但该分支尚无提交、因而无 ref 的状态（见 ADR-0012） |
+| **引用快照** | 扩展侧每次刷新时经 `for-each-ref` 实时取得的完整 ref 列表，随 `repositoryData` 整体下发、前端不缓存 |
+| **远程跟踪引用** | `refs/remotes/<remote>/<branch>`，由远程的 fetch refspec 物化；`git push --set-upstream` 只写入上游配置，**仅当 refspec 覆盖该分支时**才创建它（见 ADR-0013） |
+| **窄 refspec** | `remote.<remote>.fetch` 只覆盖部分分支的配置形态，`git clone --single-branch` 的典型产物（如 `+refs/heads/main:refs/remotes/origin/main`）；窄 refspec 下推送不会产生跟踪引用（见 ADR-0013） |
+| **宿主默认右键菜单** | Electron / Chromium 为 webview 提供的原生剪切 / 复制 / 粘贴菜单；扩展面板内除可编辑元素外统一抑制（见 ADR-0014） |
 
 ## 技术术语
 

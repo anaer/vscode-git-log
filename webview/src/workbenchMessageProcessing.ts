@@ -200,6 +200,24 @@ export function createMessageProcessor(
             : current,
         );
         break;
+      case 'branchCleanupLoaded':
+        effects.setBranchCleanup((current) =>
+          current && current.repositoryId === message.repositoryId
+            ? {
+                ...current,
+                candidates: message.candidates,
+                // Only branches whose upstream is gone are pre-ticked; anything still holding
+                // unmerged commits has to be selected deliberately.
+                selected: new Set(
+                  message.candidates
+                    .filter((candidate) => candidate.gone)
+                    .map((candidate) => candidate.name),
+                ),
+                loading: false,
+              }
+            : current,
+        );
+        break;
       case 'repositoryData': {
         if (race.acceptedRepositoryId !== message.repositoryId) {
           race.requestById.delete(message.requestId);
@@ -292,6 +310,7 @@ export function createMessageProcessor(
             refs: message.refs,
             filters: preservesPendingFilters ? current.filters : message.filters,
             commits: commitWindow.commits,
+            contributors: message.contributors ?? [],
             commitListRevision: message.replace
               ? current.commitListRevision + 1
               : current.commitListRevision,

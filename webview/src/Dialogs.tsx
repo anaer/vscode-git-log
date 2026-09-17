@@ -4,12 +4,15 @@ import type { RepositorySummary } from '../../src/shared/models';
 import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/protocol/messages';
 import type {
   AmendDialogState,
+  BranchCleanupDialogState,
   EditCommitMessagesState,
   HistoryParentPickerState,
+  RewriteAuthorIdentityState,
   SquashOperationState,
   StashDialogState,
 } from './workbenchEffects';
 import type { NamedOperationState } from './App';
+import { formatCommitDate } from './formatCommitDate';
 import { requestId } from './webviewUtils';
 
 interface DialogsProps {
@@ -18,6 +21,9 @@ interface DialogsProps {
   stashDialogRepositoryRef: RefObject<string | undefined>;
   amendDialog: AmendDialogState | undefined;
   setAmendDialog: Dispatch<SetStateAction<AmendDialogState | undefined>>;
+  branchCleanup: BranchCleanupDialogState | undefined;
+  setBranchCleanup: Dispatch<SetStateAction<BranchCleanupDialogState | undefined>>;
+  submitBranchCleanup: () => void;
   historyParentPicker: HistoryParentPickerState | undefined;
   setHistoryParentPicker: Dispatch<SetStateAction<HistoryParentPickerState | undefined>>;
   historyParentChoicesRef: RefObject<Map<string, string>>;
@@ -25,6 +31,8 @@ interface DialogsProps {
   setSquashOperation: Dispatch<SetStateAction<SquashOperationState | undefined>>;
   editCommitMessages: EditCommitMessagesState | undefined;
   setEditCommitMessages: Dispatch<SetStateAction<EditCommitMessagesState | undefined>>;
+  rewriteAuthorIdentity: RewriteAuthorIdentityState | undefined;
+  setRewriteAuthorIdentity: Dispatch<SetStateAction<RewriteAuthorIdentityState | undefined>>;
   setActiveCommitMessagesRequest: (requestId: string | undefined) => void;
   namedOperation: NamedOperationState | undefined;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
@@ -42,6 +50,9 @@ export function Dialogs(props: DialogsProps) {
     stashDialogRepositoryRef,
     amendDialog,
     setAmendDialog,
+    branchCleanup,
+    setBranchCleanup,
+    submitBranchCleanup,
     historyParentPicker,
     setHistoryParentPicker,
     historyParentChoicesRef,
@@ -49,6 +60,8 @@ export function Dialogs(props: DialogsProps) {
     setSquashOperation,
     editCommitMessages,
     setEditCommitMessages,
+    rewriteAuthorIdentity,
+    setRewriteAuthorIdentity,
     setActiveCommitMessagesRequest,
     namedOperation,
     setNamedOperation,
@@ -401,6 +414,76 @@ export function Dialogs(props: DialogsProps) {
         </div>
       ) : null}
 
+      {rewriteAuthorIdentity ? (
+        <div className="operation-dialog-backdrop">
+          <form
+            className="operation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Rewrite Author Identity"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!rewriteAuthorIdentity.name.trim() || !rewriteAuthorIdentity.email.trim()) return;
+              runOperation(
+                {
+                  kind: 'rewriteAuthorIdentity',
+                  hashes: rewriteAuthorIdentity.hashes,
+                  name: rewriteAuthorIdentity.name.trim(),
+                  email: rewriteAuthorIdentity.email.trim(),
+                },
+                rewriteAuthorIdentity.repositoryId,
+              );
+              setRewriteAuthorIdentity(undefined);
+            }}
+          >
+            <strong>Rewrite Author Identity</strong>
+            <span>
+              Replaces the author and committer of the {String(rewriteAuthorIdentity.hashes.length)}{' '}
+              selected commit{rewriteAuthorIdentity.hashes.length === 1 ? '' : 's'} and rewrites
+              every affected descendant on the current branch, amending their hashes.
+            </span>
+            <label>
+              <span>Author name</span>
+              <input
+                autoFocus
+                aria-label="Author name"
+                value={rewriteAuthorIdentity.name}
+                onChange={(event) =>
+                  setRewriteAuthorIdentity((current) =>
+                    current ? { ...current, name: event.target.value } : current,
+                  )
+                }
+              />
+            </label>
+            <label>
+              <span>Author email</span>
+              <input
+                aria-label="Author email"
+                value={rewriteAuthorIdentity.email}
+                onChange={(event) =>
+                  setRewriteAuthorIdentity((current) =>
+                    current ? { ...current, email: event.target.value } : current,
+                  )
+                }
+              />
+            </label>
+            <div className="operation-dialog-actions">
+              <button type="button" onClick={() => setRewriteAuthorIdentity(undefined)}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  !rewriteAuthorIdentity.name.trim() || !rewriteAuthorIdentity.email.trim()
+                }
+              >
+                Rewrite Author Identity
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {namedOperation ? (
         <div className="operation-dialog-backdrop">
           <form
@@ -465,6 +548,86 @@ export function Dialogs(props: DialogsProps) {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {branchCleanup ? (
+        <div className="operation-dialog-backdrop">
+          <div
+            className="operation-dialog branch-cleanup-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Clean up branches"
+          >
+            <strong>Clean Up Branches</strong>
+            {branchCleanup.loading ? (
+              <p className="branch-cleanup-empty">Loading branches…</p>
+            ) : branchCleanup.candidates.length === 0 ? (
+              <p className="branch-cleanup-empty">
+                No branch is either merged into the current branch or missing its upstream.
+              </p>
+            ) : (
+              <ul className="branch-cleanup-list">
+                {branchCleanup.candidates.map((candidate) => (
+                  <li key={candidate.name}>
+                    <label className="branch-cleanup-row">
+                      <input
+                        type="checkbox"
+                        aria-label={`Delete ${candidate.name}`}
+                        checked={branchCleanup.selected.has(candidate.name)}
+                        onChange={(event) =>
+                          setBranchCleanup((current) => {
+                            if (!current) return current;
+                            const selected = new Set(current.selected);
+                            if (event.target.checked) selected.add(candidate.name);
+                            else selected.delete(candidate.name);
+                            return { ...current, selected };
+                          })
+                        }
+                      />
+                      <span className="branch-cleanup-name" title={candidate.name}>
+                        {candidate.name}
+                      </span>
+                      {candidate.gone ? (
+                        <span className="branch-cleanup-badge gone">upstream gone</span>
+                      ) : null}
+                      {candidate.merged ? (
+                        <span className="branch-cleanup-badge merged">merged</span>
+                      ) : (
+                        <span className="branch-cleanup-badge unmerged">
+                          {String(candidate.aheadCount)} unmerged
+                        </span>
+                      )}
+                      <span className="branch-cleanup-date">
+                        {formatCommitDate(candidate.lastCommitTime)}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="branch-cleanup-note">
+              {selectedRepository?.currentBranch
+                ? `“merged” means reachable from “${selectedRepository.currentBranch}”. `
+                : 'No branch is checked out, so the merged category is unavailable. '}
+              Branches whose upstream is gone are selected by default; unmerged branches never
+              are. Deleting an unmerged branch makes its commits unreachable.
+            </p>
+            <div className="operation-dialog-actions">
+              <button type="button" onClick={() => setBranchCleanup(undefined)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={branchCleanup.loading || branchCleanup.selected.size === 0}
+                onClick={submitBranchCleanup}
+              >
+                {branchCleanup.selected.size === 1
+                  ? 'Delete 1 Branch'
+                  : `Delete ${String(branchCleanup.selected.size)} Branches`}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </>

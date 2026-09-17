@@ -16,6 +16,7 @@ import type {
   ChangedFile,
   CommitDetails,
   CommitSummary,
+  Contributor,
   HistoryEntry,
   RefLabel,
   RepositorySummary,
@@ -58,6 +59,7 @@ export interface WorkbenchState {
   selectedRepositoryId: string | undefined;
   refs: RefLabel[];
   commits: CommitSummary[];
+  contributors: Contributor[];
   commitListRevision: number;
   selectedHash: string | undefined;
   details: CommitDetails | undefined;
@@ -106,6 +108,7 @@ export const initialWorkbenchState: WorkbenchState = {
   selectedRepositoryId: undefined,
   refs: [],
   commits: [],
+  contributors: [],
   commitListRevision: 0,
   selectedHash: undefined,
   details: undefined,

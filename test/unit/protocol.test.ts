@@ -37,6 +37,117 @@ describe('parseWebviewMessage', () => {
     ).toBeDefined();
   });
 
+  it('validates branch publishing requests', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const operation = (value: Record<string, unknown>) =>
+      parseWebviewMessage({
+        type: 'runOperation',
+        requestId: 'operation',
+        repositoryId: 'repository-1',
+        operation: value,
+      });
+
+    // The webview sends only the kind; the extension fills the resolved remote and branch in.
+    expect(operation({ kind: 'publishBranch' })).toBeDefined();
+    expect(
+      operation({ kind: 'publishBranch', remote: 'origin', branch: 'feature/login' }),
+    ).toBeDefined();
+    expect(operation({ kind: 'publishBranch', remote: '-x' })).toBeUndefined();
+    expect(operation({ kind: 'publishBranch', branch: '-oops' })).toBeUndefined();
+    expect(operation({ kind: 'publishBranch', branch: 'a..b' })).toBeUndefined();
+    expect(operation({ kind: 'publishBranch', branch: 'main\n' })).toBeUndefined();
+  });
+
+  it('validates fetch-full-history requests and their display-only refspec fields', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const operation = (value: Record<string, unknown>) =>
+      parseWebviewMessage({
+        type: 'runOperation',
+        requestId: 'operation',
+        repositoryId: 'repository-1',
+        operation: value,
+      });
+
+    // The webview sends only the kind; the extension fills in the resolved remote and any
+    // planned refspec change for the confirmation display.
+    expect(operation({ kind: 'fetchFullHistory' })).toBeDefined();
+    expect(
+      operation({
+        kind: 'fetchFullHistory',
+        remote: 'origin',
+        refspecFrom: '+refs/heads/main:refs/remotes/origin/main',
+        refspecTo: '+refs/heads/*:refs/remotes/origin/*',
+      }),
+    ).toBeDefined();
+    expect(operation({ kind: 'fetchFullHistory', remote: '-x' })).toBeUndefined();
+    expect(
+      operation({ kind: 'fetchFullHistory', refspecTo: 'refs/heads/main\nrm -rf' }),
+    ).toBeUndefined();
+    expect(
+      operation({ kind: 'fetchFullHistory', refspecTo: 'x'.repeat(600) }),
+    ).toBeUndefined();
+  });
+
+  it('validates batch branch cleanup requests and the batch delete operation', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const operation = (value: Record<string, unknown>) =>
+      parseWebviewMessage({
+        type: 'runOperation',
+        requestId: 'branch-cleanup',
+        repositoryId: 'repository-1',
+        operation: value,
+      });
+
+    expect(
+      parseWebviewMessage({
+        type: 'requestBranchCleanup',
+        requestId: 'branch-cleanup',
+        repositoryId: 'repository-1',
+      }),
+    ).toBeDefined();
+    expect(
+      parseWebviewMessage({ type: 'requestBranchCleanup', requestId: 'branch-cleanup' }),
+    ).toBeUndefined();
+
+    expect(
+      operation({
+        kind: 'deleteBranches',
+        branches: [
+          { name: 'feature/gone', force: true },
+          { name: 'feature/merged', force: false },
+        ],
+      }),
+    ).toBeDefined();
+    expect(operation({ kind: 'deleteBranches', branches: [] })).toBeUndefined();
+    expect(
+      operation({ kind: 'deleteBranches', branches: [{ name: 'main', force: 'yes' }] }),
+    ).toBeUndefined();
+    expect(
+      operation({ kind: 'deleteBranches', branches: [{ name: '-oops', force: false }] }),
+    ).toBeUndefined();
+    expect(
+      operation({ kind: 'deleteBranches', branches: [{ name: 'a..b', force: false }] }),
+    ).toBeUndefined();
+    expect(
+      operation({
+        kind: 'deleteBranches',
+        branches: [
+          { name: 'duplicate', force: false },
+          { name: 'duplicate', force: false },
+        ],
+      }),
+    ).toBeUndefined();
+    expect(
+      operation({
+        kind: 'deleteBranches',
+        branches: Array.from({ length: 101 }, (_, index) => ({
+          name: `branch-${String(index)}`,
+          force: false,
+        })),
+      }),
+    ).toBeUndefined();
+  });
+
   it('validates bounded unique commit ranges and squash messages', async () => {
     const { parseWebviewMessage } = await import('../../src/protocol/messages');
     const hashes = ['b'.repeat(40), 'a'.repeat(40)];

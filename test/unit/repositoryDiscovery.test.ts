@@ -225,6 +225,35 @@ describe('discoverRepositories', () => {
     });
   });
 
+  it('flags shallow clones in the repository summary', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'git-log-workbench-shallow-'));
+    temporaryDirectories.push(workspace);
+
+    const source = join(workspace, 'source');
+    await execFileAsync('git', ['init', '-b', 'main', source]);
+    await execFileAsync('git', ['config', 'user.name', 'Discovery Test'], { cwd: source });
+    await execFileAsync('git', ['config', 'user.email', 'discovery@example.com'], { cwd: source });
+    await writeFile(join(source, 'a.txt'), 'a\n');
+    await execFileAsync('git', ['add', 'a.txt'], { cwd: source });
+    await execFileAsync('git', ['commit', '-m', 'one'], { cwd: source });
+    await writeFile(join(source, 'b.txt'), 'b\n');
+    await execFileAsync('git', ['add', 'b.txt'], { cwd: source });
+    await execFileAsync('git', ['commit', '-m', 'two'], { cwd: source });
+
+    const clone = join(workspace, 'clone');
+    await execFileAsync('git', ['init', '-b', 'main', clone]);
+    await execFileAsync('git', ['remote', 'add', 'origin', source], { cwd: clone });
+    await execFileAsync('git', ['fetch', '--depth', '1', 'origin', 'main'], { cwd: clone });
+    await execFileAsync('git', ['reset', '--hard', 'origin/main'], { cwd: clone });
+
+    const { inspectRepository } = await import('../../src/repositories/discoverRepositories');
+    await expect(inspectRepository(clone, new GitRunner())).resolves.toMatchObject({
+      isShallow: true,
+    });
+    const sourceSummary = await inspectRepository(source, new GitRunner());
+    expect(sourceSummary?.isShallow).toBeUndefined();
+  });
+
   it('loads the configured Git identity for current-user UI ordering', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'git-log-workbench-user-identity-'));
     temporaryDirectories.push(workspace);

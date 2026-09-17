@@ -359,6 +359,21 @@ export class WorkbenchController {
           });
           break;
         }
+        case 'requestBranchCleanup': {
+          this.requireSelectedRepository(message.repositoryId);
+          const repository = this.requireRepository(message.repositoryId);
+          const candidates = await this.options.gitService.getBranchCleanupCandidates(
+            fileURLToPath(repository.rootUri),
+            repository.currentBranch,
+          );
+          await this.options.postMessage({
+            type: 'branchCleanupLoaded',
+            requestId: message.requestId,
+            repositoryId: message.repositoryId,
+            candidates,
+          });
+          break;
+        }
         case 'openStashComparison': {
           this.requireSelectedRepository(message.repositoryId);
           if (!this.options.openCommitComparison) {
@@ -1065,6 +1080,11 @@ export class WorkbenchController {
       this.selectedCommitRanges.set(repositoryId, [...restoredSelectedHashes]);
     }
     const restoredGraphContinuation = this.graphContinuations.get(repositoryId);
+    const contributors = await this.options.gitService.getContributors?.(
+      cwd,
+      abortController.signal,
+    );
+    if (logSequence !== this.logRequestSequence) return;
     await this.options.postMessage({
       type: 'repositoryData',
       requestId,
@@ -1072,6 +1092,7 @@ export class WorkbenchController {
       refs,
       commits,
       filters,
+      ...(contributors ? { contributors } : {}),
       ...(restoredSelectedHash ? { selectedHash: restoredSelectedHash } : {}),
       ...(restoredSelectedHashes.length ? { selectedHashes: restoredSelectedHashes } : {}),
       ...(replace
@@ -1221,26 +1242,28 @@ export class WorkbenchController {
     } catch (error) {
       operationError = error;
     } finally {
-      const deletedRef =
+      const deletedRefs =
         result && !result.cancelled
-          ? operation.kind === 'deleteBranch'
-            ? `refs/heads/${operation.name}`
-            : operation.kind === 'deleteRemoteBranch'
-              ? `refs/remotes/${operation.remote}/${operation.branch}`
-              : operation.kind === 'deleteTag'
-                ? `refs/tags/${operation.name}`
-                : undefined
-          : undefined;
-      if (deletedRef) {
+          ? (result.deletedRefs ??
+            (operation.kind === 'deleteBranch'
+              ? [`refs/heads/${operation.name}`]
+              : operation.kind === 'deleteRemoteBranch'
+                ? [`refs/remotes/${operation.remote}/${operation.branch}`]
+                : operation.kind === 'deleteTag'
+                  ? [`refs/tags/${operation.name}`]
+                  : []))
+          : [];
+      if (deletedRefs.length > 0) {
         let filtersChanged = false;
         for (const candidate of this.repositories.values()) {
           if (this.getOperationGroup(candidate) !== operationGroup) continue;
           const filters = this.filters.get(candidate.id);
-          if (!filters?.branches.includes(deletedRef)) continue;
-          this.filters.set(candidate.id, {
-            ...filters,
-            branches: filters.branches.filter((branch) => branch !== deletedRef),
-          });
+          if (!filters) continue;
+          const remainingBranches = filters.branches.filter(
+            (branch) => !deletedRefs.includes(branch),
+          );
+          if (remainingBranches.length === filters.branches.length) continue;
+          this.filters.set(candidate.id, { ...filters, branches: remainingBranches });
           filtersChanged = true;
         }
         if (filtersChanged) await this.persistWorkbenchState();

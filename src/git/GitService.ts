@@ -10,17 +10,20 @@ import { parseRefs } from './parsers/parseRefs';
 import { LruCache } from './LruCache';
 import type { LogFilters } from '../protocol/messages';
 import type {
+  BranchCleanupCandidate,
   ChangedFile,
   CommitDetails,
   CommitSummary,
+  Contributor,
   RefLabel,
   StashEntry,
 } from '../shared/models';
 
 const REF_FORMAT = '%(refname)%00%(objectname)%00%(*objectname)%00%(upstream)%00%(upstream:track)%00';
-const LOG_FORMAT = '%x1e%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%s%x00';
+const BRANCH_FORMAT = '%(refname:short)%00%(upstream:track)%00%(committerdate:unix)%00';
+const LOG_FORMAT = '%x1e%H%x00%P%x00%aN%x00%aE%x00%at%x00%ct%x00%s%x00';
 const SEARCH_LOG_FORMAT = `${LOG_FORMAT}%B%x00`;
-const DETAILS_FORMAT = '%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B%x00%G?';
+const DETAILS_FORMAT = '%H%x00%P%x00%aN%x00%aE%x00%at%x00%cN%x00%cE%x00%ct%x00%B%x00%G?';
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{4,64}$/iu;
 const TEXT_SCAN_PAGE_SIZE = 5000;
 const TEXT_SCAN_MAX_STDOUT_BYTES = 64 * 1024 * 1024;
@@ -98,6 +101,15 @@ function validatePage(query: LogQuery): void {
 
 function validateRepositoryPath(path: string): void {
   if (!path || path.includes('\0')) throw new Error('Invalid repository path.');
+}
+
+/**
+ * Branch names are passed as their own argv entries, so the only injection risk left is an
+ * option-like value; `validateToken` in the operation service guards the same way, and the
+ * minimum supported Git (2.27) predates `--end-of-options` on `rev-list`.
+ */
+function isUsableBranchToken(name: string): boolean {
+  return Boolean(name) && !name.startsWith('-') && !/[\0\r\n]/u.test(name);
 }
 
 function webviewFilePatchText(patch: Buffer): string {
@@ -614,6 +626,85 @@ export class GitService {
     return parseRefs(result.stdout, currentBranch, remoteNames);
   }
 
+  async getContributors(cwd: string, signal?: AbortSignal): Promise<Contributor[]> {
+    const result = await this.runner.run(['shortlog', '-sne', '--all'], {
+      cwd,
+      ...(signal ? { signal } : {}),
+      timeoutMs: 30_000,
+    });
+    const contributors: Contributor[] = [];
+    for (const line of result.stdout.toString('utf8').split(/\r?\n/u)) {
+      const match = /^\s*(\d+)\t(.+?)\s+<(.+)>$/u.exec(line);
+      if (!match) continue;
+      const count = Number.parseInt(match[1] ?? '', 10);
+      const name = match[2]?.trim();
+      const email = match[3]?.trim();
+      if (!Number.isFinite(count) || !name || !email) continue;
+      contributors.push({ name, email, commitCount: count });
+    }
+    return contributors;
+  }
+
+  /**
+   * Local branches that are safe cleanup targets: their upstream is gone, or they are fully
+   * merged into `currentBranch`. "Merged" always names the base explicitly — a bare
+   * `git branch --merged` would use HEAD implicitly and could report branches as merged
+   * relative to a branch the user did not intend.
+   */
+  async getBranchCleanupCandidates(
+    cwd: string,
+    currentBranch: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<BranchCleanupCandidate[]> {
+    const options = { cwd, ...(signal ? { signal } : {}), timeoutMs: 30_000 };
+    const base =
+      currentBranch && isUsableBranchToken(currentBranch) ? currentBranch : undefined;
+    const [branches, merged] = await Promise.all([
+      this.runner.run(['for-each-ref', `--format=${BRANCH_FORMAT}`, 'refs/heads'], options),
+      base
+        ? this.runner.run(['branch', `--merged=${base}`, '--format=%(refname:short)'], options)
+        : Promise.resolve(undefined),
+    ]);
+
+    const mergedNames = new Set(
+      (merged?.stdout.toString('utf8') ?? '').split(/\r?\n/u).filter(Boolean),
+    );
+
+    const fields = branches.stdout.toString('utf8').split('\0');
+    const candidates: BranchCleanupCandidate[] = [];
+    for (let index = 0; index + 2 < fields.length; index += 3) {
+      const name = fields[index]?.replace(/^\r?\n/u, '');
+      if (!name || name === base || !isUsableBranchToken(name)) continue;
+      const gone = /\[gone\]/u.test(fields[index + 1] ?? '');
+      const isMerged = mergedNames.has(name);
+      if (!gone && !isMerged) continue;
+      const lastCommitTime = Number.parseInt(fields[index + 2] ?? '', 10);
+      candidates.push({
+        name,
+        gone,
+        merged: isMerged,
+        aheadCount: 0,
+        lastCommitTime: Number.isFinite(lastCommitTime) ? lastCommitTime : 0,
+      });
+    }
+
+    // Merged branches are reachable from the base, so only the unmerged ones need a count.
+    const withCounts = await Promise.all(
+      candidates.map(async (candidate) => {
+        if (candidate.merged) return candidate;
+        const range = base ? `${base}..${candidate.name}` : candidate.name;
+        const counted = await this.runner.run(['rev-list', '--count', range], options);
+        const parsed = Number.parseInt(counted.stdout.toString('utf8').trim(), 10);
+        return { ...candidate, aheadCount: Number.isFinite(parsed) ? parsed : 0 };
+      }),
+    );
+
+    return withCounts.sort(
+      (left, right) =>
+        Number(right.gone) - Number(left.gone) || left.name.localeCompare(right.name),
+    );
+  }
+
   async getLog(cwd: string, query: LogQuery): Promise<CommitSummary[]> {
     validatePage(query);
     const filters = query.filters ?? EMPTY_LOG_FILTERS;
@@ -804,7 +895,7 @@ export class GitService {
     }
 
     const result = await this.runner.run(
-      ['show', '--no-patch', `--format=${DETAILS_FORMAT}`, hash, '--'],
+      ['show', '--no-patch', '--use-mailmap', `--format=${DETAILS_FORMAT}`, hash, '--'],
       { cwd, ...(signal ? { signal } : {}), timeoutMs: 30_000 },
     );
     return attachRefs(parseCommitDetails(result.stdout), indexRefsByTarget(refs));

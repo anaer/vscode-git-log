@@ -10,7 +10,7 @@ import {
 } from './worktreeLineMapping';
 import type { HistoryEntry, RefLabel } from '../shared/models';
 
-const FILE_HISTORY_FORMAT = '%x1e%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%s%x00';
+const FILE_HISTORY_FORMAT = '%x1e%H%x00%P%x00%aN%x00%aE%x00%at%x00%ct%x00%s%x00';
 const LINE_HISTORY_LIMIT = 500;
 const MAX_FILE_HISTORY_CACHES = 20;
 const MAX_HISTORY_OUTPUT_BYTES = 64 * 1024 * 1024;
@@ -168,6 +168,7 @@ export class FileHistoryService {
           '-M',
           '--date-order',
           '--no-color',
+          '--use-mailmap',
           `--format=${FILE_HISTORY_FORMAT}`,
           '--numstat',
           '-z',
@@ -344,6 +345,7 @@ export class FileHistoryService {
           `${String(startLine)},${String(endLine)}:${path}`,
           `--format=${FILE_HISTORY_FORMAT}`,
           '--no-color',
+          '--use-mailmap',
           '--no-ext-diff',
           '--no-textconv',
           `--unified=${String(endLine - startLine)}`,

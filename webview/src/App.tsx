@@ -61,8 +61,10 @@ import {
 } from './workbenchStore';
 import type {
   AmendDialogState,
+  BranchCleanupDialogState,
   EditCommitMessagesState,
   HistoryParentPickerState,
+  RewriteAuthorIdentityState,
   SquashOperationState,
   StashDialogState,
 } from './workbenchEffects';
@@ -121,6 +123,16 @@ function readScrollTopByRepository(value: unknown): Record<string, number> {
   return {};
 }
 
+/**
+ * Editable fields keep the host's native context menu so that cut / copy / paste stays
+ * available; every other surface suppresses it in favour of the extension's own menus.
+ */
+function keepsHostContextMenu(target: EventTarget | undefined): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+}
+
 export function App() {
   const [store] = useState(createWorkbenchStore);
   return (
@@ -150,12 +162,15 @@ function Workbench() {
   >();
   const [squashOperation, setSquashOperation] = useState<SquashOperationState>();
   const [editCommitMessages, setEditCommitMessages] = useState<EditCommitMessagesState>();
+  const [rewriteAuthorIdentity, setRewriteAuthorIdentity] =
+    useState<RewriteAuthorIdentityState>();
 
   const [namedOperation, setNamedOperation] = useState<NamedOperationState>();
 
   const [historyParentPicker, setHistoryParentPicker] = useState<HistoryParentPickerState>();
 
   const [stashDialog, setStashDialog] = useState<StashDialogState>();
+  const [branchCleanup, setBranchCleanup] = useState<BranchCleanupDialogState>();
   const [amendDialog, setAmendDialog] = useState<AmendDialogState>();
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
@@ -201,8 +216,6 @@ function Workbench() {
   const latestRepositorySelectionRequest = useRef<string | undefined>(undefined);
   const stashDialogRepository = useRef<string | undefined>(undefined);
   const commitRevealSequence = useRef(0);
-  const accumulatedAuthors = useRef(new Map<string, string>());
-  const lastAuthorFilterRepository = useRef<string | undefined>(undefined);
   const selectedRepository = state.repositories.find(
     (repository) => repository.id === state.selectedRepositoryId,
   );
@@ -214,24 +227,6 @@ function Workbench() {
   const authorFilterOptions = useMemo(() => {
     const userName = selectedRepository?.userName?.trim();
     const userEmail = selectedRepository?.userEmail?.trim();
-    const configuredName = userName?.toLocaleLowerCase();
-    const configuredEmail = userEmail?.toLocaleLowerCase();
-
-    if (lastAuthorFilterRepository.current !== state.selectedRepositoryId) {
-      accumulatedAuthors.current = new Map();
-      lastAuthorFilterRepository.current = state.selectedRepositoryId;
-    }
-
-    for (const commit of state.commits) {
-      const nameKey = commit.authorName.trim().toLocaleLowerCase();
-      const isCurrentUser =
-        (Boolean(configuredName) && nameKey === configuredName) ||
-        (Boolean(configuredEmail) &&
-          commit.authorEmail.trim().toLocaleLowerCase() === configuredEmail);
-      if (!isCurrentUser && !accumulatedAuthors.current.has(nameKey)) {
-        accumulatedAuthors.current.set(nameKey, commit.authorName);
-      }
-    }
 
     return [
       ...(userEmail || userName
@@ -243,13 +238,13 @@ function Workbench() {
             },
           ]
         : []),
-      ...[...accumulatedAuthors.current.entries()].map(([key, name]) => ({
-        key: `author-${key}`,
-        label: name,
-        value: name,
+      ...state.contributors.map((contributor) => ({
+        key: `author-${contributor.email}`,
+        label: `${contributor.name} <${contributor.email}> (${contributor.commitCount})`,
+        value: contributor.email,
       })),
     ];
-  }, [selectedRepository?.userEmail, selectedRepository?.userName, state.commits, state.selectedRepositoryId]);
+  }, [selectedRepository?.userEmail, selectedRepository?.userName, state.contributors]);
   // Incremental commit-graph layout. A full DAG layout is O(commits); on the
   // common append-only page-load path we only lay out the newly appended commits
   // and reuse the cached rows, falling back to a full recompute whenever the list
@@ -270,6 +265,11 @@ function Workbench() {
   const selectedOperationInFlight = state.selectedRepositoryId
     ? state.operationRepositoryIds.has(state.selectedRepositoryId)
     : false;
+  // A branch with no upstream cannot be pushed with a plain `git push`, so the toolbar offers to
+  // publish it instead. `state.refs` always belongs to the selected repository; when the current
+  // branch is missing from that snapshot we assume it is tracked and keep the plain Push action.
+  const currentBranchRef = state.refs.find((ref) => ref.kind === 'local' && ref.isCurrent);
+  const currentBranchHasUpstream = currentBranchRef ? Boolean(currentBranchRef.upstream) : true;
   const refsCollapsed = Boolean(
     state.layout.refsCollapsed || (responsiveCollapse.refs && !responsiveExpanded.refs),
   );
@@ -455,6 +455,7 @@ function Workbench() {
       setEditCommitMessages,
       setStashDialog,
       setAmendDialog,
+      setBranchCleanup,
       setResponsiveExpanded,
       setScrollTopByRepository,
       setHistoryParentPicker,
@@ -491,9 +492,20 @@ function Workbench() {
     };
 
     window.addEventListener('message', listener);
+    // The host draws its own cut / copy / paste menu on right-click. Every element that owns a
+    // custom menu already calls preventDefault(), so this document-level listener only fills the
+    // gap of the panel's empty areas. Editable fields stay exempt so pasting a branch name,
+    // a filter term, or a date keeps working.
+    const suppressHostContextMenu = (event: MouseEvent): void => {
+      // composedPath() instead of target: the calendar popup can retarget the event.
+      if (keepsHostContextMenu(event.composedPath()[0])) return;
+      event.preventDefault();
+    };
+    document.addEventListener('contextmenu', suppressHostContextMenu);
     vscode.postMessage({ type: 'ready', requestId: requestId('ready') });
     return () => {
       window.removeEventListener('message', listener);
+      document.removeEventListener('contextmenu', suppressHostContextMenu);
       if (filterTimer.current !== undefined) window.clearTimeout(filterTimer.current);
       if (scrollPersistTimer.current !== undefined) window.clearTimeout(scrollPersistTimer.current);
       if (detailsHashCopyTimer.current !== undefined) {
@@ -622,6 +634,7 @@ function Workbench() {
     setCommitSelection(emptyCommitSelection);
     setSquashOperation(undefined);
     setEditCommitMessages(undefined);
+    setRewriteAuthorIdentity(undefined);
     setStashDialog(undefined);
     setAmendDialog(undefined);
     stashDialogRepository.current = undefined;
@@ -1128,6 +1141,7 @@ function Workbench() {
       setNamedOperation(undefined);
       setFilterPopup(undefined);
       setHistoryParentPicker(undefined);
+      setBranchCleanup(undefined);
     }
   };
 
@@ -1143,6 +1157,38 @@ function Workbench() {
     });
     stashDialogRepository.current = repositoryId;
     send({ type: 'requestStashState', requestId: requestId('stash-state'), repositoryId });
+  };
+
+  const openBranchCleanup = (): void => {
+    const repositoryId = state.selectedRepositoryId;
+    if (!repositoryId) return;
+    setBranchCleanup({ repositoryId, candidates: [], selected: new Set(), loading: true });
+    send({
+      type: 'requestBranchCleanup',
+      requestId: requestId('branch-cleanup'),
+      repositoryId,
+    });
+  };
+
+  const submitBranchCleanup = (): void => {
+    if (!branchCleanup) return;
+    const chosen = branchCleanup.candidates.filter((candidate) =>
+      branchCleanup.selected.has(candidate.name),
+    );
+    if (chosen.length === 0) return;
+    runOperation(
+      {
+        kind: 'deleteBranches',
+        // A branch that still holds unmerged commits needs `-D`; fully merged ones use the
+        // safe `-d` so git keeps refusing if the branch moved after the dialog was opened.
+        branches: chosen.map((candidate) => ({
+          name: candidate.name,
+          force: !candidate.merged,
+        })),
+      },
+      branchCleanup.repositoryId,
+    );
+    setBranchCleanup(undefined);
   };
   const commitToolbar = (
     <CommitToolbar
@@ -1424,6 +1470,7 @@ function Workbench() {
           onToggleRefFolder={toggleRefFolder}
           onSelectRef={selectRef}
           onRefKeyDown={handleRefKeyDown}
+          onOpenBranchCleanup={openBranchCleanup}
           onOpenHeadContextMenu={(x, y) => {
             if (!state.selectedRepositoryId || !selectedRepository?.head) return;
             setContextMenu({
@@ -1541,6 +1588,22 @@ function Workbench() {
                   Abort
                 </button>
               </div>
+            </div>
+          ) : null}
+          {selectedRepository?.isShallow && !selectedRepository.isBare ? (
+            <div className="shallow-status-row" role="note" aria-label="History is truncated">
+              <span className="shallow-status-text">
+                This is a shallow clone, so the history below is truncated.
+              </span>
+              <button
+                className="shallow-action-button"
+                type="button"
+                disabled={selectedOperationInFlight}
+                title="Download the complete history (git fetch --unshallow)"
+                onClick={() => runOperation({ kind: 'fetchFullHistory' })}
+              >
+                Fetch full history
+              </button>
             </div>
           ) : null}
           <div className="log-header-viewport">
@@ -1761,6 +1824,7 @@ function Workbench() {
           selectedRepository={selectedRepository}
           hasContiguousCommitRange={hasContiguousCommitRange}
           selectedOperationInFlight={selectedOperationInFlight}
+          currentBranchHasUpstream={currentBranchHasUpstream}
           detailsHash={state.details?.hash}
           detailsBody={state.details?.body}
           selectedParent={state.selectedParent}
@@ -1772,6 +1836,7 @@ function Workbench() {
           onFilterByPath={(path) => applyFilters({ ...state.filters, paths: [path] })}
 setSquashOperation={setSquashOperation}
           setEditCommitMessages={setEditCommitMessages}
+          setRewriteAuthorIdentity={setRewriteAuthorIdentity}
           setAmendDialog={setAmendDialog}
           setNamedOperation={setNamedOperation}
           setActiveCommitMessagesRequest={(value) => {
@@ -1786,6 +1851,9 @@ setSquashOperation={setSquashOperation}
         stashDialogRepositoryRef={stashDialogRepository}
         amendDialog={amendDialog}
         setAmendDialog={setAmendDialog}
+        branchCleanup={branchCleanup}
+        setBranchCleanup={setBranchCleanup}
+        submitBranchCleanup={submitBranchCleanup}
         historyParentPicker={historyParentPicker}
         setHistoryParentPicker={setHistoryParentPicker}
         historyParentChoicesRef={historyParentChoices}
@@ -1793,6 +1861,8 @@ setSquashOperation={setSquashOperation}
         setSquashOperation={setSquashOperation}
         editCommitMessages={editCommitMessages}
         setEditCommitMessages={setEditCommitMessages}
+        rewriteAuthorIdentity={rewriteAuthorIdentity}
+        setRewriteAuthorIdentity={setRewriteAuthorIdentity}
         setActiveCommitMessagesRequest={(value) => {
             race.activeCommitMessagesRequest = value;
           }}

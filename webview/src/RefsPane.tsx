@@ -4,7 +4,7 @@ import type {
 } from 'react';
 import type { RefKind, RefLabel, RepositorySummary } from '../../src/shared/models';
 import { buildRefTree, type RefTreeNode } from './buildRefTree';
-import { ChevronDown, ChevronRight } from './icons';
+import { Archive, ChevronDown, ChevronRight } from './icons';
 
 const refGroups: readonly { label: string; kind: RefKind }[] = [
   { label: 'Local', kind: 'local' },
@@ -129,6 +129,7 @@ export interface RefsPaneProps {
   onToggleRefFolder(key: string): void;
   onSelectRef(ref: RefLabel): void;
   onRefKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, ref: RefLabel): void;
+  onOpenBranchCleanup(): void;
   onOpenHeadContextMenu(x: number, y: number): void;
   onOpenRefContextMenu(ref: RefLabel, x: number, y: number): void;
   hidden: boolean;
@@ -150,6 +151,7 @@ export function RefsPane({
   onToggleRefFolder,
   onSelectRef,
   onRefKeyDown,
+  onOpenBranchCleanup,
   onOpenHeadContextMenu,
   onOpenRefContextMenu,
   hidden,
@@ -196,7 +198,19 @@ export function RefsPane({
             />
           </label>
         </div>
-        <div className="pane-heading">Branches</div>
+        <div className="pane-heading refs-heading">
+          <span>Branches</span>
+          <button
+            type="button"
+            className="pane-heading-action"
+            title="Clean up branches"
+            aria-label="Clean up branches"
+            disabled={!selectedRepository || Boolean(selectedRepository.operationState)}
+            onClick={onOpenBranchCleanup}
+          >
+            {Archive}
+          </button>
+        </div>
         <div className="refs-scroll">
           <section className="ref-group">
             <button

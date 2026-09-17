@@ -12,6 +12,13 @@ export interface StashEntry {
   subject: string;
 }
 
+/** A contributor aggregated by `git shortlog`, with mailmap aliases already merged. */
+export interface Contributor {
+  name: string;
+  email: string;
+  commitCount: number;
+}
+
 export interface RefLabel {
   fullName: string;
   shortName: string;
@@ -22,6 +29,21 @@ export interface RefLabel {
   isCurrent: boolean;
   remote?: string;
   upstream?: string;
+  /** True when the configured upstream no longer exists (`%(upstream:track)` reported `[gone]`). */
+  gone?: boolean;
+}
+
+/** A local branch offered for deletion by the batch branch-cleanup dialog. */
+export interface BranchCleanupCandidate {
+  name: string;
+  /** The configured upstream no longer exists on the remote. */
+  gone: boolean;
+  /** Reachable from the current branch, so deleting it cannot drop commits. */
+  merged: boolean;
+  /** Commits reachable from this branch but not from the current branch. */
+  aheadCount: number;
+  /** Committer date of the branch tip, in seconds since the epoch. */
+  lastCommitTime: number;
 }
 
 export interface CommitSummary {
@@ -59,6 +81,8 @@ export interface RepositorySummary {
   userEmail?: string;
   operationState?: GitOperationState;
   hasUnresolvedConflicts?: boolean;
+  /** True when the clone is shallow (`git rev-parse --is-shallow-repository` reported `true`). */
+  isShallow?: boolean;
 }
 
 export type ChangedFileStatus = 'A' | 'M' | 'D' | 'R' | 'C' | 'T' | 'U';

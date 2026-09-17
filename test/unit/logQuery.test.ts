@@ -26,6 +26,7 @@ describe('buildLogArguments', () => {
       'log',
       '--date-order',
       '--no-color',
+      '--use-mailmap',
       '--format=FORMAT',
       '--max-count=50',
       '--skip=100',

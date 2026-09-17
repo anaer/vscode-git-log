@@ -77,11 +77,43 @@ async function createFixtureRepository(prefix = 'git-operation-'): Promise<{ pat
   };
 }
 
+async function createBareRemote(prefix = 'git-operation-remote-'): Promise<string> {
+  const path = await mkdtemp(join(tmpdir(), prefix));
+  temporaryDirectories.push(path);
+  await git(path, 'init', '--bare');
+  return path;
+}
+
 async function commitFile(cwd: string, name: string, content: string, message: string): Promise<string> {
   await writeFile(join(cwd, name), content);
   await git(cwd, 'add', name);
   await git(cwd, 'commit', '-m', message);
   return git(cwd, 'rev-parse', 'HEAD');
+}
+
+async function commitFileAs(
+  cwd: string,
+  name: string,
+  content: string,
+  message: string,
+  authorName: string,
+  authorEmail: string,
+  authorDate?: string,
+): Promise<string> {
+  await writeFile(join(cwd, name), content);
+  await execFileAsync('git', ['add', name], { cwd });
+  await execFileAsync('git', ['commit', '-m', message], {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: authorName,
+      GIT_AUTHOR_EMAIL: authorEmail,
+      ...(authorDate ? { GIT_AUTHOR_DATE: authorDate } : {}),
+      GIT_COMMITTER_NAME: authorName,
+      GIT_COMMITTER_EMAIL: authorEmail,
+    },
+  });
+  return (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim();
 }
 
 describe('GitOperationService', () => {
@@ -424,6 +456,154 @@ describe('GitOperationService', () => {
     expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('amended during confirmation');
     expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
     expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).toBe('');
+  });
+
+  it('rewrites author and committer of selected commits and their affected descendants', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-identity-rewrite-');
+    const base = await git(fixture.path, 'rev-parse', 'HEAD');
+    const wrong = await commitFileAs(
+      fixture.path,
+      'wrong.txt',
+      'wrong\n',
+      'wrong author',
+      'Wrong One',
+      'wrong@example.com',
+      '2001-02-03T04:05:06+08:00',
+    );
+    await commitFile(fixture.path, 'middle.txt', 'middle\n', 'unselected middle');
+    const top = await commitFile(fixture.path, 'top.txt', 'top\n', 'top');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(
+      fixture.summary,
+      {
+        kind: 'rewriteAuthorIdentity',
+        hashes: [wrong],
+        name: 'Right Person',
+        email: 'right@example.com',
+      },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    const rows = (
+      await git(fixture.path, 'log', '--format=%s%x00%H%x00%an%x00%ae%x00%cn%x00%ce')
+    ).split('\n');
+    const rowFor = (subject: string): string[] | undefined =>
+      rows.find((line) => line.startsWith(`${subject}\0`))?.split('\0');
+    const wrongRow = rowFor('wrong author');
+    const topRow = rowFor('top');
+    expect(wrongRow?.[1]).not.toBe(wrong);
+    expect(wrongRow?.[2]).toBe('Right Person');
+    expect(wrongRow?.[3]).toBe('right@example.com');
+    expect(wrongRow?.[4]).toBe('Right Person');
+    expect(wrongRow?.[5]).toBe('right@example.com');
+    // Descendants keep their own identity but are rehashed because a parent changed.
+    expect(topRow?.[1]).not.toBe(top);
+    expect(topRow?.[2]).toBe('Operation Test');
+    expect(topRow?.[3]).toBe('operation@example.com');
+    // The rewritten history diverges from the old tip but stays on branch main.
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).not.toBe(top);
+    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    // Non-affected ancestors are untouched.
+    expect(await git(fixture.path, 'rev-parse', 'HEAD~3')).toBe(base);
+    // The author timestamp survives the identity rewrite.
+    const rewrittenWrongHash = wrongRow?.[1];
+    expect(rewrittenWrongHash).toBeDefined();
+    expect(await git(fixture.path, 'show', '-s', '--format=%aI', rewrittenWrongHash!)).toBe(
+      '2001-02-03T04:05:06+08:00',
+    );
+    // An explicit backup branch is created for the pre-rewrite tip.
+    const backupRefs = (
+      await git(
+        fixture.path,
+        'for-each-ref',
+        '--format=%(refname:short)%00%(objectname)',
+        'refs/heads/identity-rewrite-backup',
+      )
+    ).split('\n').filter(Boolean);
+    expect(backupRefs.length).toBe(1);
+    expect(backupRefs[0]?.split('\0')[1]).toBe(top);
+    // Files are preserved during the commit-object rewrite.
+    await expect(stat(join(fixture.path, 'wrong.txt'))).resolves.toBeDefined();
+    await expect(stat(join(fixture.path, 'middle.txt'))).resolves.toBeDefined();
+    await expect(stat(join(fixture.path, 'top.txt'))).resolves.toBeDefined();
+  });
+
+  it('requires destructive confirmation before rewriting author identity', async () => {
+    const { getOperationConfirmation } = await import('../../src/git/GitOperationService');
+    expect(
+      getOperationConfirmation(repository, {
+        kind: 'rewriteAuthorIdentity',
+        hashes: ['a'.repeat(40)],
+        name: 'Right Person',
+        email: 'right@example.com',
+      }),
+    ).toMatchObject({ destructive: true, confirmLabel: 'Rewrite Author Identity' });
+  });
+
+  it('rejects identity rewrites that target commits unreachable from the current branch', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-identity-unreachable-');
+    await git(fixture.path, 'branch', 'other');
+    const head = await git(fixture.path, 'rev-parse', 'HEAD');
+    await git(fixture.path, 'checkout', 'other');
+    await commitFile(fixture.path, 'other.txt', 'other\n', 'other commit');
+    await git(fixture.path, 'checkout', 'main');
+    const service = new GitOperationService(new RealGitRunner());
+
+    const reachableOther = await git(fixture.path, 'rev-parse', 'other');
+    await expect(
+      service.run(
+        fixture.summary,
+        {
+          kind: 'rewriteAuthorIdentity',
+          hashes: [reachableOther],
+          name: 'Right Person',
+          email: 'right@example.com',
+        },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow('reachable');
+    expect(await git(fixture.path, 'rev-parse', 'main')).toBe(head);
+  });
+
+  it('refuses to rewrite author identity when the current branch changes during confirmation', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-identity-stale-head-');
+    await commitFileAs(
+      fixture.path,
+      'wrong.txt',
+      'wrong\n',
+      'wrong author',
+      'Wrong One',
+      'wrong@example.com',
+    );
+    await commitFile(fixture.path, 'second.txt', 'second\n', 'second');
+    const second = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(
+        fixture.summary,
+        {
+          kind: 'rewriteAuthorIdentity',
+          hashes: [second],
+          name: 'Right Person',
+          email: 'right@example.com',
+        },
+        {
+          confirm: async () => {
+            await git(fixture.path, 'commit', '--amend', '-m', 'amended during confirmation');
+            return true;
+          },
+        },
+      ),
+    ).rejects.toThrow('changed during confirmation');
+    // The amended commit is preserved; nothing was rewritten.
+    expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('amended during confirmation');
+    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await git(fixture.path, 'branch', '--list', 'identity-rewrite-backup/*')).toBe('');
   });
 
   it('rejects non-contiguous commit ranges and dirty worktrees before rewriting history', async () => {
@@ -1229,5 +1409,470 @@ describe('GitOperationService', () => {
     await git(fixture.path, 'commit', '-m', 'local change');
     await service.run(fixture.summary, { kind: 'push' });
     expect(await git(remote, 'rev-parse', 'main')).toBe(await git(fixture.path, 'rev-parse', 'main'));
+  });
+
+  it('maps publish requests to an explicit set-upstream push', async () => {
+    const { buildOperationArguments } = await import('../../src/git/GitOperationService');
+
+    expect(
+      buildOperationArguments({ kind: 'publishBranch', remote: 'origin', branch: 'feature' }),
+    ).toEqual(['push', '--set-upstream', 'origin', 'feature']);
+    expect(() => buildOperationArguments({ kind: 'publishBranch' })).toThrow(
+      'Publish target must be resolved before execution.',
+    );
+  });
+
+  it('treats publishing a branch as a non-destructive operation', () => {
+    expect(getOperationConfirmation(repository, { kind: 'publishBranch' })).toBeUndefined();
+  });
+
+  it('publishes a branch without an upstream and records the tracking configuration', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+    const readAutoSetupRemote = () =>
+      git(fixture.path, 'config', '--get', 'push.autoSetupRemote').catch(() => '(unset)');
+    const autoSetupRemoteBefore = await readAutoSetupRemote();
+
+    await service.run(fixture.summary, { kind: 'publishBranch' });
+
+    expect(await git(remote, 'rev-parse', 'feature')).toBe(head);
+    expect(await git(fixture.path, 'config', '--get', 'branch.feature.remote')).toBe('origin');
+    expect(await git(fixture.path, 'config', '--get', 'branch.feature.merge')).toBe(
+      'refs/heads/feature',
+    );
+    // The default fetch refspec already covers the branch, so the push creates the tracking ref
+    // and the publish must not need an extra fetch.
+    expect(await git(fixture.path, 'rev-parse', 'refs/remotes/origin/feature')).toBe(head);
+    expect(await readAutoSetupRemote()).toBe(autoSetupRemoteBefore);
+    expect(await git(fixture.path, 'config', '--local', '--list')).not.toMatch(
+      /push\.autosetupremote/iu,
+    );
+  });
+
+  it('refuses to publish a branch that already tracks an upstream', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-tracked-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+    await service.run(fixture.summary, { kind: 'publishBranch' });
+
+    await expect(service.run(fixture.summary, { kind: 'publishBranch' })).rejects.toThrow(
+      /already tracks/u,
+    );
+  });
+
+  it('refuses to publish a branch with an incomplete upstream configuration', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-partial-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    await git(fixture.path, 'config', 'branch.feature.remote', 'origin');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(service.run(fixture.summary, { kind: 'publishBranch' })).rejects.toThrow(
+      /incomplete upstream configuration/u,
+    );
+  });
+
+  it('refuses to publish a branch that has no commits yet', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-unborn-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'checkout', '--orphan', 'orphan');
+    await git(fixture.path, 'rm', '-r', '--cached', '.');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(service.run(fixture.summary, { kind: 'publishBranch' })).rejects.toThrow(
+      /no commits yet/u,
+    );
+  });
+
+  it('refuses to publish while HEAD is detached', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-detached-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'checkout', '--detach');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(service.run(fixture.summary, { kind: 'publishBranch' })).rejects.toThrow(
+      /HEAD is detached/u,
+    );
+  });
+
+  it('refuses to publish when several remotes exist without a push default', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-multi-');
+    const origin = await createBareRemote();
+    const second = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', origin);
+    await git(fixture.path, 'remote', 'add', 'second', second);
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(service.run(fixture.summary, { kind: 'publishBranch' })).rejects.toThrow(
+      /unique push remote/u,
+    );
+    await expect(git(origin, 'show-ref', '--verify', 'refs/heads/feature')).rejects.toBeDefined();
+    await expect(git(second, 'show-ref', '--verify', 'refs/heads/feature')).rejects.toBeDefined();
+  });
+
+  it('publishes to the only configured remote even when it is not origin', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-single-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'upstream', remote);
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'publishBranch' });
+
+    expect(await git(remote, 'rev-parse', 'feature')).toBe(head);
+    expect(await git(fixture.path, 'config', '--get', 'branch.feature.remote')).toBe('upstream');
+  });
+
+  it('honours remote.pushDefault when several remotes exist', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-pushdefault-');
+    const origin = await createBareRemote();
+    const second = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', origin);
+    await git(fixture.path, 'remote', 'add', 'second', second);
+    await git(fixture.path, 'config', 'remote.pushDefault', 'second');
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'publishBranch' });
+
+    expect(await git(second, 'rev-parse', 'feature')).toBe(head);
+    await expect(git(origin, 'show-ref', '--verify', 'refs/heads/feature')).rejects.toBeDefined();
+  });
+
+  it('prefers branch pushRemote over remote.pushDefault when publishing', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-pushremote-');
+    const origin = await createBareRemote();
+    const second = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', origin);
+    await git(fixture.path, 'remote', 'add', 'second', second);
+    await git(fixture.path, 'config', 'remote.pushDefault', 'second');
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    await git(fixture.path, 'config', 'branch.feature.pushRemote', 'origin');
+    const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'publishBranch' });
+
+    expect(await git(origin, 'rev-parse', 'feature')).toBe(head);
+    await expect(git(second, 'show-ref', '--verify', 'refs/heads/feature')).rejects.toBeDefined();
+    expect(await git(fixture.path, 'config', '--get', 'branch.feature.remote')).toBe('origin');
+  });
+
+  it('refuses to publish to a mirror remote', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-mirror-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'config', 'remote.origin.mirror', 'true');
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(service.run(fixture.summary, { kind: 'publishBranch' })).rejects.toThrow(/mirror/u);
+  });
+
+  it('publishes regardless of push.default because the refspec is explicit', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const service = new GitOperationService(new RealGitRunner());
+    for (const pushDefault of ['matching', 'nothing']) {
+      const fixture = await createFixtureRepository(`git-publish-default-${pushDefault}-`);
+      const remote = await createBareRemote();
+      await git(fixture.path, 'remote', 'add', 'origin', remote);
+      await git(fixture.path, 'config', 'push.default', pushDefault);
+      await git(fixture.path, 'checkout', '-b', 'feature');
+      const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+
+      await service.run(fixture.summary, { kind: 'publishBranch' });
+
+      expect(await git(remote, 'rev-parse', 'feature')).toBe(head);
+    }
+  });
+
+  it('ignores a configured remote push refspec when publishing', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-refspec-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'config', 'remote.origin.push', 'refs/heads/other:refs/heads/other');
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'publishBranch' });
+
+    expect(await git(remote, 'rev-parse', 'feature')).toBe(head);
+    await expect(git(remote, 'show-ref', '--verify', 'refs/heads/other')).rejects.toBeDefined();
+  });
+
+  it('materializes the remote tracking ref when the fetch refspec does not cover the branch', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-narrow-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    // A `git clone --single-branch` remote keeps one entry in remote.origin.fetch, so pushing any
+    // other branch records the upstream configuration without creating a tracking ref.
+    await git(
+      fixture.path,
+      'config',
+      'remote.origin.fetch',
+      '+refs/heads/main:refs/remotes/origin/main',
+    );
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'publishBranch' });
+
+    expect(await git(remote, 'rev-parse', 'feature')).toBe(head);
+    expect(await git(fixture.path, 'rev-parse', 'refs/remotes/origin/feature')).toBe(head);
+  });
+
+  it('keeps the publish successful when the tracking ref cannot be materialized', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-publish-fetchfailure-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(
+      fixture.path,
+      'config',
+      'remote.origin.fetch',
+      '+refs/heads/main:refs/remotes/origin/main',
+    );
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const head = await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    const realRunner = new RealGitRunner();
+    const runner = {
+      async run(args: readonly string[], options: GitRunOptions) {
+        if (args[0] === 'fetch') throw new Error('fetch is unavailable');
+        return realRunner.run(args, options);
+      },
+    } as unknown as GitRunner;
+    const service = new GitOperationService(runner);
+
+    await expect(service.run(fixture.summary, { kind: 'publishBranch' })).resolves.toMatchObject({
+      message: 'publishBranch completed.',
+    });
+    expect(await git(remote, 'rev-parse', 'feature')).toBe(head);
+  });
+
+  it('refuses to build arguments for a batch deletion that was not expanded', async () => {
+    const { buildOperationArguments } = await import('../../src/git/GitOperationService');
+
+    expect(() =>
+      buildOperationArguments({
+        kind: 'deleteBranches',
+        branches: [{ name: 'feature/login', force: false }],
+      }),
+    ).toThrow(/expanded/u);
+  });
+
+  it('describes a batch branch deletion confirmation with the count and unmerged branches', async () => {
+    const { getOperationConfirmation } = await import('../../src/git/GitOperationService');
+
+    const confirmation = getOperationConfirmation(repository, {
+      kind: 'deleteBranches',
+      branches: [
+        { name: 'feature/gone', force: true },
+        { name: 'feature/merged', force: false },
+      ],
+    });
+
+    expect(confirmation).toMatchObject({ destructive: true, confirmLabel: 'Delete 2 Branches' });
+    expect(confirmation?.title).toContain('2');
+    expect(confirmation?.detail).toContain('project');
+    expect(confirmation?.detail).toContain('feature/gone (not merged)');
+    expect(confirmation?.detail).toContain('feature/merged');
+    expect(confirmation?.detail).toContain('1 of them are not merged');
+  });
+
+  it('deletes the merged branches of a batch and reports the unmerged ones that failed', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-batch-');
+    // Merged into main: `-d` succeeds.
+    await git(fixture.path, 'branch', 'merged-branch', 'main');
+    // Not merged into main: `-d` must fail, `-D` must succeed.
+    await git(fixture.path, 'checkout', '-b', 'unmerged-branch');
+    await commitFile(fixture.path, 'feature.txt', 'feature\n', 'feature work');
+    await git(fixture.path, 'checkout', 'main');
+
+    const service = new GitOperationService(new RealGitRunner());
+    const confirm = vi.fn(() => Promise.resolve(true));
+
+    const failed = await service.run(
+      fixture.summary,
+      {
+        kind: 'deleteBranches',
+        branches: [
+          { name: 'merged-branch', force: false },
+          { name: 'unmerged-branch', force: false },
+        ],
+      },
+      { confirm },
+    );
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(failed.message).toContain('Deleted 1 of 2 branches');
+    expect(failed.message).toContain('unmerged-branch');
+    expect(failed.deletedRefs).toEqual(['refs/heads/merged-branch']);
+    expect(await git(fixture.path, 'branch', '--list', 'merged-branch')).toBe('');
+    expect(await git(fixture.path, 'branch', '--list', 'unmerged-branch')).toContain(
+      'unmerged-branch',
+    );
+
+    const forced = await service.run(
+      fixture.summary,
+      {
+        kind: 'deleteBranches',
+        branches: [{ name: 'unmerged-branch', force: true }],
+      },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    expect(forced.message).toBe('Deleted 1 branch.');
+    expect(forced.deletedRefs).toEqual(['refs/heads/unmerged-branch']);
+    expect(await git(fixture.path, 'branch', '--list', 'unmerged-branch')).toBe('');
+  });
+
+  it('aborts the whole batch when the confirmation is declined', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-batch-cancel-');
+    await git(fixture.path, 'branch', 'merged-branch', 'main');
+    const service = new GitOperationService(new RealGitRunner());
+
+    const result = await service.run(
+      fixture.summary,
+      { kind: 'deleteBranches', branches: [{ name: 'merged-branch', force: false }] },
+      { confirm: () => Promise.resolve(false) },
+    );
+
+    expect(result).toEqual({ message: '', cancelled: true });
+    expect(await git(fixture.path, 'branch', '--list', 'merged-branch')).toContain(
+      'merged-branch',
+    );
+  });
+
+  it('unshallows a single-branch shallow clone and extends its fetch refspec so other branches appear', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const source = await createFixtureRepository('git-shallow-src-');
+    await commitFile(source.path, 'a.txt', 'a\n', 'second commit');
+    await commitFile(source.path, 'b.txt', 'b\n', 'third commit');
+    await git(source.path, 'branch', 'other');
+
+    const cloneDir = await mkdtemp(join(tmpdir(), 'git-shallow-clone-'));
+    temporaryDirectories.push(cloneDir);
+    const clonePath = join(cloneDir, 'clone');
+    // Build a shallow, single-branch clone deterministically (a local-path `git clone --depth 1`
+    // can bypass shallow via git's local optimization). A `fetch --depth 1` always marks shallow.
+    await git(cloneDir, 'init', '-b', 'main', clonePath);
+    await git(clonePath, 'config', 'user.name', 'Clone Test');
+    await git(clonePath, 'config', 'user.email', 'clone@example.com');
+    await git(clonePath, 'remote', 'add', 'origin', source.path);
+    await git(
+      clonePath,
+      'config',
+      'remote.origin.fetch',
+      '+refs/heads/main:refs/remotes/origin/main',
+    );
+    await git(clonePath, 'fetch', '--depth', '1', 'origin', 'main');
+    await git(clonePath, 'reset', '--hard', 'origin/main');
+    const cloneSummary: RepositorySummary = {
+      id: clonePath,
+      rootUri: pathToFileURL(clonePath).toString(),
+      gitDirUri: pathToFileURL(join(clonePath, '.git')).toString(),
+      displayName: 'clone',
+      isBare: false,
+      currentBranch: 'main',
+    };
+    expect(await git(clonePath, 'rev-parse', '--is-shallow-repository')).toBe('true');
+    expect(await git(clonePath, 'rev-list', '--count', 'HEAD')).toBe('1');
+    expect(await git(clonePath, 'config', '--get', 'remote.origin.fetch')).toContain(
+      'refs/heads/main',
+    );
+
+    const service = new GitOperationService(new RealGitRunner());
+    await service.run(cloneSummary, { kind: 'fetchFullHistory' }, { confirm: () => Promise.resolve(true) });
+
+    expect(await git(clonePath, 'rev-parse', '--is-shallow-repository')).toBe('false');
+    expect(Number(await git(clonePath, 'rev-list', '--count', 'HEAD'))).toBeGreaterThan(1);
+    expect(await git(clonePath, 'config', '--get', 'remote.origin.fetch')).toBe(
+      '+refs/heads/*:refs/remotes/origin/*',
+    );
+    await expect(
+      git(clonePath, 'show-ref', '--verify', 'refs/remotes/origin/other'),
+    ).resolves.toBeDefined();
+  });
+
+  it('requires confirmation before fetching the full history', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-unshallow-confirm-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(fixture.summary, { kind: 'fetchFullHistory' }),
+    ).rejects.toThrow(/requires confirmation/u);
+  });
+
+  it('refuses to fetch the full history when no remote is configured', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-unshallow-noremote-');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(
+        fixture.summary,
+        { kind: 'fetchFullHistory' },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow(/single remote/u);
+  });
+
+  it('builds an unshallow fetch command only after the remote is resolved', async () => {
+    const { buildOperationArguments } = await import('../../src/git/GitOperationService');
+    expect(buildOperationArguments({ kind: 'fetchFullHistory', remote: 'origin' })).toEqual([
+      'fetch',
+      '--unshallow',
+      'origin',
+    ]);
+    expect(() => buildOperationArguments({ kind: 'fetchFullHistory' })).toThrow(
+      /resolved before execution/u,
+    );
+  });
+
+  it('lists the planned fetch-refspec change verbatim in the confirmation', () => {
+    const confirmation = getOperationConfirmation(repository, {
+      kind: 'fetchFullHistory',
+      remote: 'origin',
+      refspecFrom: '+refs/heads/main:refs/remotes/origin/main',
+      refspecTo: '+refs/heads/*:refs/remotes/origin/*',
+    });
+    expect(confirmation?.destructive).toBe(true);
+    expect(confirmation?.detail).toContain('+refs/heads/*:refs/remotes/origin/*');
+    expect(confirmation?.detail).toContain('+refs/heads/main:refs/remotes/origin/main');
   });
 });

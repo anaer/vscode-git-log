@@ -1,5 +1,5 @@
 import type { LogFilters, WebviewToExtensionMessage } from '../../src/protocol/messages';
-import type { CommitSummary, StashEntry } from '../../src/shared/models';
+import type { BranchCleanupCandidate, CommitSummary, StashEntry } from '../../src/shared/models';
 import type { CommitSelection } from './commitSelection';
 
 /**
@@ -48,6 +48,13 @@ export interface EditCommitMessagesState {
   loading: boolean;
 }
 
+export interface RewriteAuthorIdentityState {
+  repositoryId: string;
+  hashes: string[];
+  name: string;
+  email: string;
+}
+
 export interface StashDialogState {
   repositoryId: string;
   stashes: StashEntry[];
@@ -59,6 +66,17 @@ export interface StashDialogState {
 export interface AmendDialogState {
   repositoryId: string;
   message: string;
+}
+
+/**
+ * Batch branch cleanup. `selected` holds branch names the user ticked; `gone` candidates are
+ * ticked by default, unmerged ones never are.
+ */
+export interface BranchCleanupDialogState {
+  repositoryId: string;
+  candidates: BranchCleanupCandidate[];
+  selected: ReadonlySet<string>;
+  loading: boolean;
 }
 
 export interface HistoryParentPickerState {
@@ -101,6 +119,12 @@ export interface WorkbenchEffects {
       | AmendDialogState
       | undefined
       | ((current: AmendDialogState | undefined) => AmendDialogState | undefined),
+  ) => void;
+  setBranchCleanup: (
+    next:
+      | BranchCleanupDialogState
+      | undefined
+      | ((current: BranchCleanupDialogState | undefined) => BranchCleanupDialogState | undefined),
   ) => void;
   setResponsiveExpanded: (
     next:
@@ -147,6 +171,7 @@ export function createNoopEffects(): WorkbenchEffects {
     setEditCommitMessages: noop,
     setStashDialog: noop,
     setAmendDialog: noop,
+    setBranchCleanup: noop,
     setResponsiveExpanded: noop,
     setScrollTopByRepository: noop,
     setHistoryParentPicker: noop,

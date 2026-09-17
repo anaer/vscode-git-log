@@ -426,6 +426,100 @@ describe('WorkbenchApp', () => {
     expect(screen.queryByRole('dialog', { name: 'Stash management' })).not.toBeInTheDocument();
   });
 
+  it('opens the branch cleanup dialog and sends only the ticked branches for deletion', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-cleanup',
+            repositories: [
+              {
+                id: 'repo-cleanup',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                currentBranch: 'main',
+              },
+            ],
+            selectedRepositoryId: 'repo-cleanup',
+            pageSize: 500,
+            maxCachedCommits: 5000,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+    postedMessages.length = 0;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clean up branches' }));
+    expect(postedMessages).toContainEqual(
+      expect.objectContaining({ type: 'requestBranchCleanup', repositoryId: 'repo-cleanup' }),
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'branchCleanupLoaded',
+            requestId: 'branch-cleanup-response',
+            repositoryId: 'repo-cleanup',
+            candidates: [
+              {
+                name: 'feature/gone',
+                gone: true,
+                merged: false,
+                aheadCount: 2,
+                lastCommitTime: 1_700_000_000,
+              },
+              {
+                name: 'feature/merged',
+                gone: false,
+                merged: true,
+                aheadCount: 0,
+                lastCommitTime: 1_700_000_001,
+              },
+            ],
+          },
+        }),
+      );
+    });
+
+    const dialog = screen.getByRole('dialog', { name: 'Clean up branches' });
+    // Gone branches are pre-ticked, merged ones are not.
+    expect(within(dialog).getByRole('checkbox', { name: 'Delete feature/gone' })).toBeChecked();
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Delete feature/merged' }),
+    ).not.toBeChecked();
+    expect(within(dialog).getByText('2 unmerged')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Delete feature/merged' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete 2 Branches' }));
+
+    // An unmerged branch needs `-D`, a fully merged one keeps the safe `-d`.
+    expect(postedMessages).toContainEqual(
+      expect.objectContaining({
+        type: 'runOperation',
+        repositoryId: 'repo-cleanup',
+        operation: {
+          kind: 'deleteBranches',
+          branches: [
+            { name: 'feature/gone', force: true },
+            { name: 'feature/merged', force: false },
+          ],
+        },
+      }),
+    );
+    expect(screen.queryByRole('dialog', { name: 'Clean up branches' })).not.toBeInTheDocument();
+  });
+
   it('offers Amend HEAD only for the current branch tip', () => {
     const { newest, middle } = initializeCommitRangeFixture();
     const newestRow = screen.getByText('newest commit').closest('[role="row"]') as HTMLElement;
@@ -1295,6 +1389,85 @@ describe('WorkbenchApp', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
 
+  it('shows a truncated-history notice with a fetch-full-history action for shallow clones', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-shallow',
+            repositories: [
+              {
+                id: 'repo-shallow',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                currentBranch: 'main',
+                isShallow: true,
+              },
+            ],
+            selectedRepositoryId: 'repo-shallow',
+            pageSize: 2,
+            maxCachedCommits: 3,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+    postedMessages.length = 0;
+
+    const note = screen.getByRole('note', { name: 'History is truncated' });
+    fireEvent.click(within(note).getByRole('button', { name: 'Fetch full history' }));
+
+    const operation = postedMessages.find((message) => message.type === 'runOperation');
+    if (!operation || operation.type !== 'runOperation') {
+      throw new Error('Expected a runOperation message to be posted.');
+    }
+    expect(operation.operation).toEqual({ kind: 'fetchFullHistory' });
+  });
+
+  it('hides the truncated-history notice for complete clones', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-full',
+            repositories: [
+              {
+                id: 'repo-full',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                currentBranch: 'main',
+              },
+            ],
+            selectedRepositoryId: 'repo-full',
+            pageSize: 2,
+            maxCachedCommits: 3,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+
+    expect(screen.queryByRole('note', { name: 'History is truncated' })).toBeNull();
+  });
+
   it('keeps write actions blocked throughout an operation refresh and rejects rapid duplicates', () => {
     render(<App />);
     act(() => {
@@ -1465,6 +1638,103 @@ describe('WorkbenchApp', () => {
     expect(screen.getByRole('button', { name: 'Fetch remotes' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Fetch remotes' }));
     expect(postedMessages.filter((message) => message.type === 'runOperation')).toHaveLength(1);
+  });
+
+  it('sends a rewriteAuthorIdentity operation with the entered name and email', () => {
+    render(<App />);
+    const hash = 'a'.repeat(40);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-identity-rewrite',
+            repositories: [
+              {
+                id: 'repo-identity-rewrite',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                currentBranch: 'main',
+                isBare: false,
+              },
+            ],
+            selectedRepositoryId: 'repo-identity-rewrite',
+            pageSize: 2,
+            maxCachedCommits: 3,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'repositoryData',
+            requestId: 'ready-identity-rewrite',
+            repositoryId: 'repo-identity-rewrite',
+            refs: [
+              {
+                fullName: 'refs/heads/main',
+                shortName: 'main',
+                kind: 'local',
+                target: hash,
+                ahead: 0,
+                behind: 0,
+                isCurrent: true,
+              },
+            ],
+            commits: [
+              {
+                hash,
+                parents: [],
+                subject: 'identity target',
+                authorName: 'Alice',
+                authorEmail: 'alice@example.com',
+                authorTime: 1,
+                commitTime: 1,
+                refs: [],
+              },
+            ],
+            filters: { text: '', branches: [], authors: [], paths: [] },
+            replace: true,
+            hasMore: false,
+          },
+        }),
+      );
+    });
+    postedMessages.length = 0;
+
+    const row = screen.getByText('identity target').closest('[role="row"]');
+    expect(row).not.toBeNull();
+    if (!row) return;
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rewrite Author Identity…' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Author name' }), {
+      target: { value: 'Bob' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Author email' }), {
+      target: { value: 'bob@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rewrite Author Identity' }));
+
+    const operations = postedMessages.filter((message) => message.type === 'runOperation');
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      type: 'runOperation',
+      repositoryId: 'repo-identity-rewrite',
+      operation: {
+        kind: 'rewriteAuthorIdentity',
+        hashes: [hash],
+        name: 'Bob',
+        email: 'bob@example.com',
+      },
+    });
+    expect(screen.queryByText('Invalid Git operation parameters.')).not.toBeInTheDocument();
   });
 
   it('cancels stale deep-window anchors when a filter resets the log window', async () => {
@@ -4485,7 +4755,8 @@ describe('WorkbenchApp', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toBeDisabled();
     expect(within(menu).getByRole('menuitem', { name: 'Merge into Current' })).toBeDisabled();
     expect(within(menu).getByRole('menuitem', { name: 'Rebase Current onto' })).toBeDisabled();
-    expect(within(menu).getByRole('menuitem', { name: 'Push' })).toBeEnabled();
+    // This fixture's current branch has no upstream, so the menu offers to publish it.
+    expect(within(menu).getByRole('menuitem', { name: 'Publish Branch' })).toBeEnabled();
     expect(within(menu).getByRole('menuitem', { name: 'Delete…' })).toBeDisabled();
 
     fireEvent.contextMenu(remote);
@@ -5113,6 +5384,18 @@ describe('WorkbenchApp', () => {
               },
             ],
             filters: { text: '', branches: [], authors: [], paths: [] },
+            contributors: [
+              {
+                name: 'Other User',
+                email: 'other@example.com',
+                commitCount: 2,
+              },
+              {
+                name: 'Another User',
+                email: 'another@example.com',
+                commitCount: 1,
+              },
+            ],
             replace: true,
             hasMore: false,
           },
@@ -5124,7 +5407,11 @@ describe('WorkbenchApp', () => {
     const authorNames = [
       ...screen.getByRole('dialog', { name: 'user filter' }).querySelectorAll('.filter-option span'),
     ].map((element) => element.textContent);
-    expect(authorNames).toEqual(['Me (Current User)', 'Other User', 'Another User']);
+    expect(authorNames).toEqual([
+      'Me (Current User)',
+      'Other User <other@example.com> (2)',
+      'Another User <another@example.com> (1)',
+    ]);
 
     postedMessages.length = 0;
     fireEvent.click(screen.getByRole('checkbox', { name: 'Me (Current User)' }));
@@ -5346,5 +5633,160 @@ describe('WorkbenchApp', () => {
 
     expect(screen.getByText('FRESH DATA')).toBeInTheDocument();
     expect(screen.queryByText('STALE DATA')).not.toBeInTheDocument();
+  });
+
+  it('offers to publish the current branch until it gains an upstream', () => {
+    render(<App />);
+    const hash = 'e'.repeat(40);
+    const publishRefs = (upstream?: string) => [
+      {
+        fullName: 'refs/heads/feature',
+        shortName: 'feature',
+        kind: 'local',
+        target: hash,
+        ahead: 0,
+        behind: 0,
+        isCurrent: true,
+        ...(upstream ? { upstream } : {}),
+      },
+    ];
+    const dispatchRepositoryData = (upstream?: string) => {
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: {
+              type: 'repositoryData',
+              requestId: 'ready-publish',
+              repositoryId: 'repo-publish',
+              refs: publishRefs(upstream),
+              commits: [
+                {
+                  hash,
+                  parents: [],
+                  subject: 'Publish target',
+                  authorName: 'Alice',
+                  authorEmail: 'alice@example.com',
+                  authorTime: 1700000000,
+                  commitTime: 1700000000,
+                  refs: [],
+                },
+              ],
+              filters: { text: '', branches: [], authors: [], paths: [] },
+              replace: true,
+              hasMore: false,
+            },
+          }),
+        );
+      });
+    };
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-publish',
+            repositories: [
+              {
+                id: 'repo-publish',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                currentBranch: 'feature',
+                head: hash,
+              },
+            ],
+            selectedRepositoryId: 'repo-publish',
+            pageSize: 500,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+    dispatchRepositoryData();
+    postedMessages.length = 0;
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    let menu = screen.getByRole('menu', { name: 'toolbar actions' });
+    expect(within(menu).queryByRole('menuitem', { name: 'Push' })).not.toBeInTheDocument();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Publish Branch' }));
+    expect(postedMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runOperation',
+          repositoryId: 'repo-publish',
+          operation: { kind: 'publishBranch' },
+        }),
+      ]),
+    );
+
+    completeLatestOperation();
+    dispatchRepositoryData('origin/feature');
+    postedMessages.length = 0;
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    menu = screen.getByRole('menu', { name: 'toolbar actions' });
+    expect(within(menu).queryByRole('menuitem', { name: 'Publish Branch' })).not.toBeInTheDocument();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Push' }));
+    expect(postedMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'runOperation',
+          repositoryId: 'repo-publish',
+          operation: { kind: 'push' },
+        }),
+      ]),
+    );
+  });
+
+  it('suppresses the host context menu everywhere except editable fields', () => {
+    render(<App />);
+
+    const dispatchContextMenu = (target: EventTarget): boolean => {
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      act(() => {
+        target.dispatchEvent(event);
+      });
+      return event.defaultPrevented;
+    };
+
+    // Empty panel space must not surface the host's cut / copy / paste menu.
+    expect(dispatchContextMenu(document.body)).toBe(true);
+
+    // Editable fields stay exempt so pasting a filter term or a branch name still works.
+    expect(
+      dispatchContextMenu(screen.getByRole('searchbox', { name: 'Filter branches' })),
+    ).toBe(false);
+    expect(dispatchContextMenu(screen.getByRole('searchbox', { name: 'Text or hash' }))).toBe(false);
+
+    // The commit-message editors live behind dialogs, so cover their tag shapes directly.
+    const textarea = document.createElement('textarea');
+    document.body.append(textarea);
+    expect(dispatchContextMenu(textarea)).toBe(false);
+    textarea.remove();
+
+    // jsdom always reports isContentEditable as false, so stand in for what a browser
+    // reports for a [contenteditable] host.
+    const editable = document.createElement('div');
+    Object.defineProperty(editable, 'isContentEditable', { value: true });
+    document.body.append(editable);
+    expect(dispatchContextMenu(editable)).toBe(false);
+    editable.remove();
+  });
+
+  it('stops suppressing the host context menu after the panel unmounts', () => {
+    const { unmount } = render(<App />);
+    unmount();
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => {
+      document.body.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(false);
   });
 });

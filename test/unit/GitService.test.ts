@@ -46,6 +46,77 @@ async function createHistoryFixture(): Promise<string> {
 }
 
 describe('GitService', () => {
+  async function createCleanupFixture(): Promise<string> {
+    const repository = await createHistoryFixture();
+    const remote = await mkdtemp(join(tmpdir(), 'git-log-cleanup-remote-'));
+    temporaryDirectories.push(remote);
+    await git(remote, 'init', '--bare', '-b', 'main');
+    await git(repository, 'remote', 'add', 'origin', remote);
+    await git(repository, 'push', '-u', 'origin', 'main');
+
+    // The upstream disappears, so this branch becomes a `[gone]` candidate.
+    await git(repository, 'checkout', '-b', 'gone-branch');
+    await writeFile(join(repository, 'gone.txt'), 'gone\n');
+    await git(repository, 'add', 'gone.txt');
+    await git(repository, 'commit', '-m', 'gone work');
+    await git(repository, 'push', '-u', 'origin', 'gone-branch');
+    await git(repository, 'checkout', 'main');
+    await git(repository, 'push', 'origin', '--delete', 'gone-branch');
+    await git(repository, 'fetch', '--prune', 'origin');
+
+    // Merged into main, so it is a candidate even though its upstream is fine.
+    await git(repository, 'branch', 'merged-branch', 'main');
+
+    // Neither merged nor gone: must stay out of the candidate list.
+    await git(repository, 'checkout', '-b', 'unmerged-branch');
+    await writeFile(join(repository, 'unmerged.txt'), 'unmerged\n');
+    await git(repository, 'add', 'unmerged.txt');
+    await git(repository, 'commit', '-m', 'unmerged work');
+    await git(repository, 'checkout', 'main');
+    return repository;
+  }
+
+  it('lists only gone and merged local branches as cleanup candidates', async () => {
+    const repository = await createCleanupFixture();
+    const service = new GitService(new GitRunner());
+
+    const candidates = await service.getBranchCleanupCandidates(repository, 'main');
+
+    // Gone branches sort first; the current branch, unmerged and upstream-less branches stay out.
+    expect(candidates.map((candidate) => candidate.name)).toEqual([
+      'gone-branch',
+      'merged-branch',
+    ]);
+    expect(candidates[0]).toMatchObject({
+      name: 'gone-branch',
+      gone: true,
+      merged: false,
+      aheadCount: 1,
+    });
+    expect(candidates[0]?.lastCommitTime).toBeGreaterThan(0);
+    expect(candidates[1]).toMatchObject({
+      name: 'merged-branch',
+      gone: false,
+      merged: true,
+      aheadCount: 0,
+    });
+  });
+
+  it('keeps gone candidates but disables the merged class without a current branch', async () => {
+    const repository = await createCleanupFixture();
+    await git(repository, 'checkout', '--detach', 'HEAD');
+    const service = new GitService(new GitRunner());
+
+    const candidates = await service.getBranchCleanupCandidates(repository, undefined);
+
+    expect(candidates.map((candidate) => candidate.name)).toEqual(['gone-branch']);
+    expect(candidates[0]).toMatchObject({ gone: true, merged: false });
+    // Without a base branch every commit of the branch counts as unmerged.
+    expect(candidates[0]?.aheadCount).toBe(
+      Number(await git(repository, 'rev-list', '--count', 'gone-branch')),
+    );
+  });
+
   it('lists named stashes from a real repository', async () => {
     const repository = await createHistoryFixture();
     await writeFile(join(repository, 'README.md'), 'stashed\n');
@@ -55,6 +126,50 @@ describe('GitService', () => {
     await expect(service.getStashes(repository)).resolves.toEqual([
       expect.objectContaining({ ref: 'stash@{0}', subject: expect.stringContaining('saved work') }),
     ]);
+  });
+
+  it('aggregates contributors from shortlog and merges mailmap aliases', async () => {
+    const repository = await mkdtemp(join(tmpdir(), 'git-log-mailmap-'));
+    temporaryDirectories.push(repository);
+    await git(repository, 'init', '-b', 'main');
+    await writeFile(join(repository, 'a.txt'), 'a\n');
+    await git(repository, 'add', 'a.txt');
+    await git(repository, 'commit', '-m', '首次提交');
+    // Create a second commit authored by a distinct identity, bypassing the env-driven helper.
+    await writeFile(join(repository, 'a.txt'), 'a\nb\n');
+    await git(repository, 'add', 'a.txt');
+    await execFileAsync('git', ['commit', '-m', '第二笔提交'], {
+      cwd: repository,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Old Author',
+        GIT_AUTHOR_EMAIL: 'old@example.com',
+        GIT_COMMITTER_NAME: 'CI Bot',
+        GIT_COMMITTER_EMAIL: 'ci@example.com',
+      },
+    });
+    const service = new GitService(new GitRunner());
+
+    const before = await service.getContributors(repository);
+    expect(before).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: '测试作者', email: 'author@example.com', commitCount: 1 }),
+        expect.objectContaining({ name: 'Old Author', email: 'old@example.com', commitCount: 1 }),
+      ]),
+    );
+
+    // A mailmap entry folds the historical "old@example.com" identity into 测试作者.
+    await writeFile(
+      join(repository, '.mailmap'),
+      '测试作者 <author@example.com> Old Author <old@example.com>\n',
+    );
+    const after = await service.getContributors(repository);
+    expect(after).toEqual([
+      expect.objectContaining({ name: '测试作者', email: 'author@example.com', commitCount: 2 }),
+    ]);
+    const refs = await service.getRefs(repository, 'main');
+    const page = await service.getLog(repository, { limit: 20, skip: 0, refs });
+    expect(page[0]).toMatchObject({ authorName: '测试作者', authorEmail: 'author@example.com' });
   });
 
   it('resolves exact hash searches with Git 2.27-compatible arguments', async () => {

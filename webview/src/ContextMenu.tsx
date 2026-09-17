@@ -4,6 +4,7 @@ import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/p
 import type {
   AmendDialogState,
   EditCommitMessagesState,
+  RewriteAuthorIdentityState,
   SquashOperationState,
 } from './workbenchEffects';
 import type { ContextMenuState, NamedOperationState } from './App';
@@ -17,6 +18,7 @@ interface ContextMenuProps {
   selectedRepository: RepositorySummary | undefined;
   hasContiguousCommitRange: boolean;
   selectedOperationInFlight: boolean;
+  currentBranchHasUpstream: boolean;
   detailsHash: string | undefined;
   detailsBody: string | undefined;
   selectedParent: string | undefined;
@@ -28,6 +30,7 @@ interface ContextMenuProps {
   onFilterByPath(path: string): void;
   setSquashOperation: Dispatch<SetStateAction<SquashOperationState | undefined>>;
   setEditCommitMessages: Dispatch<SetStateAction<EditCommitMessagesState | undefined>>;
+  setRewriteAuthorIdentity: Dispatch<SetStateAction<RewriteAuthorIdentityState | undefined>>;
   setAmendDialog: Dispatch<SetStateAction<AmendDialogState | undefined>>;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
   setActiveCommitMessagesRequest: (requestId: string | undefined) => void;
@@ -42,6 +45,7 @@ export function ContextMenu(props: ContextMenuProps) {
     selectedRepository,
     hasContiguousCommitRange,
     selectedOperationInFlight,
+    currentBranchHasUpstream,
     detailsHash,
     detailsBody,
     selectedParent,
@@ -53,10 +57,19 @@ export function ContextMenu(props: ContextMenuProps) {
     onFilterByPath,
     setSquashOperation,
     setEditCommitMessages,
+    setRewriteAuthorIdentity,
     setAmendDialog,
     setNamedOperation,
     setActiveCommitMessagesRequest,
   } = props;
+
+  // Both the toolbar and the branch menu push the current branch, so they offer to publish it
+  // while it has no upstream. The branch menu already carries the clicked ref, so it reads the
+  // upstream from there instead of relying on the toolbar's snapshot-derived flag.
+  const toolbarPublishesBranch =
+    Boolean(selectedRepository?.currentBranch) && !currentBranchHasUpstream;
+  const refPublishesBranch =
+    contextMenu.kind === 'ref' && contextMenu.ref.isCurrent && !contextMenu.ref.upstream;
 
   return (
     <div
@@ -95,9 +108,19 @@ export function ContextMenu(props: ContextMenuProps) {
               type="button"
               role="menuitem"
               disabled={!selectedRepository?.currentBranch}
-              onClick={() => runOperation({ kind: 'push' }, contextMenu.repositoryId)}
+              title={
+                toolbarPublishesBranch
+                  ? 'Push this branch and set its upstream'
+                  : 'Push the current branch'
+              }
+              onClick={() =>
+                runOperation(
+                  { kind: toolbarPublishesBranch ? 'publishBranch' : 'push' },
+                  contextMenu.repositoryId,
+                )
+              }
             >
-              Push
+              {toolbarPublishesBranch ? 'Publish Branch' : 'Push'}
             </button>
             <button
               type="button"
@@ -180,40 +203,67 @@ export function ContextMenu(props: ContextMenuProps) {
           {contextMenu.commits.length >= 1 &&
           !selectedRepository?.isBare &&
           !selectedRepository?.operationState ? (
-            <button
-              type="button"
-              role="menuitem"
-              disabled={
-                !selectedRepository?.currentBranch ||
-                selectedOperationInFlight ||
-                contextMenu.commits.length > 100
-              }
-              title={
-                contextMenu.commits.length > 100
-                  ? 'Select no more than 100 commits'
-                  : undefined
-              }
-              onClick={() => {
-                const hashes = contextMenu.commits.map((commit) => commit.hash);
-                const messageRequestId = requestId('commit-messages');
-                setActiveCommitMessagesRequest(messageRequestId);
-                setEditCommitMessages({
-                  repositoryId: contextMenu.repositoryId,
-                  requestId: messageRequestId,
-                  edits: hashes.map((hash) => ({ hash, message: '' })),
-                  loading: true,
-                });
-                send({
-                  type: 'requestCommitMessages',
-                  requestId: messageRequestId,
-                  repositoryId: contextMenu.repositoryId,
-                  hashes,
-                });
-                setContextMenu(undefined);
-              }}
-            >
-              Edit Commit Messages…
-            </button>
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={
+                  !selectedRepository?.currentBranch ||
+                  selectedOperationInFlight ||
+                  contextMenu.commits.length > 100
+                }
+                title={
+                  contextMenu.commits.length > 100
+                    ? 'Select no more than 100 commits'
+                    : undefined
+                }
+                onClick={() => {
+                  const hashes = contextMenu.commits.map((commit) => commit.hash);
+                  const messageRequestId = requestId('commit-messages');
+                  setActiveCommitMessagesRequest(messageRequestId);
+                  setEditCommitMessages({
+                    repositoryId: contextMenu.repositoryId,
+                    requestId: messageRequestId,
+                    edits: hashes.map((hash) => ({ hash, message: '' })),
+                    loading: true,
+                  });
+                  send({
+                    type: 'requestCommitMessages',
+                    requestId: messageRequestId,
+                    repositoryId: contextMenu.repositoryId,
+                    hashes,
+                  });
+                  setContextMenu(undefined);
+                }}
+              >
+                Edit Commit Messages…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={
+                  !selectedRepository?.currentBranch ||
+                  selectedOperationInFlight ||
+                  contextMenu.commits.length > 100
+                }
+                title={
+                  contextMenu.commits.length > 100
+                    ? 'Select no more than 100 commits'
+                    : undefined
+                }
+                onClick={() => {
+                  setRewriteAuthorIdentity({
+                    repositoryId: contextMenu.repositoryId,
+                    hashes: contextMenu.commits.map((commit) => commit.hash),
+                    name: '',
+                    email: '',
+                  });
+                  setContextMenu(undefined);
+                }}
+              >
+                Rewrite Author Identity…
+              </button>
+            </>
           ) : null}
           <button
             type="button"
@@ -688,13 +738,20 @@ export function ContextMenu(props: ContextMenuProps) {
                     role="menuitem"
                     disabled={!contextMenu.ref.isCurrent}
                     title={
-                      contextMenu.ref.isCurrent
-                        ? 'Push the current branch'
-                        : 'Checkout this branch before pushing it'
+                      !contextMenu.ref.isCurrent
+                        ? 'Checkout this branch before pushing it'
+                        : refPublishesBranch
+                          ? 'Push this branch and set its upstream'
+                          : 'Push the current branch'
                     }
-                    onClick={() => runOperation({ kind: 'push' }, contextMenu.repositoryId)}
+                    onClick={() =>
+                      runOperation(
+                        { kind: refPublishesBranch ? 'publishBranch' : 'push' },
+                        contextMenu.repositoryId,
+                      )
+                    }
                   >
-                    Push
+                    {refPublishesBranch ? 'Publish Branch' : 'Push'}
                   </button>
                   <button
                     type="button"

@@ -1,7 +1,9 @@
 import type {
+  BranchCleanupCandidate,
   ChangedFile,
   CommitDetails,
   CommitSummary,
+  Contributor,
   EditorHistoryKind,
   HistoryEntry,
   RefLabel,
@@ -17,6 +19,7 @@ const MAX_FILTER_ITEM_LENGTH = 4096;
 const MAX_LOG_OFFSET = 10_000_000;
 const MAX_UNIX_SECONDS = 253_402_300_799;
 const MAX_COMMIT_RANGE = 100;
+const MAX_BRANCH_BATCH = 100;
 const MAX_COMMIT_MESSAGE_LENGTH = 100_000;
 
 export interface LogFilters {
@@ -111,6 +114,7 @@ export type WebviewToExtensionMessage =
   | { type: 'closeHistory'; requestId: string; repositoryId: string }
   | { type: 'closeFolderHistory'; requestId: string; repositoryId: string }
   | { type: 'requestStashState'; requestId: string; repositoryId: string }
+  | { type: 'requestBranchCleanup'; requestId: string; repositoryId: string }
   | { type: 'openStashComparison'; requestId: string; repositoryId: string; hash: string }
   | { type: 'refresh'; requestId: string; repositoryId?: string }
   | { type: 'showOutput'; requestId: string }
@@ -165,8 +169,10 @@ export type GitOperationRequest =
   | { kind: 'checkoutRemote'; name: string; startPoint: string }
   | { kind: 'deleteRemoteBranch'; remote: string; branch: string }
   | { kind: 'fetch'; remote?: string }
+  | { kind: 'fetchFullHistory'; remote?: string; refspecFrom?: string; refspecTo?: string }
   | { kind: 'pull' }
   | { kind: 'push'; forceWithLease?: boolean; remote?: string; targetRef?: string }
+  | { kind: 'publishBranch'; remote?: string; branch?: string }
   | { kind: 'cherryPick'; hash: string }
   | { kind: 'revert'; hash: string }
   | { kind: 'merge'; ref: string }
@@ -177,6 +183,7 @@ export type GitOperationRequest =
   | { kind: 'reset'; hash: string; mode: 'soft' | 'mixed' | 'hard' }
   | { kind: 'renameBranch'; oldName: string; newName: string }
   | { kind: 'deleteBranch'; name: string; force: boolean }
+  | { kind: 'deleteBranches'; branches: Array<{ name: string; force: boolean }> }
   | { kind: 'createStash'; message: string; includeUntracked: boolean }
   | { kind: 'applyStash'; stash: string }
   | { kind: 'popStash'; stash: string }
@@ -185,6 +192,7 @@ export type GitOperationRequest =
   | { kind: 'dropCommits'; hashes: string[] }
   | { kind: 'squashCommits'; hashes: string[]; message: string }
   | { kind: 'editCommitMessages'; edits: Array<{ hash: string; message: string }> }
+  | { kind: 'rewriteAuthorIdentity'; hashes: string[]; name: string; email: string }
   | { kind: 'abortCherryPick' }
   | { kind: 'abortRevert' };
 
@@ -207,6 +215,7 @@ export type ExtensionToWebviewMessage =
       refs: RefLabel[];
       commits: CommitSummary[];
       filters: LogFilters;
+      contributors?: Contributor[];
       selectedHash?: string;
       selectedHashes?: string[];
       scrollTop?: number;
@@ -278,6 +287,12 @@ export type ExtensionToWebviewMessage =
       stashes: StashEntry[];
     }
   | {
+      type: 'branchCleanupLoaded';
+      requestId: string;
+      repositoryId: string;
+      candidates: BranchCleanupCandidate[];
+    }
+  | {
       type: 'error';
       requestId: string;
       repositoryId?: string;
@@ -336,6 +351,21 @@ function isCommitSelection(value: unknown, selectedHash: string): value is strin
     value.every(isHash) &&
     new Set(value).size === value.length &&
     value.includes(selectedHash)
+  );
+}
+
+function isBranchDeletionList(
+  value: unknown,
+): value is Array<{ name: string; force: boolean }> {
+  return (
+    Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= MAX_BRANCH_BATCH &&
+    value.every(
+      (entry) => isRecord(entry) && isGitRefName(entry.name) && typeof entry.force === 'boolean',
+    ) &&
+    new Set(value.map((entry) => (isRecord(entry) ? String(entry.name) : ''))).size ===
+      value.length
   );
 }
 
@@ -518,6 +548,23 @@ function isStashRef(value: unknown): value is string {
   return typeof value === 'string' && /^stash@\{\d+\}$/u.test(value);
 }
 
+function isAuthorIdentity(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.length <= 512 &&
+    !/[<>]|[\0\r\n]/u.test(value)
+  );
+}
+
+function isRefspecDisplay(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 512 &&
+    !/[\0\r\n]/u.test(value)
+  );
+}
+
 function isGitOperationRequest(value: unknown): value is GitOperationRequest {
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
   switch (value.kind) {
@@ -535,6 +582,12 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       return isSafeGitToken(value.remote) && isRemoteBranchName(value.branch);
     case 'fetch':
       return value.remote === undefined || isSafeGitToken(value.remote);
+    case 'fetchFullHistory':
+      return (
+        (value.remote === undefined || isSafeGitToken(value.remote)) &&
+        (value.refspecFrom === undefined || isRefspecDisplay(value.refspecFrom)) &&
+        (value.refspecTo === undefined || isRefspecDisplay(value.refspecTo))
+      );
     case 'pull':
       return true;
     case 'push':
@@ -542,6 +595,11 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
         (value.forceWithLease === undefined || typeof value.forceWithLease === 'boolean') &&
         (value.remote === undefined || isSafeGitToken(value.remote)) &&
         (value.targetRef === undefined || isSafeGitToken(value.targetRef))
+      );
+    case 'publishBranch':
+      return (
+        (value.remote === undefined || isSafeGitToken(value.remote)) &&
+        (value.branch === undefined || isGitRefName(value.branch))
       );
     case 'cherryPick':
     case 'revert':
@@ -559,6 +617,8 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       return isGitRefName(value.oldName) && isGitRefName(value.newName);
     case 'deleteBranch':
       return isGitRefName(value.name) && typeof value.force === 'boolean';
+    case 'deleteBranches':
+      return isBranchDeletionList(value.branches);
     case 'createStash':
       return (
         typeof value.message === 'string' &&
@@ -589,6 +649,16 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       );
     case 'editCommitMessages':
       return isMessageEdits(value.edits);
+    case 'rewriteAuthorIdentity':
+      return (
+        Array.isArray(value.hashes) &&
+        value.hashes.length >= 1 &&
+        value.hashes.length <= MAX_COMMIT_RANGE &&
+        value.hashes.every(isHash) &&
+        new Set(value.hashes).size === value.hashes.length &&
+        isAuthorIdentity(value.name) &&
+        isAuthorIdentity(value.email)
+      );
     case 'abortCherryPick':
     case 'abortRevert':
       return true;
@@ -695,6 +765,10 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
           }
         : undefined;
     case 'requestStashState':
+      return hasRepository(value)
+        ? { type: value.type, requestId: value.requestId, repositoryId: value.repositoryId }
+        : undefined;
+    case 'requestBranchCleanup':
       return hasRepository(value)
         ? { type: value.type, requestId: value.requestId, repositoryId: value.repositoryId }
         : undefined;
