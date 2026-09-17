@@ -1,4 +1,5 @@
 import type { HistoryEntry, RefLabel } from '../../shared/models';
+import { indexRefsByTarget } from '../../shared/refs';
 
 export interface LineHistoryEntry extends HistoryEntry {
   linePatch: string;
@@ -14,24 +15,26 @@ function decodeQuotedGitPath(value: string): string {
   if (!value.startsWith('"') || !value.endsWith('"')) return value;
   const body = value.slice(1, -1);
   const bytes: number[] = [];
-  for (let index = 0; index < body.length; index += 1) {
+  for (let index = 0; index < body.length; ) {
     const character = body[index] ?? '';
     if (character !== '\\') {
       bytes.push(...Buffer.from(character));
+      index += 1;
+      continue;
+    }
+    // Git's C-style quoting emits octal escapes with 1-3 digits (e.g. `\1`,
+    // `\12`, `\141`). Parsing any 1-3 digit octal run keeps short and padded
+    // forms correct; only a non-octal escape falls through to the char map.
+    const octal = /^[0-7]{1,3}/u.exec(body.slice(index + 1))?.[0];
+    if (octal) {
+      bytes.push(Number.parseInt(octal, 8));
+      index += 1 + octal.length;
       continue;
     }
     const escaped = body[index + 1] ?? '';
-    if (/^[0-7]$/u.test(escaped)) {
-      const octal = body.slice(index + 1, index + 4);
-      if (/^[0-7]{3}$/u.test(octal)) {
-        bytes.push(Number.parseInt(octal, 8));
-        index += 3;
-        continue;
-      }
-    }
     const decoded = escaped === 't' ? '\t' : escaped === 'n' ? '\n' : escaped === 'r' ? '\r' : escaped;
     bytes.push(...Buffer.from(decoded));
-    index += 1;
+    index += escaped.length ? 2 : 1;
   }
   return Buffer.from(bytes).toString('utf8');
 }
@@ -48,8 +51,9 @@ export function parseLineHistory(
   refs: readonly RefLabel[],
   fallbackPath: string,
 ): LineHistoryEntry[] {
-  const records = output.toString('utf8').split('\x1e').slice(1);
+  const records = output.toString('utf8').split('\x1e').filter((record) => record.length > 0);
   const entries: LineHistoryEntry[] = [];
+  const refsByTarget = indexRefsByTarget(refs);
   for (const record of records) {
     const fields = record.split('\0');
     const hash = fields[0]?.trim();
@@ -95,7 +99,7 @@ export function parseLineHistory(
       authorTime: Number.parseInt(fields[4] ?? '0', 10) || 0,
       commitTime: Number.parseInt(fields[5] ?? '0', 10) || 0,
       subject: fields[6] ?? '',
-      refs: refs.filter((ref) => ref.target === hash),
+      refs: refsByTarget.get(hash) ?? [],
       path: resolvedPath,
       ...(oldPath && oldPath !== resolvedPath ? { oldPath } : {}),
       ...(!binary && hasHunk ? { additions, deletions } : {}),

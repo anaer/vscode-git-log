@@ -1,4 +1,5 @@
 import type { HistoryEntry, RefLabel } from '../../shared/models';
+import { indexRefsByTarget } from '../../shared/refs';
 
 function parseCount(value: string): number | undefined {
   if (!/^\d+$/u.test(value)) return undefined;
@@ -19,9 +20,10 @@ function parseNumstat(stat: string): [added: string, deleted: string, path: stri
 }
 
 export function parseFileHistory(output: Buffer, refs: readonly RefLabel[]): HistoryEntry[] {
-  const records = output.toString('utf8').split('\x1e').slice(1);
+  const records = output.toString('utf8').split('\x1e').filter((record) => record.length > 0);
   const entries: HistoryEntry[] = [];
   const seenHashes = new Set<string>();
+  const refsByTarget = indexRefsByTarget(refs);
   for (const record of records) {
     const fields = record.split('\0');
     const hash = fields[0]?.trim();
@@ -44,7 +46,7 @@ export function parseFileHistory(output: Buffer, refs: readonly RefLabel[]): His
       authorTime: Number.parseInt(fields[4] ?? '0', 10) || 0,
       commitTime: Number.parseInt(fields[5] ?? '0', 10) || 0,
       subject: fields[6] ?? '',
-      refs: refs.filter((ref) => ref.target === hash),
+      refs: refsByTarget.get(hash) ?? [],
       path,
       ...(oldPath ? { oldPath } : {}),
       ...(additions !== undefined ? { additions } : {}),

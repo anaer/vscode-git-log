@@ -84,12 +84,19 @@ export class ShikiHistoryCodeTokenizer implements HistoryCodeTokenizer {
         ...(signal ? { signal } : {}),
       };
       if (signal) {
-        pending.abortListener = () => this.failWorker(abortError());
+        pending.abortListener = () => {
+          // A single request was cancelled; if we failWorker() here the shared
+          // worker would be torn down on every abort and re-created on the next
+          // call (rapid toggling between File/Line history editors). Only reject
+          // the targeted request and keep the worker alive for worker-level
+          // failures (timeout, protocol error, exit).
+          this.rejectRequest(id, abortError());
+        };
         signal.addEventListener('abort', pending.abortListener, { once: true });
       }
       this.pending.set(id, pending);
       if (signal?.aborted) {
-        this.failWorker(abortError());
+        this.rejectRequest(id, abortError());
         return;
       }
       try {
@@ -152,6 +159,12 @@ export class ShikiHistoryCodeTokenizer implements HistoryCodeTokenizer {
       pending.signal.removeEventListener('abort', pending.abortListener);
     }
     return pending;
+  }
+
+  private rejectRequest(id: number, error: Error): void {
+    const pending = this.takePending(id);
+    if (!pending) return;
+    pending.reject(error);
   }
 
   private failWorker(error: Error): void {

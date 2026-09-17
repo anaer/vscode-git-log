@@ -67,12 +67,10 @@ describe('ShikiHistoryCodeTokenizer', () => {
     tokenizer.dispose();
   });
 
-  it('terminates the worker and rejects pending tokenization when aborted', async () => {
+  it('rejects the aborted request without tearing down the shared worker', async () => {
     const module = await import('../../src/editor/ShikiHistoryCodeTokenizer');
     const firstWorker = new FakeWorker();
-    const secondWorker = new FakeWorker();
-    const workers = [firstWorker, secondWorker];
-    const workerFactory = vi.fn(() => workers.shift() as FakeWorker);
+    const workerFactory = vi.fn(() => firstWorker);
     const Tokenizer = module.ShikiHistoryCodeTokenizer as unknown as TokenizerConstructor;
     const tokenizer = new Tokenizer({ workerFactory, timeoutMs: 1_000 });
     const abortController = new AbortController();
@@ -82,11 +80,13 @@ describe('ShikiHistoryCodeTokenizer', () => {
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(workerFactory).toHaveBeenCalledOnce();
-    expect(firstWorker.terminate).toHaveBeenCalledOnce();
+    // A single-request abort must not recycle the shared worker: it only rejects
+    // the targeted pending request, so the same worker is reused afterwards.
+    expect(firstWorker.terminate).not.toHaveBeenCalled();
 
     const next = tokenizer.tokenize('next code', 'src/app.ts');
-    expect(secondWorker.requests).toHaveLength(1);
-    secondWorker.emitMessage({
+    expect(firstWorker.requests).toHaveLength(2);
+    firstWorker.emitMessage({
       id: 2,
       type: 'tokenized',
       lines: [[{ content: 'next code', light: '#111111', dark: '#eeeeee' }]],
@@ -94,7 +94,7 @@ describe('ShikiHistoryCodeTokenizer', () => {
     await expect(next).resolves.toEqual([
       [{ content: 'next code', light: '#111111', dark: '#eeeeee' }],
     ]);
-    expect(workerFactory).toHaveBeenCalledTimes(2);
+    expect(workerFactory).toHaveBeenCalledTimes(1);
   });
 
   it('terminates a worker that exceeds the tokenization timeout', async () => {

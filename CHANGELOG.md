@@ -2,6 +2,25 @@
 
 All notable changes to Git Log are documented in this file.
 
+## 26.917.1748
+
+### Added
+
+- **Branch cleanup**: mark and delete local branches whose upstream is gone or that have been merged, with a dedicated destructive confirmation for the removal step.
+- **Create orphan branch & delete refs**: create a new orphan (rootless) branch, and batch-delete selected ref directory nodes from the Branches panel with a destructive confirmation.
+
+### Fixed
+
+- Rename/copy file statistics (`+`/`−`) were lost while applying name-status; they are now recovered from numstat and matched to the renamed path.
+- A shared syntax-highlighting worker was terminated when a single request aborted; the abort is now scoped to that request.
+- The date-range picker could read a stale month/year closure; date boundaries now track the latest selection.
+
+### Internal
+
+- Worktree line-range mapping is now a single left-to-right pass (O(range+hunk) instead of range×hunks).
+- `Intl.RelativeTimeFormat`/`Intl.DateTimeFormat` instances are cached per locale in the current-line blame controller.
+- Extracted shared helpers for NUL-separated commit headers (`parseCommitSummaryHeader`) and ref indexing/attachment (`indexRefsByTarget`/`attachRefs`); unified the ref-groups/files/directories collapse toggle; memoized `CommitGraphCell`.
+
 ## 26.916.1624
 
 ### Changed

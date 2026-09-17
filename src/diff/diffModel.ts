@@ -49,21 +49,30 @@ export interface RevisionQuery {
 }
 
 export function encodeRevisionQuery(query: RevisionQuery): string {
-  const values = new URLSearchParams();
-  values.set('repositoryId', query.repositoryId);
-  values.set('revision', query.revision);
-  values.set('path', query.path);
-  values.set('empty', query.empty ? '1' : '0');
-  return values.toString();
+  // URLSearchParams encodes a literal '+' as '+' and decodes it back to a space
+  // on the other side, which would corrupt file paths containing '+'. Percent-
+  // encode each value so '+' (and every reserved character) round-trips exactly.
+  return `repositoryId=${encodeURIComponent(query.repositoryId)}&revision=${encodeURIComponent(
+    query.revision,
+  )}&path=${encodeURIComponent(query.path)}&empty=${query.empty ? '1' : '0'}`;
+}
+
+function decodeQueryValue(value: string | null): string | undefined {
+  if (value === null) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
 }
 
 export function parseRevisionQuery(query: string): RevisionQuery | undefined {
   const values = new URLSearchParams(query);
-  const repositoryId = values.get('repositoryId');
-  const revision = values.get('revision');
-  const path = values.get('path');
+  const repositoryId = decodeQueryValue(values.get('repositoryId'));
+  const revision = decodeQueryValue(values.get('revision'));
+  const path = decodeQueryValue(values.get('path'));
   const emptyValue = values.get('empty');
-  if (!repositoryId || revision === null || !path || (emptyValue !== '0' && emptyValue !== '1')) {
+  if (!repositoryId || revision === undefined || !path || (emptyValue !== '0' && emptyValue !== '1')) {
     return undefined;
   }
   if (path.includes('\0') || (!revision && emptyValue !== '1')) return undefined;

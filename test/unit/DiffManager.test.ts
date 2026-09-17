@@ -66,6 +66,7 @@ vi.mock('vscode', () => ({
   window: {
     createWebviewPanel,
     activeTextEditor: { revealRange, document: { lineCount: 100 } },
+    visibleTextEditors: [],
     tabGroups,
   },
   Uri: {
@@ -351,6 +352,43 @@ describe('DiffManager', () => {
       expect.objectContaining({ startLine: 11, endLine: 11 }),
       1,
     );
+  });
+
+  it('targets the visible diff editor by its side URI instead of the active editor', async () => {
+    const diffReveal = vi.fn();
+    const someOtherReveal = vi.fn();
+    const windowMock = vscode.window as unknown as {
+      visibleTextEditors: unknown[];
+      activeTextEditor: unknown;
+    };
+    windowMock.visibleTextEditors = [
+      {
+        // Unrelated editor first: its URI must not match, so the diff side wins.
+        document: { uri: { toString: () => 'file:///unrelated.txt' }, lineCount: 10 },
+        revealRange: someOtherReveal,
+      },
+      {
+        // sideUri() builds plain objects via Uri.from(...), whose default
+        // toString() is '[object Object]'.
+        document: { uri: { toString: () => '[object Object]' }, lineCount: 100 },
+        revealRange: diffReveal,
+      },
+    ];
+    windowMock.activeTextEditor = {
+      revealRange: someOtherReveal,
+      document: { uri: { toString: () => 'file:///unrelated.txt' }, lineCount: 10 },
+    };
+
+    await new DiffManager().open('repo-1', {
+      hash: 'b'.repeat(40),
+      parent: 'a'.repeat(40),
+      path: 'src/app.ts',
+      status: 'M',
+      revealLine: 12,
+    });
+
+    expect(diffReveal).toHaveBeenCalledTimes(1);
+    expect(someOtherReveal).not.toHaveBeenCalled();
   });
 
   it('publishes both revision URIs before opening a history diff', async () => {

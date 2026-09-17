@@ -9,6 +9,7 @@ import {
   type WorktreeLineMappingResult,
 } from './worktreeLineMapping';
 import type { HistoryEntry, RefLabel } from '../shared/models';
+import { attachRefs as attachRefsToEntry, indexRefsByTarget } from '../shared/refs';
 
 const FILE_HISTORY_FORMAT = '%x1e%H%x00%P%x00%aN%x00%aE%x00%at%x00%ct%x00%s%x00';
 const LINE_HISTORY_LIMIT = 500;
@@ -48,17 +49,8 @@ function countHistoryRecords(output: Buffer): number {
 }
 
 function attachRefs(entries: readonly HistoryEntry[], refs: readonly RefLabel[]): HistoryEntry[] {
-  const refsByTarget = new Map<string, RefLabel[]>();
-  for (const ref of refs) {
-    const target = ref.target;
-    const matching = refsByTarget.get(target) ?? [];
-    matching.push(ref);
-    refsByTarget.set(target, matching);
-  }
-  return entries.map((entry) => ({
-    ...entry,
-    refs: refsByTarget.get(entry.hash) ?? [],
-  }));
+  const refsByTarget = indexRefsByTarget(refs);
+  return entries.map((entry) => attachRefsToEntry(entry, refsByTarget));
 }
 
 function validatePath(path: string): void {

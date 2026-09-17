@@ -112,6 +112,10 @@ export class ShikiHistoryWorkerTokenizer implements HistoryCodeTokenizer {
     const highlighter = this.highlighter;
     this.highlighter = undefined;
     this.languageLoads.clear();
-    if (highlighter) void highlighter.then((instance) => instance.dispose());
+    // The pending highlighter may reject (worker teardown races a still-loading
+    // wasm bundle); swallow that so dispose never throws asynchronously.
+    if (highlighter) {
+      void highlighter.then((instance) => instance.dispose()).catch(() => undefined);
+    }
   }
 }

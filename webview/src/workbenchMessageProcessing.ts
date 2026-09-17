@@ -673,6 +673,16 @@ export function createMessageProcessor(
           };
         });
         break;
+      default:
+        // Ignore a message type the store does not handle yet instead of
+        // throwing: the protocol's message union is closed, but a forward-
+        // compatible webview should not be wedged by an unhandled message.
+        console.warn(
+          `[git-log] message processor ignored an unhandled message type: ${
+            (message as { type?: unknown }).type ?? 'unknown'
+          }`,
+        );
+        break;
     }
   };
 }

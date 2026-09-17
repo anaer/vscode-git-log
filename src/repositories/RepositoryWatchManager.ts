@@ -25,9 +25,11 @@ export class RepositoryWatchManager implements WatchDisposable {
   ) {}
 
   replace(repositories: readonly RepositorySummary[]): void {
+    // Flush pending debounced notifications before tearing down watchers so a
+    // change that arrived right before a re-discover is not silently dropped;
+    // clearing the timers blindly would lose that refresh signal.
+    this.flushPending();
     this.disposeWatchers();
-    for (const timer of this.timers.values()) clearTimeout(timer);
-    this.timers.clear();
     const targets = new Map<string, { basePath: string; pattern: string; repositoryIds: Set<string> }>();
 
     for (const repository of repositories) {
@@ -84,6 +86,15 @@ export class RepositoryWatchManager implements WatchDisposable {
         this.onRepositoryChanged(repositoryId);
       }, this.debounceMs),
     );
+  }
+
+  /** Fires every pending debounced notification immediately (used before a replace). */
+  private flushPending(): void {
+    for (const [repositoryId, timer] of this.timers) {
+      clearTimeout(timer);
+      this.onRepositoryChanged(repositoryId);
+    }
+    this.timers.clear();
   }
 
   private disposeWatchers(): void {

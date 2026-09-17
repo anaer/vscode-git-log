@@ -5,6 +5,34 @@ import type { EditorGitContext, EditorGitContextService } from './EditorGitConte
 const MAX_CACHED_COMMIT_MESSAGES = 200;
 const MAX_CACHED_EDITOR_CONTEXTS = 50;
 
+const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
+const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function getRelativeTimeFormatter(locale: string): Intl.RelativeTimeFormat {
+  let formatter = relativeTimeFormatters.get(locale);
+  if (!formatter) {
+    formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+    relativeTimeFormatters.set(locale, formatter);
+  }
+  return formatter;
+}
+
+function getDateTimeFormatter(locale: string): Intl.DateTimeFormat {
+  let formatter = dateTimeFormatters.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    dateTimeFormatters.set(locale, formatter);
+  }
+  return formatter;
+}
+
 export const CURRENT_LINE_BLAME_CONFIGURATION_KEYS = [
   'gitLogWorkbench.currentLineBlame.enabled',
   'git.blame.editorDecoration.enabled',
@@ -58,10 +86,7 @@ function formatRelativeTime(timestamp: number, now: number, locale: string): str
   ];
   const absoluteSeconds = Math.abs(elapsedSeconds);
   const [unit, seconds] = units.find(([, threshold]) => absoluteSeconds >= threshold) ?? units[6]!;
-  return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(
-    Math.round(elapsedSeconds / seconds),
-    unit,
-  );
+  return getRelativeTimeFormatter(locale).format(Math.round(elapsedSeconds / seconds), unit);
 }
 
 function formatBlame(
@@ -71,14 +96,7 @@ function formatBlame(
   locale: string,
 ): CurrentLineBlamePresentation {
   const relativeTime = formatRelativeTime(blame.authorTime, now, locale);
-  const authoredAt = new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(new Date(blame.authorTime * 1000));
+  const authoredAt = getDateTimeFormatter(locale).format(new Date(blame.authorTime * 1000));
   return {
     contentText: `${blame.authorName}, ${relativeTime} · ${blame.subject}`,
     authorName: blame.authorName,

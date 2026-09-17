@@ -4,6 +4,16 @@ export function requestId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
+/**
+ * Returns a new set with `key` toggled (inserted if absent, removed if present).
+ */
+export function toggleSetMember<T>(set: ReadonlySet<T>, key: T): Set<T> {
+  const next = new Set(set);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
 export function contextMenuPosition(x: number, y: number): CSSProperties {
   const margin = 4;
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth;

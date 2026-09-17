@@ -63,6 +63,13 @@ export function createFileHistoryHtml(options: {
   emptyMessage?: string;
   notice?: string;
 }): string {
+  // The nonce is interpolated into both the CSP policy and nonce attributes;
+  // restrict it to the base64-ish alphabet so it can never smuggle markup or a
+  // `';`/whitespace sequence into a policy directive.
+  const nonce = options.nonce;
+  if (!/^[A-Za-z0-9+/=_-]+$/u.test(nonce)) {
+    throw new Error('Invalid file history nonce.');
+  }
   const rows = options.entries.map((entry, index) => renderEntry(entry, index === 0)).join('');
   const initialState = safeJson({ entries: options.entries, hasMore: options.hasMore });
   const emptyMessage = options.emptyMessage ?? 'No commits found for this file.';
@@ -71,10 +78,10 @@ export function createFileHistoryHtml(options: {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${options.nonce}'; script-src 'nonce-${options.nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>File History: ${escapeHtml(options.path)}</title>
-  <style nonce="${options.nonce}">
+  <style nonce="${nonce}">
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; }
     body { overflow-x: auto; overflow-y: hidden; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
@@ -162,7 +169,7 @@ export function createFileHistoryHtml(options: {
       <div class="diff-body" role="region" aria-label="File diff content" tabindex="0"><div class="diff-status">${options.entries.length > 0 ? 'Loading diff…' : escapeHtml(emptyMessage)}</div></div>
     </section>
   </main>
-  <script nonce="${options.nonce}">
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const state = ${initialState};
     const changesOnly = ${options.changesOnly === true ? 'true' : 'false'};

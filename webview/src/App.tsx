@@ -32,7 +32,7 @@ import type {
 } from '../../src/shared/models';
 import { getVsCodeApi } from './vscodeApi';
 import { CommitList } from './CommitList';
-import { requestId } from './webviewUtils';
+import { requestId, toggleSetMember } from './webviewUtils';
 import {
   emptyCommitSelection,
   isContiguousSelection,
@@ -785,21 +785,11 @@ function Workbench() {
   };
 
   const toggleRefGroup = (group: string): void => {
-    setCollapsedRefGroups((current) => {
-      const next = new Set(current);
-      if (next.has(group)) next.delete(group);
-      else next.add(group);
-      return next;
-    });
+    setCollapsedRefGroups((current) => toggleSetMember(current, group));
   };
 
   const toggleRefFolder = (folder: string): void => {
-    setCollapsedRefFolders((current) => {
-      const next = new Set(current);
-      if (next.has(folder)) next.delete(folder);
-      else next.add(folder);
-      return next;
-    });
+    setCollapsedRefFolders((current) => toggleSetMember(current, folder));
   };
 
   const handleRefKeyDown = (
@@ -1362,6 +1352,7 @@ function Workbench() {
   );
 
   const copyDetailsHash = (): void => {
+    if (!state.details) return;
     const copyRequestId = requestId('copy-hash');
     detailsHashCopyRequest.current = copyRequestId;
     if (detailsHashCopyTimer.current !== undefined) {
@@ -1369,7 +1360,7 @@ function Workbench() {
       detailsHashCopyTimer.current = undefined;
     }
     setDetailsHashCopyState('copying');
-    send({ type: 'copyToClipboard', requestId: copyRequestId, text: state.details?.hash ?? '' });
+    send({ type: 'copyToClipboard', requestId: copyRequestId, text: state.details.hash });
   };
   const selectParent = (parent: string, hash: string): void => {
     setState((current) => ({ ...current, selectedParent: parent }));

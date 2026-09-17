@@ -29,7 +29,17 @@ port.on('message', async (value: unknown) => {
       message: error instanceof Error ? error.message : String(error),
     };
   }
-  port.postMessage(response);
+  try {
+    port.postMessage(response);
+  } catch (error) {
+    // The parent may have torn down mid-tokenization; a failed send must not
+    // crash the worker thread (the parent treats this as a worker failure).
+    process.emitWarning(
+      `[git-log] history worker could not post tokenize response: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 });
 
 port.on('close', () => tokenizer.dispose());

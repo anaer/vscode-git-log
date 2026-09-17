@@ -9,6 +9,7 @@ import type { WorkbenchLayout } from '../../src/protocol/messages';
 import { fileIconKind } from '../../src/shared/fileIconKind';
 import { buildFileTree, type FileTreeNode } from './buildFileTree';
 import { ChevronDown, ChevronRight } from './icons';
+import { toggleSetMember } from './webviewUtils';
 
 function changedFileStatusLabel(status: ChangedFile['status']): string {
   return (
@@ -178,15 +179,7 @@ export function FilesPane({
   const [collapsedFileDirectories, setCollapsedFileDirectories] = useState<Set<string>>(new Set());
   const fileTree = useMemo(() => buildFileTree(files), [files]);
   const toggleFileDirectory = (directory: string): void => {
-    setCollapsedFileDirectories((current) => {
-      const next = new Set(current);
-      if (next.has(directory)) {
-        next.delete(directory);
-      } else {
-        next.add(directory);
-      }
-      return next;
-    });
+    setCollapsedFileDirectories((current) => toggleSetMember(current, directory));
   };
 
   return (

@@ -185,7 +185,7 @@ export class GitRunner {
         this.onDiagnostic?.(`[git] command=${command} start-failed=${safeMessage}`);
         reject(
           new GitCommandError(
-            `Unable to start ${this.executable}: ${error.message}`,
+            `Unable to start ${this.executable}: ${safeMessage}`,
             args,
             options.cwd,
             null,

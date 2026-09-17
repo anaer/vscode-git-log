@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { GitCommandError, type GitRunner } from './GitRunner';
 import { buildLogArguments, EMPTY_LOG_FILTERS } from './logQuery';
 import { parseCommitDetails } from './parsers/parseCommitDetails';
@@ -8,6 +8,7 @@ import { applyNumstat, parseNameStatus } from './parsers/parseChangedFiles';
 import { parseLog, parseSearchableLog } from './parsers/parseLog';
 import { parseRefs } from './parsers/parseRefs';
 import { LruCache } from './LruCache';
+import { attachRefs, indexRefsByTarget } from '../shared/refs';
 import type { LogFilters } from '../protocol/messages';
 import type {
   BranchCleanupCandidate,
@@ -47,24 +48,6 @@ export interface LogQuery {
   filters?: LogFilters;
 }
 
-function indexRefsByTarget(refs: readonly RefLabel[]): ReadonlyMap<string, readonly RefLabel[]> {
-  const indexed = new Map<string, RefLabel[]>();
-  for (const ref of refs) {
-    const target = ref.target;
-    const matching = indexed.get(target) ?? [];
-    matching.push(ref);
-    indexed.set(target, matching);
-  }
-  return indexed;
-}
-
-function attachRefs<T extends CommitSummary>(
-  commit: T,
-  refsByTarget: ReadonlyMap<string, readonly RefLabel[]>,
-): T {
-  return { ...commit, refs: refsByTarget.get(commit.hash) ?? [] };
-}
-
 function limitGraphParentsToVisibleCommits(commits: readonly CommitSummary[]): CommitSummary[] {
   const visibleHashes = new Set(commits.map((commit) => commit.hash));
   return commits.map((commit) => ({
@@ -101,6 +84,20 @@ function validatePage(query: LogQuery): void {
 
 function validateRepositoryPath(path: string): void {
   if (!path || path.includes('\0')) throw new Error('Invalid repository path.');
+}
+
+/**
+ * Resolves a repository-relative path to an absolute path while guaranteeing the
+ * result stays inside `cwd`. Mirrors the guard in LineBlameService; without it a
+ * `../` path in `readFile(join(cwd, path))` could escape the working directory.
+ */
+function resolveWithinRepository(cwd: string, path: string): string {
+  const absolute = resolve(cwd, path);
+  const rel = relative(cwd, absolute);
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+    throw new Error('Invalid repository path.');
+  }
+  return absolute;
 }
 
 /**
@@ -527,6 +524,12 @@ export class GitService {
   private readonly textSearchCaches = new LruCache<string, TextSearchCacheEntry>(
     MAX_TEXT_SEARCH_CACHES,
   );
+  /**
+   * Serializes text-search scans for the same query key. The scan mutates a
+   * shared per-key cache (GitService:805+), so concurrent `getLog` calls for
+   * the same filters would otherwise race on `matches`/`scannedCommits` etc.
+   */
+  private readonly textSearchLocks = new Map<string, Promise<unknown>>();
 
   constructor(private readonly runner: GitRunner) {}
 
@@ -559,8 +562,8 @@ export class GitService {
     return entries;
   }
 
-  private getTextSearchCache(cwd: string, filters: LogFilters): TextSearchCacheEntry {
-    const key = JSON.stringify([
+  private textSearchCacheKey(cwd: string, filters: LogFilters): string {
+    return JSON.stringify([
       cwd,
       filters.text.trim().toLowerCase(),
       filters.branches,
@@ -569,6 +572,34 @@ export class GitService {
       filters.dateFrom ?? null,
       filters.dateTo ?? null,
     ]);
+  }
+
+  /**
+   * Runs `body` while holding a per-key scan lock so concurrent text searches
+   * over the same cache do not mutate shared state concurrently. Calls from the
+   * same key queue up and reuse whatever the first serialized scan already
+   * accumulated (the scan loop below re-checks the cache before scanning).
+   */
+  private async withTextSearchLock<T>(
+    key: string,
+    body: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.textSearchLocks.get(key) ?? Promise.resolve();
+    const run = previous.then(body, body);
+    const settled = run.then(
+      () => {
+        if (this.textSearchLocks.get(key) === settled) this.textSearchLocks.delete(key);
+      },
+      () => {
+        if (this.textSearchLocks.get(key) === settled) this.textSearchLocks.delete(key);
+      },
+    );
+    this.textSearchLocks.set(key, settled);
+    return run;
+  }
+
+  private getTextSearchCache(cwd: string, filters: LogFilters): TextSearchCacheEntry {
+    const key = this.textSearchCacheKey(cwd, filters);
     const existing = this.textSearchCaches.get(key);
     if (existing) return existing;
     const created: TextSearchCacheEntry = {
@@ -789,87 +820,94 @@ export class GitService {
         }
       }
 
-      const cache = this.getTextSearchCache(cwd, filters);
-      cache.maxContextsPerMatch = MAX_GRAPH_CONTEXT_ROWS_PER_MATCH;
-      if (query.skip < cache.baseMatchIndex) {
-        cache.scannedCommits = 0;
-        cache.baseMatchIndex = 0;
-        cache.matches = [];
-        cache.matchesByHash.clear();
-        cache.graphParentSlots.clear();
-        cache.pendingGraphRoutes.clear();
-        cache.contextsByMatchIndex.clear();
-        cache.exhausted = false;
-      }
-      const requiredMatches = query.skip + query.limit;
-      let graphLookaheadBatches = 0;
-      const normalizedText = text.toLowerCase();
-      const scanFilters: LogFilters = { ...filters, text: '' };
-      while (!cache.exhausted) {
-        const hasRequestedPage =
-          cache.baseMatchIndex + cache.matches.length >= requiredMatches;
-        if (hasRequestedPage) {
-          const hasPendingGraphRoutes = hasPendingGraphRoutesForRange(
-            cache,
-            query.skip,
-            query.limit,
-          );
-          if (!hasPendingGraphRoutes || graphLookaheadBatches >= 1) break;
-          graphLookaheadBatches += 1;
+      // Text search advances `--skip` by the already-scanned commit count, which
+      // is an O(page²) scan on deep histories. This is an accepted trade-off that
+      // keeps the shared per-key cache valid across pages; concurrent scans for
+      // the same key are serialized by withTextSearchLock below.
+      const cacheKey = this.textSearchCacheKey(cwd, filters);
+      return this.withTextSearchLock(cacheKey, async () => {
+        const cache = this.getTextSearchCache(cwd, filters);
+        cache.maxContextsPerMatch = MAX_GRAPH_CONTEXT_ROWS_PER_MATCH;
+        if (query.skip < cache.baseMatchIndex) {
+          cache.scannedCommits = 0;
+          cache.baseMatchIndex = 0;
+          cache.matches = [];
+          cache.matchesByHash.clear();
+          cache.graphParentSlots.clear();
+          cache.pendingGraphRoutes.clear();
+          cache.contextsByMatchIndex.clear();
+          cache.exhausted = false;
         }
-        const result = await this.runner.run(
-          buildLogArguments({
-            limit: TEXT_SCAN_PAGE_SIZE,
-            skip: cache.scannedCommits,
-            format: SEARCH_LOG_FORMAT,
-            filters: scanFilters,
-          }),
-          {
-            cwd,
-            ...(query.signal ? { signal: query.signal } : {}),
-            timeoutMs: 60_000,
-            maxStdoutBytes: TEXT_SCAN_MAX_STDOUT_BYTES,
-          },
-        );
-        const scanned = parseSearchableLog(result.stdout);
-        cache.scannedCommits += scanned.length;
-        for (const { commit, body } of scanned) {
-          const searchableText = `${commit.authorName}\n${commit.authorEmail}\n${body}`.toLowerCase();
-          recordTextSearchCommit(cache, commit, searchableText.includes(normalizedText));
-        }
-        const excess = cache.matches.length - MAX_RETAINED_TEXT_MATCHES;
-        const discardable = query.skip - cache.baseMatchIndex;
-        const trim = Math.min(Math.max(0, excess), Math.max(0, discardable));
-        if (trim > 0) {
-          trimTextSearchGraph(cache, trim);
-          cache.baseMatchIndex += trim;
-        }
-        cache.exhausted = scanned.length < TEXT_SCAN_PAGE_SIZE;
-      }
-      const localStart = query.skip - cache.baseMatchIndex;
-      const pageMatches: CommitSummary[] = [];
-      for (let offset = 0; offset < query.limit; offset += 1) {
-        const match = cache.matches[localStart + offset];
-        if (!match) break;
-        pageMatches.push(match);
-      }
-      // A route still unresolved after the scan lookahead may belong to an unrelated branch.
-      // Seal returned rows so later pages cannot silently revise graph data already sent to the UI.
-      sealTextSearchGraphRange(cache, query.skip, query.limit);
-      const graphProjectionCache = new Map<string, readonly string[]>();
-      return pageMatches.map((commit) =>
-        attachRefs(
-          {
-            ...commit,
-            graphParents: projectGraphParentsToTextMatches(
+        const requiredMatches = query.skip + query.limit;
+        let graphLookaheadBatches = 0;
+        const normalizedText = text.toLowerCase();
+        const scanFilters: LogFilters = { ...filters, text: '' };
+        while (!cache.exhausted) {
+          const hasRequestedPage =
+            cache.baseMatchIndex + cache.matches.length >= requiredMatches;
+          if (hasRequestedPage) {
+            const hasPendingGraphRoutes = hasPendingGraphRoutesForRange(
               cache,
-              commit,
-              graphProjectionCache,
-            ),
-          },
-          refsByTarget,
-        ),
-      );
+              query.skip,
+              query.limit,
+            );
+            if (!hasPendingGraphRoutes || graphLookaheadBatches >= 1) break;
+            graphLookaheadBatches += 1;
+          }
+          const result = await this.runner.run(
+            buildLogArguments({
+              limit: TEXT_SCAN_PAGE_SIZE,
+              skip: cache.scannedCommits,
+              format: SEARCH_LOG_FORMAT,
+              filters: scanFilters,
+            }),
+            {
+              cwd,
+              ...(query.signal ? { signal: query.signal } : {}),
+              timeoutMs: 60_000,
+              maxStdoutBytes: TEXT_SCAN_MAX_STDOUT_BYTES,
+            },
+          );
+          const scanned = parseSearchableLog(result.stdout);
+          cache.scannedCommits += scanned.length;
+          for (const { commit, body } of scanned) {
+            const searchableText = `${commit.authorName}\n${commit.authorEmail}\n${body}`.toLowerCase();
+            recordTextSearchCommit(cache, commit, searchableText.includes(normalizedText));
+          }
+          const excess = cache.matches.length - MAX_RETAINED_TEXT_MATCHES;
+          const discardable = query.skip - cache.baseMatchIndex;
+          const trim = Math.min(Math.max(0, excess), Math.max(0, discardable));
+          if (trim > 0) {
+            trimTextSearchGraph(cache, trim);
+            cache.baseMatchIndex += trim;
+          }
+          cache.exhausted = scanned.length < TEXT_SCAN_PAGE_SIZE;
+        }
+        const localStart = query.skip - cache.baseMatchIndex;
+        const pageMatches: CommitSummary[] = [];
+        for (let offset = 0; offset < query.limit; offset += 1) {
+          const match = cache.matches[localStart + offset];
+          if (!match) break;
+          pageMatches.push(match);
+        }
+        // A route still unresolved after the scan lookahead may belong to an unrelated branch.
+        // Seal returned rows so later pages cannot silently revise graph data already sent to the UI.
+        sealTextSearchGraphRange(cache, query.skip, query.limit);
+        const graphProjectionCache = new Map<string, readonly string[]>();
+        return pageMatches.map((commit) =>
+          attachRefs(
+            {
+              ...commit,
+              graphParents: projectGraphParentsToTextMatches(
+                cache,
+                commit,
+                graphProjectionCache,
+              ),
+            },
+            refsByTarget,
+          ),
+        );
+      });
     } catch (error) {
       if (
         error instanceof GitCommandError &&
@@ -1033,7 +1071,7 @@ export class GitService {
     let workingFileContent: Buffer;
     if (workingContent === undefined) {
       try {
-        workingFileContent = await readFile(join(cwd, path));
+        workingFileContent = await readFile(resolveWithinRepository(cwd, path));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         workingFileContent = Buffer.alloc(0);

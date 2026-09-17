@@ -607,7 +607,10 @@ function isRefspecDisplay(value: unknown): value is string {
 
 function isGitOperationRequest(value: unknown): value is GitOperationRequest {
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
-  switch (value.kind) {
+  // Discriminate over the closed union so the default branch's `never` check
+  // catches a GitOperationKind added to the type without a matching case here.
+  const kind = value.kind as GitOperationRequest['kind'];
+  switch (kind) {
     case 'checkout':
       return isSafeGitToken(value.ref);
     case 'createBranch':
@@ -710,8 +713,14 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
     case 'abortCherryPick':
     case 'abortRevert':
       return true;
-    default:
+    default: {
+      // Exhaustiveness guard: any GitOperationKind added to the type union
+      // without a matching branch here is a silent no-op that would accept the
+      // request. Collapse to false so unknown kinds are rejected.
+      const exhaustive: never = kind;
+      void exhaustive;
       return false;
+    }
   }
 }
 

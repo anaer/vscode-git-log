@@ -46,10 +46,23 @@ export function DateField({
   // Keep the latest callback without re-creating the flatpickr instance.
   // Assigned in an effect (not during render) to satisfy react-hooks/refs.
   const onChangeRef = useRef(onChange);
+  // The calendar field is mounted once (mount-only effect below), so closures
+  // built at mount time would otherwise read stale bounds. Keep the latest
+  // minDate/maxDate in refs and mirror them in effects, exactly like onChangeRef.
+  const minDateRef = useRef(minDate);
+  const maxDateRef = useRef(maxDate);
 
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    minDateRef.current = minDate;
+  }, [minDate]);
+
+  useEffect(() => {
+    maxDateRef.current = maxDate;
+  }, [maxDate]);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -198,11 +211,17 @@ export function DateField({
     function commitMonthYearField(): void {
       const current = instanceRef.current;
       if (!current) return;
-      const parsed = parseMonthYear(field.value, minDate, maxDate);
+      const parsed = parseMonthYear(field.value, minDateRef.current, maxDateRef.current);
       // An unparsable or out-of-range draft snaps to the nearest legal month,
       // which doubles as the correction for a typo the user already left.
       const target =
-        parsed ?? clampMonthYear(current.currentYear, current.currentMonth, minDate, maxDate);
+        parsed ??
+        clampMonthYear(
+          current.currentYear,
+          current.currentMonth,
+          minDateRef.current,
+          maxDateRef.current,
+        );
       setDisplayedMonth(current, target.year, target.monthIndex);
       // setDisplayedMonth skips a focused field, and this one still holds focus
       // for the duration of the blur handler, so write it here.

@@ -1,10 +1,5 @@
 import type { CommitDetails, SignatureStatus } from '../../shared/models';
-
-function parseTimestamp(value: string | undefined): number {
-  if (!value) return 0;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
+import { parseCommitSummaryHeader, parseTimestamp } from './commitSummary';
 
 function parseSignature(value: string | undefined): SignatureStatus {
   switch (value) {
@@ -33,11 +28,7 @@ export function parseCommitDetails(output: Buffer): CommitDetails {
   const subject = body.split(/\r?\n/u, 1)[0] ?? '';
 
   return {
-    hash: fields[0] ?? '',
-    parents: (fields[1] ?? '').split(' ').filter(Boolean),
-    authorName: fields[2] ?? '',
-    authorEmail: fields[3] ?? '',
-    authorTime: parseTimestamp(fields[4]),
+    ...parseCommitSummaryHeader(fields),
     committerName: fields[5] ?? '',
     committerEmail: fields[6] ?? '',
     commitTime: parseTimestamp(fields[7]),

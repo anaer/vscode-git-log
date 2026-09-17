@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { GraphConnection, GraphRow } from '../../src/shared/layoutCommitGraph';
 
 const ROW_HEIGHT = 28;
@@ -44,7 +45,7 @@ export interface CommitGraphCellProps {
   maxLaneCount: number;
 }
 
-export function CommitGraphCell({ row, maxLaneCount }: CommitGraphCellProps) {
+function CommitGraphCellComponent({ row, maxLaneCount }: CommitGraphCellProps) {
   const graphWidth = Math.max(28, LANE_OFFSET * 2 + Math.max(1, maxLaneCount) * LANE_SPACING);
   const viewportWidth = Math.min(graphWidth, MAX_GRAPH_VIEWPORT_WIDTH);
   const nodeX = laneX(row.nodeLane);
@@ -121,3 +122,6 @@ export function CommitGraphCell({ row, maxLaneCount }: CommitGraphCellProps) {
     </span>
   );
 }
+
+export const CommitGraphCell = memo(CommitGraphCellComponent);
+CommitGraphCell.displayName = 'CommitGraphCell';

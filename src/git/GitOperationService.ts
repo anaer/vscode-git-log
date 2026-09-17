@@ -6,7 +6,7 @@ import type { GitOperationRequest } from '../protocol/messages';
 import type { RepositorySummary } from '../shared/models';
 import { inspectRepository } from '../repositories/discoverRepositories';
 import { GitCommandError, type GitRunner } from './GitRunner';
-import { classifyGitError } from './classifyGitError';
+import { classifyGitError, redactGitDiagnostic } from './classifyGitError';
 
 export interface GitOperationResult {
   message: string;
@@ -727,7 +727,7 @@ export class GitOperationService {
       if (error instanceof GitCommandError && error.cancelled) return;
       console.warn(
         `[git-log] failed to materialize the tracking ref for ${validatedRemote}/${validatedBranch}: ${
-          error instanceof Error ? error.message : String(error)
+          redactGitDiagnostic(error instanceof Error ? error.message : String(error))
         }`,
       );
     }
@@ -807,7 +807,7 @@ export class GitOperationService {
       if (error instanceof GitCommandError && error.cancelled) return;
       console.warn(
         `[git-log] unshallow succeeded but extending the fetch refspec for ${validatedRemote} failed: ${
-          error instanceof Error ? error.message : String(error)
+          redactGitDiagnostic(error instanceof Error ? error.message : String(error))
         }`,
       );
     }

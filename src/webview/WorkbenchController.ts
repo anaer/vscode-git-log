@@ -264,13 +264,12 @@ export class WorkbenchController {
           this.requireSelectedRepository(message.repositoryId);
           const repository = this.requireRepository(message.repositoryId);
           const cwd = fileURLToPath(repository.rootUri);
-          const messages: Array<{ hash: string; message: string }> = [];
-          for (const hash of message.hashes) {
-            messages.push({
+          const messages = await Promise.all(
+            message.hashes.map(async (hash) => ({
               hash,
               message: await this.options.gitService.getCommitMessage(cwd, hash),
-            });
-          }
+            })),
+          );
           await this.options.postMessage({
             type: 'commitMessagesLoaded',
             requestId: message.requestId,
@@ -449,6 +448,16 @@ export class WorkbenchController {
         }
         case 'runOperation':
           await this.runOperation(message);
+          break;
+        default:
+          // A message type this controller does not handle yet. Log instead of
+          // throwing so a forward-compatible webview never wedges the controller:
+          // the message type union is closed on the protocol side.
+          console.warn(
+            `[git-log] workbench controller ignored an unhandled message type: ${
+              (message as { type?: unknown }).type ?? 'unknown'
+            }`,
+          );
           break;
       }
     } catch (error) {
@@ -1397,6 +1406,9 @@ export class WorkbenchController {
   private async persistWorkbenchState(): Promise<void> {
     if (!this.options.persistState) return;
     const repositories: PersistedWorkbenchState['repositories'] = {};
+    // Persisted workbench state is bounded to the most recent 50 repositories
+    // on purpose, so a workspace with many roots never writes an unbounded blob
+    // to the extension's global storage on every interaction.
     for (const repositoryId of [...this.repositories.keys()].slice(0, 50)) {
       const folderHistory =
         this.activeFolderHistory?.request.repository.id === repositoryId

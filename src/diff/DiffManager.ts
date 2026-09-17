@@ -87,7 +87,15 @@ export class DiffManager {
       { preview: true, ...(viewColumn === undefined ? {} : { viewColumn }) },
     );
     if (request.revealLine !== undefined && request.revealLine > 0) {
-      const editor = vscode.window.activeTextEditor;
+      // `vscode.diff` may not have made the new editor active yet; find the
+      // editor that actually renders one of our diff sides instead of guessing
+      // from activeTextEditor, which can still point at the previous editor.
+      const editor =
+        vscode.window.visibleTextEditors.find(
+          (candidate) =>
+            candidate.document.uri.toString() === left.toString() ||
+            candidate.document.uri.toString() === right.toString(),
+        ) ?? vscode.window.activeTextEditor;
       if (editor) {
         const line = Math.min(request.revealLine - 1, Math.max(0, editor.document.lineCount - 1));
         editor.revealRange(

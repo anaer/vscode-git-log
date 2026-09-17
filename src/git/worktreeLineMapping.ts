@@ -36,24 +36,6 @@ function parseHunks(diff: string): DiffHunk[] {
   return hunks;
 }
 
-function mapLine(line: number, hunks: readonly DiffHunk[]): number | undefined {
-  let delta = 0;
-  for (const hunk of hunks) {
-    if (hunk.newCount === 0) {
-      if (line <= hunk.newStart) return line + delta;
-      delta += hunk.oldCount;
-      continue;
-    }
-    if (line < hunk.newStart) return line + delta;
-    if (line < hunk.newStart + hunk.newCount) {
-      const relativeLine = line - hunk.newStart;
-      return relativeLine < hunk.oldCount ? hunk.oldStart + relativeLine : undefined;
-    }
-    delta += hunk.oldCount - hunk.newCount;
-  }
-  return line + delta;
-}
-
 export function mapWorktreeLineRange(
   diff: string | Buffer,
   startLine: number,
@@ -65,13 +47,46 @@ export function mapWorktreeLineRange(
   const hunks = parseHunks(typeof diff === 'string' ? diff : diff.toString('utf8'));
   const mapped: number[] = [];
   let partiallyUncommitted = false;
+  let delta = 0;
+  let hunkIndex = 0;
   for (let line = startLine; line <= endLine; line += 1) {
-    const headLine = mapLine(line, hunks);
-    if (headLine === undefined) {
-      partiallyUncommitted = true;
+    while (hunkIndex < hunks.length) {
+      const hunk = hunks[hunkIndex]!;
+      if (hunk.newCount === 0) {
+        if (line > hunk.newStart) {
+          delta += hunk.oldCount;
+          hunkIndex += 1;
+          continue;
+        }
+        break;
+      }
+      if (line > hunk.newStart + hunk.newCount - 1) {
+        delta += hunk.oldCount - hunk.newCount;
+        hunkIndex += 1;
+        continue;
+      }
+      break;
+    }
+    const hunk = hunks[hunkIndex];
+    if (hunk && hunk.newCount === 0 && line <= hunk.newStart) {
+      mapped.push(line + delta);
       continue;
     }
-    mapped.push(headLine);
+    if (
+      hunk &&
+      hunk.newCount > 0 &&
+      line >= hunk.newStart &&
+      line < hunk.newStart + hunk.newCount
+    ) {
+      const relativeLine = line - hunk.newStart;
+      if (relativeLine < hunk.oldCount) {
+        mapped.push(hunk.oldStart + relativeLine);
+      } else {
+        partiallyUncommitted = true;
+      }
+      continue;
+    }
+    mapped.push(line + delta);
   }
   if (!mapped.length) return { status: 'uncommitted-only' };
   for (let index = 1; index < mapped.length; index += 1) {

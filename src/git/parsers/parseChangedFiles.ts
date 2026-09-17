@@ -59,8 +59,12 @@ function parseNumstat(output: Buffer): Map<string, NumstatEntry> {
     if (!header) continue;
 
     const parts = header.split('\t');
-    const additions = parseCount(parts[0] ?? '');
-    const deletions = parseCount(parts[1] ?? '');
+    // In numstat, only an explicit '-' marks a binary file. Anything else
+    // (including a missing value) is not a reliable binary signal, so we do
+    // not infer binary from an absent count.
+    const binary = parts[0] === '-' || parts[1] === '-';
+    const additions = parseCount(binary ? '-' : (parts[0] ?? ''));
+    const deletions = parseCount(binary ? '-' : (parts[1] ?? ''));
     let path = parts.slice(2).join('\t');
 
     if (!path) {
@@ -70,20 +74,42 @@ function parseNumstat(output: Buffer): Map<string, NumstatEntry> {
     }
 
     if (!path) continue;
-    entries.set(path, {
+    const entry: NumstatEntry = {
       ...(additions !== undefined ? { additions } : {}),
       ...(deletions !== undefined ? { deletions } : {}),
-      binary: additions === undefined || deletions === undefined,
-    });
+      binary,
+    };
+    registerNumstatPath(entries, path, entry);
   }
 
   return entries;
 }
 
+/**
+ * Registers a numstat entry under the path key(s) that consumers will look up.
+ *
+ * For renames/copies git renders the numstat path as `{old} => {new}`, which
+ * does not equal the file's `path` field, so the entry is registered under both
+ * the old and new paths to keep rename/copy statistics findable.
+ */
+function registerNumstatPath(
+  entries: Map<string, NumstatEntry>,
+  path: string,
+  entry: NumstatEntry,
+): void {
+  const rename = path.match(/^(.*) => (.*)$/u);
+  if (rename) {
+    entries.set(rename[1]!, entry);
+    entries.set(rename[2]!, entry);
+    return;
+  }
+  entries.set(path, entry);
+}
+
 export function applyNumstat(files: readonly ChangedFile[], output: Buffer): ChangedFile[] {
   const stats = parseNumstat(output);
   return files.map((file) => {
-    const entry = stats.get(file.path);
+    const entry = stats.get(file.path) ?? (file.oldPath ? stats.get(file.oldPath) : undefined);
     if (!entry) return file;
     return {
       ...file,
