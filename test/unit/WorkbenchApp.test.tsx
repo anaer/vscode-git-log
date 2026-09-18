@@ -617,9 +617,9 @@ describe('WorkbenchApp', () => {
     fireEvent.contextMenu(middleRow);
     const menu = screen.getByRole('menu', { name: 'commit actions' });
     expect(within(menu).queryByRole('menuitem', { name: 'Checkout Revision' })).not.toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Drop commits…' })).toBeEnabled();
-    expect(within(menu).getByRole('menuitem', { name: 'Squash commits…' })).toBeEnabled();
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Drop commits…' }));
+    expect(within(menu).getByRole('menuitem', { name: 'Drop Commits…' })).toBeEnabled();
+    expect(within(menu).getByRole('menuitem', { name: 'Squash Commits…' })).toBeEnabled();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Drop Commits…' }));
 
     expect(postedMessages.at(-1)).toMatchObject({
       type: 'runOperation',
@@ -670,7 +670,7 @@ describe('WorkbenchApp', () => {
     fireEvent.click(newestRow);
     fireEvent.click(oldestRow, { shiftKey: true });
     fireEvent.contextMenu(oldestRow);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Squash commits…' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Squash Commits…' }));
 
     const messageRequest = postedMessages.at(-1);
     expect(messageRequest).toMatchObject({
@@ -770,8 +770,8 @@ describe('WorkbenchApp', () => {
 
     fireEvent.contextMenu(newestRow);
     const menu = screen.getByRole('menu', { name: 'commit actions' });
-    expect(within(menu).queryByRole('menuitem', { name: 'Drop commits…' })).not.toBeInTheDocument();
-    expect(within(menu).queryByRole('menuitem', { name: 'Squash commits…' })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: 'Drop Commits…' })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: 'Squash Commits…' })).not.toBeInTheDocument();
     expect(within(menu).queryByRole('menuitem', { name: 'Checkout Revision' })).not.toBeInTheDocument();
 
     fireEvent.pointerDown(screen.getByRole('grid', { name: 'Commit log' }));
@@ -1627,7 +1627,7 @@ describe('WorkbenchApp', () => {
     expect(row).not.toBeNull();
     if (!row) return;
     fireEvent.contextMenu(row);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New Branch…' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Create Branch…' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Branch name' }), {
       target: { value: 'feature..bad' },
     });
@@ -3381,7 +3381,7 @@ describe('WorkbenchApp', () => {
     expect(operationTarget).toBeDefined();
     if (!operationTarget) return;
     fireEvent.contextMenu(operationTarget.closest('[role="row"]') as Element);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New Branch…' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Create Branch…' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Branch name' }), {
       target: { value: 'feature/context-menu' },
     });
@@ -4827,7 +4827,7 @@ describe('WorkbenchApp', () => {
     let menu = screen.getByRole('menu', { name: 'ref actions' });
     expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toBeDisabled();
     expect(within(menu).getByRole('menuitem', { name: 'Merge into Current' })).toBeDisabled();
-    expect(within(menu).getByRole('menuitem', { name: 'Rebase Current onto' })).toBeDisabled();
+    expect(within(menu).getByRole('menuitem', { name: 'Rebase Current onto This' })).toBeDisabled();
     // This fixture's current branch has no upstream, so the menu offers to publish it.
     expect(within(menu).getByRole('menuitem', { name: 'Publish Branch' })).toBeEnabled();
     expect(within(menu).getByRole('menuitem', { name: 'Delete…' })).toBeDisabled();
@@ -4840,7 +4840,7 @@ describe('WorkbenchApp', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Checkout as New Local…' })).toBeEnabled();
     expect(within(menu).getByRole('menuitem', { name: 'Fetch' })).toBeEnabled();
     expect(within(menu).getByRole('menuitem', { name: 'Delete Remote Branch…' })).toBeEnabled();
-    expect(within(menu).getByRole('menuitem', { name: 'New Branch from…' })).toBeEnabled();
+    expect(within(menu).getByRole('menuitem', { name: 'Create Branch from…' })).toBeEnabled();
 
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Checkout as New Local…' }));
     expect(screen.getByRole('textbox', { name: 'Local branch name' })).toHaveValue('feature');
@@ -4862,12 +4862,12 @@ describe('WorkbenchApp', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toBeEnabled();
     expect(within(menu).getByRole('menuitem', { name: 'Delete Local Tag…' })).toBeEnabled();
     expect(within(menu).queryByRole('menuitem', { name: 'Merge into Current' })).not.toBeInTheDocument();
-    expect(within(menu).queryByRole('menuitem', { name: 'Rebase Current onto' })).not.toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'New Branch from…' })).toBeEnabled();
+    expect(within(menu).queryByRole('menuitem', { name: 'Rebase Current onto This' })).not.toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Create Branch from…' })).toBeEnabled();
 
     fireEvent.contextMenu(screen.getByTitle(mainHash));
     const headMenu = screen.getByRole('menu', { name: 'head actions' });
-    expect(within(headMenu).getByRole('menuitem', { name: 'Copy Revision' })).toBeEnabled();
+    expect(within(headMenu).getByRole('menuitem', { name: 'Copy Hash' })).toBeEnabled();
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Branch…' })).toBeEnabled();
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Tag…' })).toBeEnabled();
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Orphan Branch…' })).toBeEnabled();

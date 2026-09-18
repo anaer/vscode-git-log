@@ -52,6 +52,18 @@ code --install-extension ascenx.git-log
 5. Show the exact target, impact, and confirmation step for every destructive operation.
 6. Back every implementation milestone with automated tests and executable acceptance checks.
 
+## Right-click menu naming
+
+Right-click menus use a small set of consistent conventions:
+
+- **Verb + object**: every entry states the action and its target (`Pull`, `Cherry-pick`, `Copy Hash`, `Open File at Revision`, `Filter by Path`).
+- **Create for new refs**: branch and tag creation is always `Create Branch…` / `Create Tag…`; `Create Branch from…` creates from a selected ref. `Create Orphan Branch…` starts a branch with no parent.
+- **Title Case**: command-style titles capitalize each word (`Drop Commits…`, `Edit Commit Messages…`, `Copy Full Message`).
+- **`…` means confirmation or input**: entries that require a confirmation dialog or further input end with an ellipsis (`Hard Reset…`, `Delete…`, `Amend HEAD…`). Actions that run immediately do not (`Merge into Current`, `Cherry-pick`).
+- **Disabled entries explain themselves**: a disabled entry shows a `title` tooltip describing why (e.g. the file has no parent revision, or too many commits are selected).
+
+For example, a commit's menu offers `Compare with Parent`, `Compare with Current`, `Checkout Revision`, `Amend HEAD…` (on the current tip), `Create Branch…`, `Create Tag…`, `Cherry-pick`, `Revert`, `Merge into Current`, `Rebase Current onto This`, the three `Reset Current Branch (soft/mixed/hard)` modes, and the `Copy Hash` / `Copy Subject` / `Copy Full Message` group.
+
 ## Implemented Git Log features
 
 ```text
@@ -125,9 +137,9 @@ npm run package
 
 - Click or double-click a Local or Remote branch to display its commit history without checking it out. Use the Local branch context menu when you explicitly want to check it out.
 - Use `Go to HEAD` to locate the repository's checked-out HEAD inside the commit list currently being viewed; it does not switch the active Branch filter.
-- Use `Force Delete…` only when a non-current Local Branch must be removed even though it is not fully merged. Git Log shows a modal confirmation before running the operation.
+- Use the `Delete…` entry on a non-current Local Branch when it must be removed even though it is not fully merged; it defaults to force deletion and Git Log shows a modal confirmation before running the operation.
 - Use the Branch pane search to filter references locally. Slash-delimited names are grouped into folders that can be expanded or collapsed independently.
-- Hold Shift while clicking another commit or pressing Up/Down to extend a contiguous range. Use Ctrl+click on Windows/Linux or Cmd+click on macOS to toggle non-contiguous commits. Changed Files combines all selected commits, while `Drop commits…` and `Squash commits…` appear only for contiguous ranges.
+- Hold Shift while clicking another commit or pressing Up/Down to extend a contiguous range. Use Ctrl+click on Windows/Linux or Cmd+click on macOS to toggle non-contiguous commits. Changed Files combines all selected commits, while `Drop Commits…` and `Squash Commits…` appear only for contiguous ranges.
 - Right-click a single commit and choose `Checkout Revision` to inspect it in detached HEAD state; create a branch before committing if the work should be retained.
 - Click a Changed File to inspect its path, status, and change summary. Double-click it or choose `Show Diff` to use the native VS Code Diff Editor.
 - In a commit comparison, use `All Changes` to review all text-file changes together; binary files remain listed but are omitted from the multi-file diff.

@@ -165,7 +165,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   )
                 }
               >
-                Drop commits…              </button>
+                Drop Commits…              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -199,7 +199,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Squash commits…              </button>
+                Squash Commits…              </button>
             </>
           ) : null}
           {contextMenu.commits.length >= 1 &&
@@ -346,7 +346,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                New Branch…              </button>
+                Create Branch…              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -360,7 +360,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                New Tag…              </button>
+                Create Tag…              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -429,7 +429,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Soft Reset
+                    Reset Current Branch (soft)
                   </button>
                   <button
                     type="button"
@@ -441,7 +441,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Mixed Reset
+                    Reset Current Branch (mixed)
                   </button>
                   <button
                     type="button"
@@ -453,7 +453,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Hard Reset…                  </button>
+                    Reset Current Branch (hard)…                  </button>
                 </>
               ) : null}
             </>
@@ -731,7 +731,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                New Branch from…              </button>
+                Create Branch from…              </button>
               {contextMenu.ref.kind === 'local' ? (
                 <>
                   <button
@@ -758,7 +758,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Rebase Current onto
+                    Rebase Current onto This
                   </button>
                 </>
               ) : null}
@@ -831,7 +831,7 @@ export function ContextMenu(props: ContextMenuProps) {
               setContextMenu(undefined);
             }}
           >
-            Copy Revision
+            Copy Hash
           </button>
           {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
             <>
