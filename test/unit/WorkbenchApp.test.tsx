@@ -5127,7 +5127,10 @@ describe('WorkbenchApp', () => {
     expect(screen.getByText(/bot@example.com/u)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: `Parent ${parentHash}` })).toBeInTheDocument();
     expect(screen.getByText('v1')).toBeInTheDocument();
-    expect(screen.getByText(/Signature: good/u)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Signature:/u, { selector: '.details-meta-label' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('good')).toBeInTheDocument();
     postedMessages.length = 0;
     const copyHashButton = screen.getByRole('button', { name: 'Copy full commit hash' });
     fireEvent.click(copyHashButton);

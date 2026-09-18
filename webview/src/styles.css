@@ -780,6 +780,7 @@ select:focus-visible,
   display: grid;
   grid-column: 1;
   grid-template-rows: 38px 30px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -788,6 +789,7 @@ select:focus-visible,
 }
 
 .refs-toolbar {
+  min-width: 0;
   border-bottom: 1px solid var(--vscode-panel-border);
   background: var(--workbench-header-background);
 }
@@ -808,6 +810,7 @@ select:focus-visible,
 }
 
 .refs-heading {
+  min-width: 0;
   justify-content: space-between;
   gap: 6px;
 }
@@ -848,6 +851,7 @@ select:focus-visible,
 }
 
 .refs-scroll {
+  min-width: 0;
   min-height: 0;
   padding: 5px 0;
   overflow: auto;
@@ -1926,18 +1930,19 @@ select:focus-visible,
 }
 
 .details-pane {
-  padding: 12px 15px;
+  padding: var(--vscode-panel-padding, 10px 12px);
   overflow: hidden;
   border-top: 1px solid var(--vscode-panel-border);
 }
 
 .details-message {
   margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--vscode-font-size);
+  font-weight: var(--vscode-font-weight, 600);
 }
 
 .details-placeholder {
+  padding: 16px 0;
   color: var(--vscode-descriptionForeground);
 }
 
@@ -1951,11 +1956,15 @@ select:focus-visible,
   flex-wrap: wrap;
   gap: 5px 14px;
   color: var(--vscode-descriptionForeground);
-  font-size: 12px;
+}
+
+.details-meta-label {
+  color: var(--vscode-descriptionForeground);
 }
 
 .details-meta code {
-  color: var(--vscode-textLink-foreground);
+  color: var(--vscode-textPreformat-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
 }
 
 .details-hash,
@@ -1969,16 +1978,19 @@ select:focus-visible,
 .details-meta button {
   min-height: 20px;
   padding: 0 5px;
-  border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--vscode-button-borderRadius, 2px);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
 }
 
+.details-meta button:hover:not(:disabled) {
+  border-color: var(--vscode-button-border, var(--vscode-panel-border));
+}
+
 .details-refs > span {
   padding: 0 5px;
-  border: 1px solid var(--vscode-badge-background);
-  border-radius: 8px;
+  border-radius: 2px;
   color: var(--vscode-badge-foreground);
   background: var(--vscode-badge-background);
 }

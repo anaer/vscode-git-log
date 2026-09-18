@@ -179,12 +179,22 @@ function CommitDetailsPane({
             </div>
           </div>
           <div className="details-meta">
-            <span>Author: {details.authorName} &lt;{details.authorEmail}&gt;</span>
-            <span>Authored: {formatCommitDate(details.authorTime)}</span>
             <span>
-              Committer: {details.committerName} &lt;{details.committerEmail}&gt;
+              <span className="details-meta-label">Author: </span>
+              {details.authorName} &lt;{details.authorEmail}&gt;
             </span>
-            <span>Committed: {formatCommitDate(details.commitTime)}</span>
+            <span>
+              <span className="details-meta-label">Authored: </span>
+              {formatCommitDate(details.authorTime)}
+            </span>
+            <span>
+              <span className="details-meta-label">Committer: </span>
+              {details.committerName} &lt;{details.committerEmail}&gt;
+            </span>
+            <span>
+              <span className="details-meta-label">Committed: </span>
+              {formatCommitDate(details.commitTime)}
+            </span>
             <span className="details-hash">
               <code>{details.hash}</code>
               <button
@@ -202,7 +212,7 @@ function CommitDetailsPane({
             </span>
             {details.parents.length ? (
               <span className="details-parents">
-                Parents:{' '}
+                <span className="details-meta-label">Parents: </span>
                 {details.parents.map((parent) => (
                   <button
                     type="button"
@@ -216,14 +226,21 @@ function CommitDetailsPane({
                 ))}
               </span>
             ) : (
-              <span>Parents: root commit</span>
+              <span>
+                <span className="details-meta-label">Parents: </span>
+                root commit
+              </span>
             )}
             {details.refs.length ? (
               <span className="details-refs">
-                Refs: {details.refs.map((ref) => <span key={ref.fullName}>{ref.shortName}</span>)}
+                <span className="details-meta-label">Refs: </span>
+                {details.refs.map((ref) => <span key={ref.fullName}>{ref.shortName}</span>)}
               </span>
             ) : null}
-            <span>Signature: {details.signature}</span>
+            <span>
+              <span className="details-meta-label">Signature: </span>
+              {details.signature}
+            </span>
           </div>
           {bodyText ? <div className="details-body">{bodyText}</div> : null}
         </div>
