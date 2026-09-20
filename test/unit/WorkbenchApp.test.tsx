@@ -4093,7 +4093,7 @@ describe('WorkbenchApp', () => {
     expect(screen.getByRole('navigation', { name: 'Git references' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Global Git actions' })).toBeInTheDocument();
     expect(document.querySelector<HTMLElement>('.workspace-grid')?.style.gridTemplateColumns).toBe(
-      '160px 1px minmax(340px, 1fr) 0px 0px',
+      '160px 1px minmax(476px, 1fr) 0px 0px',
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand changed files pane' }));
@@ -5725,6 +5725,100 @@ describe('WorkbenchApp', () => {
     for (const [name, title] of expectedTitles) {
       expect(screen.getByRole('button', { name })).toHaveAttribute('title', title);
     }
+  });
+
+  it('shows Pull, Push, and Force Push as direct toolbar icons when the files pane is collapsed', () => {
+    const hash = 'a'.repeat(40);
+    const innerWidth = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280);
+    try {
+      render(<App />);
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: {
+              type: 'initialize',
+              requestId: 'ready-toolbar-icons',
+              repositories: [
+                {
+                  id: 'repo-toolbar-icons',
+                  rootUri: 'file:///workspace/repo',
+                  gitDirUri: 'file:///workspace/repo/.git',
+                  displayName: 'repo',
+                  isBare: false,
+                  currentBranch: 'main',
+                  head: hash,
+                },
+              ],
+              selectedRepositoryId: 'repo-toolbar-icons',
+              pageSize: 500,
+              layout: {
+                refsWidth: 160,
+                filesWidth: 320,
+                detailsHeight: 156,
+                filesViewMode: 'tree',
+                filesCollapsed: true,
+              },
+            },
+          }),
+        );
+      });
+
+      const globalActions = screen.getByRole('toolbar', { name: 'Global Git actions' });
+      expect(globalActions).toContainElement(
+        screen.getByRole('button', { name: 'Pull from remote' }),
+      );
+      expect(globalActions).toContainElement(screen.getByRole('button', { name: 'Push to remote' }));
+      expect(globalActions).toContainElement(
+        screen.getByRole('button', { name: 'Force push current branch' }),
+      );
+      expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    } finally {
+      innerWidth.mockRestore();
+    }
+  });
+
+  it('keeps Pull, Push, and Force Push in the More menu while the files pane is expanded', () => {
+    const hash = 'a'.repeat(40);
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-toolbar-menu',
+            repositories: [
+              {
+                id: 'repo-toolbar-menu',
+                rootUri: 'file:///workspace/repo',
+                gitDirUri: 'file:///workspace/repo/.git',
+                displayName: 'repo',
+                isBare: false,
+                currentBranch: 'main',
+                head: hash,
+              },
+            ],
+            selectedRepositoryId: 'repo-toolbar-menu',
+            pageSize: 500,
+            layout: {
+              refsWidth: 160,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+
+    expect(screen.queryByRole('button', { name: 'Pull from remote' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Push to remote' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Force push current branch' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    const menu = screen.getByRole('menu', { name: 'toolbar actions' });
+    expect(within(menu).getByRole('menuitem', { name: 'Pull' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Push' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Force Push with Lease…' })).toBeInTheDocument();
   });
 
   it('drops stale same-repository log data when a newer log request supersedes it', () => {

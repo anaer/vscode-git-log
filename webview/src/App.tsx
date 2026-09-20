@@ -47,8 +47,11 @@ import { FilesPane } from './FilesPane';
 import { DetailsPane } from './DetailsPane';
 import {
   CommitToolbar,
+  GLOBAL_TOOLBAR_ACTIONS,
   GlobalToolbar,
+  globalToolbarMetrics,
   type FilterPopupKind,
+  type GlobalToolbarAction,
 } from './Toolbars';
 import {
   createWorkbenchStore,
@@ -88,7 +91,13 @@ export type ContextMenuState =
       y: number;
     }
   | { kind: 'file'; repositoryId: string; file: ChangedFile; x: number; y: number }
-  | { kind: 'toolbar'; repositoryId: string; x: number; y: number }
+  | {
+      kind: 'toolbar';
+      repositoryId: string;
+      x: number;
+      y: number;
+      actions: readonly GlobalToolbarAction[];
+    }
   | { kind: 'head'; repositoryId: string; hash: string; x: number; y: number };
 
 /**
@@ -122,6 +131,15 @@ const SHALLOW_DEPTH_CHOICES: readonly number[] = [500, 1000];
  * be pushed off-screen. The real height is applied a frame later by `useLayoutEffect`.
  */
 const SHALLOW_MENU_MAX_HEIGHT = 180;
+
+/**
+ * The global toolbar overlays the top of the files pane, which keeps only `filesWidth` pixels
+ * visible when the pane is open, and it must never cover the filter bar when the pane is closed
+ * (there the log column still reserves its minimum width). The 8px matches the toolbar's own right
+ * padding, so the reserved width leaves exactly the same gutter the toolbar occupies.
+ */
+const TOOLBAR_RIGHT_PADDING = 8;
+const LOG_COLUMN_MIN_WIDTH = 476;
 
 export type FolderDeleteState = {
   repositoryId: string;
@@ -248,6 +266,9 @@ function Workbench() {
     refs: window.matchMedia?.('(max-width: 680px)').matches ?? false,
   }));
   const [responsiveExpanded, setResponsiveExpanded] = useState({ files: false, refs: false });
+  const [viewportWidth, setViewportWidth] = useState(
+    () => window.innerWidth || document.documentElement.clientWidth,
+  );
   const filterTimer = useRef<number | undefined>(undefined);
   const detailsHashCopyRequest = useRef<string | undefined>(undefined);
   const detailsHashCopyTimer = useRef<number | undefined>(undefined);
@@ -335,6 +356,22 @@ function Workbench() {
   const filesCollapsed = Boolean(
     state.layout.filesCollapsed || (responsiveCollapse.files && !responsiveExpanded.files),
   );
+  // Whatever room the log column leaves after its minimum width and the refs
+  // column is what the toolbar may borrow before it would cover the filter bar.
+  const toolbarContentAvailable = !filesCollapsed
+    ? state.layout.filesWidth
+    : Math.max(
+        0,
+        viewportWidth -
+          (refsCollapsed ? 0 : state.layout.refsWidth) -
+          (refsCollapsed ? 0 : 1) -
+          LOG_COLUMN_MIN_WIDTH,
+      );
+  const toolbarMetrics = globalToolbarMetrics(
+    Math.max(0, toolbarContentAvailable - TOOLBAR_RIGHT_PADDING),
+  );
+  const visibleActions = GLOBAL_TOOLBAR_ACTIONS.slice(0, toolbarMetrics.visibleCount);
+  const overflowedActions = GLOBAL_TOOLBAR_ACTIONS.slice(toolbarMetrics.visibleCount);
   const detailsPlacement = state.layout.detailsPlacement ?? 'bottom';
   const detailsInChanges = detailsPlacement === 'changes';
   useEffect(() => {
@@ -443,6 +480,14 @@ function Workbench() {
       filesQuery.removeEventListener('change', update);
       refsQuery.removeEventListener('change', update);
     };
+  }, []);
+
+  useEffect(() => {
+    const update = (): void => {
+      setViewportWidth(window.innerWidth || document.documentElement.clientWidth);
+    };
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, []);
 
   useEffect(() => {
@@ -1400,8 +1445,13 @@ function Workbench() {
       hasHead={Boolean(selectedRepository?.head)}
       canRunOperations={Boolean(state.selectedRepositoryId) && !selectedRepository?.isBare}
       operationInFlight={selectedOperationInFlight}
+      gitWriteBlocked={Boolean(selectedRepository?.operationState)}
+      publishesBranch={Boolean(selectedRepository?.currentBranch) && !currentBranchHasUpstream}
+      currentBranch={selectedRepository?.currentBranch}
       refsCollapsed={refsCollapsed}
       filesCollapsed={filesCollapsed}
+      visibleActions={visibleActions}
+      overflowedActions={overflowedActions}
       moreActionsExpanded={contextMenu?.kind === 'toolbar'}
       onRefresh={() =>
         send({
@@ -1415,6 +1465,7 @@ function Workbench() {
       onManageStashes={openStashDialog}
       onToggleRefsPane={() => toggleResponsivePane('refs')}
       onToggleFilesPane={() => toggleResponsivePane('files')}
+      onRunOperation={(operation) => runOperation(operation)}
       onToggleMoreActions={(anchor) => {
         if (!state.selectedRepositoryId) return;
         setFilterPopup(undefined);
@@ -1426,6 +1477,7 @@ function Workbench() {
                 repositoryId: state.selectedRepositoryId as string,
                 x: anchor.right,
                 y: anchor.bottom,
+                actions: overflowedActions,
               },
         );
       }}
@@ -1483,11 +1535,14 @@ function Workbench() {
       className={`workbench-shell${filesCollapsed ? ' files-collapsed' : ''}${
         detailsInChanges ? ' details-in-changes' : ''
       }`}
-      style={{
-        gridTemplateRows: detailsInChanges
-          ? 'minmax(0, 1fr)'
-          : `minmax(0, 1fr) 4px ${state.layout.detailsHeight}px`,
-      }}
+      style={
+        {
+          gridTemplateRows: detailsInChanges
+            ? 'minmax(0, 1fr)'
+            : `minmax(0, 1fr) 4px ${state.layout.detailsHeight}px`,
+          '--global-toolbar-width': `${String(toolbarMetrics.contentWidth)}px`,
+        } as CSSProperties
+      }
       onKeyDown={handleWorkbenchKeyDown}
       onWheelCapture={(event) => {
         const target = event.target;
@@ -1573,7 +1628,7 @@ function Workbench() {
         style={{
           gridTemplateColumns: `${refsCollapsed ? 0 : state.layout.refsWidth}px ${
             refsCollapsed ? 0 : 1
-          }px minmax(340px, 1fr) ${filesCollapsed ? 0 : 1}px ${
+          }px minmax(${LOG_COLUMN_MIN_WIDTH}px, 1fr) ${filesCollapsed ? 0 : 1}px ${
             filesCollapsed ? 0 : state.layout.filesWidth
           }px`,
         }}
@@ -2024,6 +2079,10 @@ function Workbench() {
           hasContiguousCommitRange={hasContiguousCommitRange}
           selectedOperationInFlight={selectedOperationInFlight}
           currentBranchHasUpstream={currentBranchHasUpstream}
+          refsCollapsed={refsCollapsed}
+          filesCollapsed={filesCollapsed}
+          onToggleRefsPane={() => toggleResponsivePane('refs')}
+          onToggleFilesPane={() => toggleResponsivePane('files')}
           detailsHash={state.details?.hash}
           detailsBody={state.details?.body}
           selectedParent={state.selectedParent}

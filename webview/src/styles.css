@@ -838,7 +838,7 @@ select:focus-visible,
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 220px 1px minmax(340px, 1fr) 1px 320px;
+  grid-template-columns: 220px 1px minmax(476px, 1fr) 1px 320px;
   min-height: 0;
 }
 

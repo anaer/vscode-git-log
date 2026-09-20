@@ -2,6 +2,18 @@
 
 All notable changes to Git Log are documented in this file.
 
+## 26.920.1638
+
+### Added
+
+- **Adaptive global toolbar**: Pull / Push / Force Push are no longer pinned inside the More Git actions menu — the toolbar shows them as direct SVG icon buttons when there is room and folds them into the More menu right-first as the width narrows. The reserved toolbar width always counts the More button, so the toolbar never overlaps the filter bar.
+- **Shallow-clone incremental deepening**: the "history truncated" notice (now placed below the commit list so it never covers the column headers) adds a `--deepen` path — a 100-commit step on the main button with 500 / 1000 options in a dropdown — alongside the existing full `git fetch --unshallow`, so large repositories can deepen history in batches instead of one costly full un-shallow.
+
+### Changed
+
+- **Commit details panel aligned with VS Code native styling**: badges, action buttons, the commit hash (monospace, theme foreground), headings, font sizes, and label/value coloring now follow the active theme's variables.
+- **Right-click menu naming standardized**: branch/tag creation uses **Create**, hash copy uses **Copy Hash**, reset actions use **Reset Current Branch (…)**, rebase uses **Rebase Current onto This**, and commit entries follow Title Case with consistent ellipsis and disabled-state tooltips.
+
 ## 26.917.1748
 
 ### Added

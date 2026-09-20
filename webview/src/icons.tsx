@@ -96,3 +96,25 @@ export const Paths = (
     <path d="M3 3.5h3.2l1.2 1.5H12a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8h0z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
   </svg>
 );
+
+export const Pull = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M8 2.5v7M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M3 12.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+export const Push = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M8 10.5v-7M5 6.5l3-3 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M3 12.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+export const ForcePush = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M8 10.5v-7M5 6.5l3-3 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M2.5 12.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M12.6 12.5v-2.6M11.4 11.1l2.4-1.5M13.8 11.1l-2.4-1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+  </svg>
+);

@@ -19,6 +19,10 @@ interface ContextMenuProps {
   hasContiguousCommitRange: boolean;
   selectedOperationInFlight: boolean;
   currentBranchHasUpstream: boolean;
+  refsCollapsed: boolean;
+  filesCollapsed: boolean;
+  onToggleRefsPane(): void;
+  onToggleFilesPane(): void;
   detailsHash: string | undefined;
   detailsBody: string | undefined;
   selectedParent: string | undefined;
@@ -47,6 +51,10 @@ export function ContextMenu(props: ContextMenuProps) {
     hasContiguousCommitRange,
     selectedOperationInFlight,
     currentBranchHasUpstream,
+    refsCollapsed,
+    filesCollapsed,
+    onToggleRefsPane,
+    onToggleFilesPane,
     detailsHash,
     detailsBody,
     selectedParent,
@@ -97,43 +105,91 @@ export function ContextMenu(props: ContextMenuProps) {
         ) : selectedRepository?.isBare ? (
           <span className="menu-note">Bare repositories are read-only.</span>
         ) : (
-          <>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={!selectedRepository?.currentBranch}
-              onClick={() => runOperation({ kind: 'pull' }, contextMenu.repositoryId)}
-            >
-              Pull
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={!selectedRepository?.currentBranch}
-              title={
-                toolbarPublishesBranch
-                  ? 'Push this branch and set its upstream'
-                  : 'Push the current branch'
-              }
-              onClick={() =>
-                runOperation(
-                  { kind: toolbarPublishesBranch ? 'publishBranch' : 'push' },
-                  contextMenu.repositoryId,
-                )
-              }
-            >
-              {toolbarPublishesBranch ? 'Publish Branch' : 'Push'}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={!selectedRepository?.currentBranch}
-              onClick={() =>
-                runOperation({ kind: 'push', forceWithLease: true }, contextMenu.repositoryId)
-              }
-            >
-              Force Push with Lease…            </button>
-          </>
+          contextMenu.actions.map((action) => {
+            switch (action) {
+              case 'toggleRefs':
+                return (
+                  <button
+                    key={action}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onToggleRefsPane();
+                      setContextMenu(undefined);
+                    }}
+                  >
+                    {refsCollapsed ? 'Expand' : 'Collapse'} References Pane
+                  </button>
+                );
+              case 'toggleFiles':
+                return (
+                  <button
+                    key={action}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onToggleFilesPane();
+                      setContextMenu(undefined);
+                    }}
+                  >
+                    {filesCollapsed ? 'Expand' : 'Collapse'} Files Pane
+                  </button>
+                );
+              case 'pull':
+                return (
+                  <button
+                    key={action}
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedRepository?.currentBranch || selectedOperationInFlight}
+                    onClick={() => runOperation({ kind: 'pull' }, contextMenu.repositoryId)}
+                  >
+                    Pull
+                  </button>
+                );
+              case 'push':
+                return (
+                  <button
+                    key={action}
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedRepository?.currentBranch || selectedOperationInFlight}
+                    title={
+                      toolbarPublishesBranch
+                        ? 'Push this branch and set its upstream'
+                        : 'Push the current branch'
+                    }
+                    onClick={() =>
+                      runOperation(
+                        { kind: toolbarPublishesBranch ? 'publishBranch' : 'push' },
+                        contextMenu.repositoryId,
+                      )
+                    }
+                  >
+                    {toolbarPublishesBranch ? 'Publish Branch' : 'Push'}
+                  </button>
+                );
+              case 'forcePush':
+                return (
+                  <button
+                    key={action}
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedRepository?.currentBranch || selectedOperationInFlight}
+                    onClick={() =>
+                      runOperation(
+                        { kind: 'push', forceWithLease: true },
+                        contextMenu.repositoryId,
+                      )
+                    }
+                  >
+                    Force Push with Lease…
+                  </button>
+                );
+              default:
+                return null;
+            }
+          })
         )
       ) : null}
       {contextMenu.kind === 'commit' ? (

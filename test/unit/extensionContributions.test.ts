@@ -137,7 +137,7 @@ describe('extension contributions', () => {
 
     // This literal is a release gate: the release workflow rewrites package.json from the pushed
     // tag and then runs the test suite, so a mismatch blocks publishing with a stale version.
-    expect(packageJson.version).toBe('26.917.1748');
+    expect(packageJson.version).toBe('26.920.1638');
     expect(packageJson.contributes?.viewsWelcome).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.activitybar).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.panel).toEqual([

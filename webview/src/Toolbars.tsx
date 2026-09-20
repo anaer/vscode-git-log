@@ -1,5 +1,11 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
-import type { LogFilters } from '../../src/protocol/messages';
+import {
+  Fragment,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import type { GitOperationRequest, LogFilters } from '../../src/protocol/messages';
 import type { RepositorySummary } from '../../src/shared/models';
 import { DateField } from './DateRangePicker';
 import {
@@ -8,10 +14,13 @@ import {
   Calendar,
   Close,
   CloudDownload,
+  ForcePush,
   More,
   PanelLeft,
   PanelRight,
   Paths,
+  Pull,
+  Push,
   Refresh,
   Target,
   User,
@@ -453,12 +462,76 @@ export function CommitToolbar({
   );
 }
 
+export type GlobalToolbarAction =
+  | 'refresh'
+  | 'goToHead'
+  | 'fetch'
+  | 'stashes'
+  | 'toggleRefs'
+  | 'toggleFiles'
+  | 'pull'
+  | 'push'
+  | 'forcePush';
+
+export const GLOBAL_TOOLBAR_ACTIONS: readonly GlobalToolbarAction[] = [
+  'refresh',
+  'goToHead',
+  'fetch',
+  'stashes',
+  'toggleRefs',
+  'toggleFiles',
+  'pull',
+  'push',
+  'forcePush',
+];
+
+// An action button is a 16px icon with 9px horizontal padding on each side.
+export const TOOLBAR_ACTION_WIDTH = 34;
+export const TOOLBAR_ACTION_GAP = 6;
+
+export interface GlobalToolbarMetrics {
+  visibleCount: number;
+  contentWidth: number;
+}
+
+// Tracks the global toolbar layout: how many of the action buttons fit beside
+// the More button for a given available content width. Actions overflow from
+// the right (the last action is hidden first). The More button is counted into
+// contentWidth whenever it renders — i.e. whenever any action overflows — so
+// that even a lone More button at extreme narrow width reserves its own space
+// and never masks the filter bar.
+export function globalToolbarMetrics(available: number): GlobalToolbarMetrics {
+  const total = GLOBAL_TOOLBAR_ACTIONS.length;
+  let visibleCount = 0;
+  while (visibleCount < total) {
+    const next = visibleCount + 1;
+    // next action buttons + (next - 1) gaps between them, then the gap and the
+    // More button that trail them while at least one action still overflows.
+    const actionsWidth = next * TOOLBAR_ACTION_WIDTH + (next - 1) * TOOLBAR_ACTION_GAP;
+    const withMore = actionsWidth + TOOLBAR_ACTION_WIDTH + TOOLBAR_ACTION_GAP;
+    if (withMore > available) break;
+    visibleCount = next;
+  }
+  const contentWidth =
+    visibleCount === total
+      ? // Every action shows directly, so the More button is not rendered.
+        total * TOOLBAR_ACTION_WIDTH + (total - 1) * TOOLBAR_ACTION_GAP
+      : // visibleCount direct buttons plus the always-rendered More button.
+        (visibleCount + 1) * TOOLBAR_ACTION_WIDTH + visibleCount * TOOLBAR_ACTION_GAP;
+  return { visibleCount, contentWidth };
+}
+
 export interface GlobalToolbarProps {
   hasHead: boolean;
   canRunOperations: boolean;
   operationInFlight: boolean;
+  gitWriteBlocked: boolean;
+  publishesBranch: boolean;
+  currentBranch: string | undefined;
   refsCollapsed: boolean;
   filesCollapsed: boolean;
+  visibleActions: readonly GlobalToolbarAction[];
+  overflowedActions: readonly GlobalToolbarAction[];
   moreActionsExpanded: boolean;
   onRefresh(): void;
   onGoToHead(): void;
@@ -466,6 +539,7 @@ export interface GlobalToolbarProps {
   onManageStashes(): void;
   onToggleRefsPane(): void;
   onToggleFilesPane(): void;
+  onRunOperation(operation: GitOperationRequest): void;
   onToggleMoreActions(anchor: { right: number; bottom: number }): void;
 }
 
@@ -473,8 +547,13 @@ export function GlobalToolbar({
   hasHead,
   canRunOperations,
   operationInFlight,
+  gitWriteBlocked,
+  publishesBranch,
+  currentBranch,
   refsCollapsed,
   filesCollapsed,
+  visibleActions,
+  overflowedActions,
   moreActionsExpanded,
   onRefresh,
   onGoToHead,
@@ -482,76 +561,144 @@ export function GlobalToolbar({
   onManageStashes,
   onToggleRefsPane,
   onToggleFilesPane,
+  onRunOperation,
   onToggleMoreActions,
 }: GlobalToolbarProps) {
+  const renderAction = (action: GlobalToolbarAction): ReactNode => {
+    switch (action) {
+      case 'refresh':
+        return (
+          <button
+            type="button"
+            aria-label="Refresh log"
+            title="Refresh local repository state"
+            onClick={onRefresh}
+          >
+            {Refresh}
+          </button>
+        );
+      case 'goToHead':
+        return (
+          <button
+            type="button"
+            aria-label="Go to HEAD"
+            title="Locate the current HEAD commit"
+            disabled={!hasHead}
+            onClick={onGoToHead}
+          >
+            {Target}
+          </button>
+        );
+      case 'fetch':
+        return (
+          <button
+            type="button"
+            aria-label="Fetch remotes"
+            title="Fetch from remotes"
+            disabled={!canRunOperations || operationInFlight}
+            onClick={onFetch}
+          >
+            {CloudDownload}
+          </button>
+        );
+      case 'stashes':
+        return (
+          <button
+            type="button"
+            aria-label="Manage stashes"
+            title="Create, inspect, apply, pop, or drop stashes"
+            disabled={!canRunOperations}
+            onClick={onManageStashes}
+          >
+            {Archive}
+          </button>
+        );
+      case 'toggleRefs':
+        return (
+          <button
+            type="button"
+            aria-label={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
+            title={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
+            onClick={onToggleRefsPane}
+          >
+            {PanelLeft}
+          </button>
+        );
+      case 'toggleFiles':
+        return (
+          <button
+            type="button"
+            aria-label={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
+            title={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
+            onClick={onToggleFilesPane}
+          >
+            {PanelRight}
+          </button>
+        );
+      case 'pull':
+        return (
+          <button
+            type="button"
+            aria-label="Pull from remote"
+            title="Pull the current branch from its remote"
+            disabled={!canRunOperations || operationInFlight || gitWriteBlocked || !currentBranch}
+            onClick={() => onRunOperation({ kind: 'pull' })}
+          >
+            {Pull}
+          </button>
+        );
+      case 'push':
+        return (
+          <button
+            type="button"
+            aria-label={publishesBranch ? 'Publish branch' : 'Push to remote'}
+            title={
+              publishesBranch ? 'Push this branch and set its upstream' : 'Push the current branch'
+            }
+            disabled={!canRunOperations || operationInFlight || gitWriteBlocked || !currentBranch}
+            onClick={() => onRunOperation({ kind: publishesBranch ? 'publishBranch' : 'push' })}
+          >
+            {Push}
+          </button>
+        );
+      case 'forcePush':
+        return (
+          <button
+            type="button"
+            aria-label="Force push current branch"
+            title="Force push the current branch with lease"
+            disabled={!canRunOperations || operationInFlight || gitWriteBlocked || !currentBranch}
+            onClick={() => onRunOperation({ kind: 'push', forceWithLease: true })}
+          >
+            {ForcePush}
+          </button>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <header className="global-toolbar" role="toolbar" aria-label="Global Git actions">
-      <button
-        type="button"
-        aria-label="Refresh log"
-        title="Refresh local repository state"
-        onClick={onRefresh}
-      >
-        {Refresh}
-      </button>
-      <button
-        type="button"
-        aria-label="Go to HEAD"
-        title="Locate the current HEAD commit"
-        disabled={!hasHead}
-        onClick={onGoToHead}
-      >
-        {Target}
-      </button>
-      <button
-        type="button"
-        aria-label="Fetch remotes"
-        title="Fetch from remotes"
-        disabled={!canRunOperations || operationInFlight}
-        onClick={onFetch}
-      >
-        {CloudDownload}
-      </button>
-      <button
-        type="button"
-        aria-label="Manage stashes"
-        title="Create, inspect, apply, pop, or drop stashes"
-        disabled={!canRunOperations}
-        onClick={onManageStashes}
-      >
-        {Archive}
-      </button>
-      <button
-        type="button"
-        aria-label={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
-        title={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
-        onClick={onToggleRefsPane}
-      >
-        {PanelLeft}
-      </button>
-      <button
-        type="button"
-        aria-label={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
-        title={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
-        onClick={onToggleFilesPane}
-      >
-        {PanelRight}
-      </button>
-      <button
-        type="button"
-        data-popup-trigger="true"
-        aria-label="More actions"
-        title="More Git actions"
-        aria-haspopup="menu"
-        aria-expanded={moreActionsExpanded}
-        disabled={!canRunOperations}
-        onClick={(event) => {
-          const bounds = event.currentTarget.getBoundingClientRect();
-          onToggleMoreActions({ right: bounds.right, bottom: bounds.bottom + 2 });
-        }}
-      >
-        {More}
-      </button>
+      {visibleActions.map((action) => (
+        <Fragment key={action}>{renderAction(action)}</Fragment>
+      ))}
+      {overflowedActions.length > 0 ? (
+        <button
+          type="button"
+          data-popup-trigger="true"
+          aria-label="More actions"
+          title="More Git actions"
+          aria-haspopup="menu"
+          aria-expanded={moreActionsExpanded}
+          onClick={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            onToggleMoreActions({ right: bounds.right, bottom: bounds.bottom + 2 });
+          }}
+        >
+          {More}
+        </button>
+      ) : null}
     </header>
   );
 }
