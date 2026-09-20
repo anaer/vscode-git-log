@@ -342,7 +342,7 @@ select:focus-visible,
   gap: 6px;
   min-width: 0;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-top: 1px solid var(--vscode-panel-border);
   background: var(--workbench-header-background);
 }
 
@@ -993,6 +993,15 @@ select:focus-visible,
 
 .log-pane.rebase-active {
   grid-template-rows: 38px 32px 30px minmax(0, 1fr);
+}
+
+/* The shallow-clone notice sits below the commit list so it never covers the column headers. */
+.log-pane.shallow-active {
+  grid-template-rows: 38px 30px minmax(0, 1fr) auto;
+}
+
+.log-pane.rebase-active.shallow-active {
+  grid-template-rows: 38px 32px 30px minmax(0, 1fr) auto;
 }
 
 .files-resizer {

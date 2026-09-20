@@ -299,6 +299,9 @@ function Workbench() {
   const selectedOperationInFlight = state.selectedRepositoryId
     ? state.operationRepositoryIds.has(state.selectedRepositoryId)
     : false;
+  const shallowNoticeVisible = Boolean(
+    selectedRepository?.isShallow && !selectedRepository.isBare,
+  );
   // A branch with no upstream cannot be pushed with a plain `git push`, so the toolbar offers to
   // publish it instead. `state.refs` always belongs to the selected repository; when the current
   // branch is missing from that snapshot we assume it is tracked and keep the plain Push action.
@@ -1573,7 +1576,7 @@ function Workbench() {
           ref={logRef}
           className={`log-pane pane${
             selectedRepository?.operationState === 'rebase' ? ' rebase-active' : ''
-          }`}
+          }${shallowNoticeVisible ? ' shallow-active' : ''}`}
           role="grid"
           aria-label="Commit log"
           tabIndex={0}
@@ -1661,22 +1664,6 @@ function Workbench() {
                   Abort
                 </button>
               </div>
-            </div>
-          ) : null}
-          {selectedRepository?.isShallow && !selectedRepository.isBare ? (
-            <div className="shallow-status-row" role="note" aria-label="History is truncated">
-              <span className="shallow-status-text">
-                This is a shallow clone, so the history below is truncated.
-              </span>
-              <button
-                className="shallow-action-button"
-                type="button"
-                disabled={selectedOperationInFlight}
-                title="Download the complete history (git fetch --unshallow)"
-                onClick={() => runOperation({ kind: 'fetchFullHistory' })}
-              >
-                Fetch full history
-              </button>
             </div>
           ) : null}
           <div className="log-header-viewport">
@@ -1847,6 +1834,22 @@ function Workbench() {
               </div>
             </div>
           )}
+          {shallowNoticeVisible ? (
+            <div className="shallow-status-row" role="note" aria-label="History is truncated">
+              <span className="shallow-status-text">
+                This is a shallow clone, so the history below is truncated.
+              </span>
+              <button
+                className="shallow-action-button"
+                type="button"
+                disabled={selectedOperationInFlight}
+                title="Download the complete history (git fetch --unshallow)"
+                onClick={() => runOperation({ kind: 'fetchFullHistory' })}
+              >
+                Fetch full history
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <FilesPane

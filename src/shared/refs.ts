@@ -6,9 +6,12 @@ import type { RefLabel } from './models';
 export function indexRefsByTarget(refs: readonly RefLabel[]): Map<string, RefLabel[]> {
   const indexed = new Map<string, RefLabel[]>();
   for (const ref of refs) {
-    const matching = indexed.get(ref.target) ?? [];
+    // Read `target` once per ref: it may be a lazily resolved getter, and reading it
+    // twice both doubles the cost and risks an inconsistent key.
+    const target = ref.target;
+    const matching = indexed.get(target) ?? [];
     matching.push(ref);
-    indexed.set(ref.target, matching);
+    indexed.set(target, matching);
   }
   return indexed;
 }

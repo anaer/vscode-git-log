@@ -15,7 +15,12 @@ describe('workbench styles', () => {
     const app = await readFile('webview/src/App.tsx', 'utf8');
 
     expect(styles).toMatch(/\.log-header-viewport\s*\{[^}]*overflow:\s*hidden;/su);
-    expect(styles).toMatch(/\.log-header\s*\{[^}]*min-width:\s*max\(100%, var\(--log-content-width/su);
+    // The header spans the same content width as the rows so the two stay aligned while
+    // scrolling horizontally. It sits outside the scrolling viewport, so it also has to
+    // subtract the vertical scrollbar width that the rows never see.
+    expect(styles).toMatch(
+      /\.log-header\s*\{[^}]*min-width:\s*max\(\s*calc\(100% - var\(--scrollbar-width, 0px\)\),\s*var\(--log-content-width/su,
+    );
     expect(styles).toMatch(/\.commit-list\s*\{[^}]*min-width:\s*max\(100%, var\(--log-content-width/su);
     expect(app).toContain('onHorizontalScroll');
     expect(app).toContain('log-header-viewport');
