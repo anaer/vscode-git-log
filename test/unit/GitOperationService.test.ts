@@ -1864,6 +1864,81 @@ describe('GitOperationService', () => {
     );
   });
 
+  it('builds a deepen fetch command when a depth is supplied', async () => {
+    const { buildOperationArguments } = await import('../../src/git/GitOperationService');
+    expect(
+      buildOperationArguments({ kind: 'fetchFullHistory', remote: 'origin', depth: 1000 }),
+    ).toEqual(['fetch', '--deepen=1000', 'origin']);
+    // Out-of-range depths never reach the command line.
+    expect(() =>
+      buildOperationArguments({ kind: 'fetchFullHistory', remote: 'origin', depth: 0 }),
+    ).toThrow(/Invalid fetch depth/u);
+    expect(() =>
+      buildOperationArguments({ kind: 'fetchFullHistory', remote: 'origin', depth: 500_001 }),
+    ).toThrow(/Invalid fetch depth/u);
+  });
+
+  it('deepens a shallow clone without changing its fetch refspec', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const { pathToFileURL } = await import('node:url');
+    const fixture = await createFixtureRepository('git-deepen-');
+    // The deepening assertions need history beyond the single base commit.
+    await commitFile(fixture.path, 'second.txt', 'second\n', 'second');
+    await commitFile(fixture.path, 'third.txt', 'third\n', 'third');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'push', 'origin', 'main');
+    await git(remote, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+    const refspecBefore = await git(fixture.path, 'config', '--get', 'remote.origin.fetch');
+
+    // The local clone shortcut ignores `--depth`, so the checkout has to be rebuilt from the
+    // remote over `file://` to end up genuinely shallow.
+    const clonePath = await mkdtemp(join(tmpdir(), 'git-deepen-clone-'));
+    temporaryDirectories.push(clonePath);
+    await git(clonePath, 'init', '-b', 'main');
+    await git(clonePath, 'remote', 'add', 'origin', fixture.path);
+    await git(clonePath, 'fetch', '--depth', '1', 'origin', 'main');
+    await git(clonePath, 'checkout', '-q', 'main');
+    const cloneSummary: RepositorySummary = {
+      id: 'repo-deepen',
+      rootUri: pathToFileURL(clonePath).toString(),
+      gitDirUri: pathToFileURL(join(clonePath, '.git')).toString(),
+      displayName: 'clone',
+      isBare: false,
+      currentBranch: 'main',
+    };
+    expect(await git(clonePath, 'rev-parse', '--is-shallow-repository')).toBe('true');
+    expect(await git(clonePath, 'rev-list', '--count', 'HEAD')).toBe('1');
+
+    const service = new GitOperationService(new RealGitRunner());
+    await service.run(
+      cloneSummary,
+      { kind: 'fetchFullHistory', depth: 1 },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    // The increment is added to the current depth, and the repository stays shallow because the
+    // increment did not reach the root.
+    expect(Number(await git(clonePath, 'rev-list', '--count', 'HEAD'))).toBeGreaterThan(1);
+    expect(await git(clonePath, 'rev-parse', '--is-shallow-repository')).toBe('true');
+    // A depth increment must not broaden the refspec the way `--unshallow` does.
+    expect(await git(clonePath, 'config', '--get', 'remote.origin.fetch')).toBe(refspecBefore);
+  });
+
+  it('confirms a depth increment with the increment in the wording', () => {
+    const confirmation = getOperationConfirmation(repository, {
+      kind: 'fetchFullHistory',
+      remote: 'origin',
+      depth: 1000,
+    });
+    expect(confirmation?.destructive).toBe(true);
+    expect(confirmation?.title).toBe('Fetch 1000 more commits?');
+    expect(confirmation?.detail).toContain('--deepen=1000');
+    expect(confirmation?.detail).not.toContain('--unshallow');
+    // The refspec is only broadened by the full-history path, so it must not be advertised here.
+    expect(confirmation?.detail).not.toContain('remote.origin.fetch');
+  });
+
   it('lists the planned fetch-refspec change verbatim in the confirmation', () => {
     const confirmation = getOperationConfirmation(repository, {
       kind: 'fetchFullHistory',

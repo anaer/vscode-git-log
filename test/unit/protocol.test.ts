@@ -86,6 +86,18 @@ describe('parseWebviewMessage', () => {
     expect(
       operation({ kind: 'fetchFullHistory', refspecTo: 'x'.repeat(600) }),
     ).toBeUndefined();
+
+    // A depth selects the incremental `--deepen` path; the host rejects anything that is not a
+    // positive bounded integer so it can never reach the command line.
+    expect(operation({ kind: 'fetchFullHistory', depth: 1000 })).toBeDefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: 1 })).toBeDefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: 0 })).toBeUndefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: -1 })).toBeUndefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: 1.5 })).toBeUndefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: Number.NaN })).toBeUndefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: Number.POSITIVE_INFINITY })).toBeUndefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: 500_001 })).toBeUndefined();
+    expect(operation({ kind: 'fetchFullHistory', depth: '1000' })).toBeUndefined();
   });
 
   it('validates orphan branch creation requests', async () => {

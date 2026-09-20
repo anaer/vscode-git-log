@@ -108,6 +108,21 @@ const verticalScrollbarWidth = ((): number => {
   return width;
 })();
 
+/**
+ * Depth increments offered by the truncated-history banner. The primary button uses the smallest
+ * step so a single click stays cheap; the menu offers the larger ones. `--deepen` adds to the
+ * current depth, so every step is repeatable; the full-history entry falls back to `--unshallow`.
+ */
+const SHALLOW_DEPTH_STEP = 100;
+const SHALLOW_DEPTH_CHOICES: readonly number[] = [500, 1000];
+
+/**
+ * Upper bound used to clamp the depth menu before it has been measured, so it never opens past the
+ * bottom edge. The trigger is near the end of the pane, so the menu is the one popup most likely to
+ * be pushed off-screen. The real height is applied a frame later by `useLayoutEffect`.
+ */
+const SHALLOW_MENU_MAX_HEIGHT = 180;
+
 export type FolderDeleteState = {
   repositoryId: string;
   path: string;
@@ -202,6 +217,13 @@ function Workbench() {
   const [folderDelete, setFolderDelete] = useState<FolderDeleteState>();
 
   const [historyParentPicker, setHistoryParentPicker] = useState<HistoryParentPickerState>();
+  const [shallowMenuExpanded, setShallowMenuExpanded] = useState(false);
+  const [shallowMenuAnchor, setShallowMenuAnchor] = useState<{
+    right: number;
+    bottom: number;
+  }>();
+  const [shallowMenuPosition, setShallowMenuPosition] = useState<CSSProperties>();
+  const shallowMenuRef = useRef<HTMLDivElement>(null);
 
   const [stashDialog, setStashDialog] = useState<StashDialogState>();
   const [branchCleanup, setBranchCleanup] = useState<BranchCleanupDialogState>();
@@ -370,6 +392,39 @@ function Workbench() {
       window.removeEventListener('resize', updatePosition);
     };
   }, [contextMenu]);
+  // The depth menu opens downwards from the split button. Both axes are clamped to the viewport so
+  // it stays reachable when the banner sits near the bottom or right edge.
+  useLayoutEffect(() => {
+    const menu = shallowMenuRef.current;
+    if (!shallowMenuExpanded || !shallowMenuAnchor || !menu) return;
+    const updatePosition = (): void => {
+      const margin = 8;
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const bounds = menu.getBoundingClientRect();
+      // Fall back to the estimate until the first measurement lands.
+      const height = bounds.height > 0 ? bounds.height : SHALLOW_MENU_MAX_HEIGHT;
+      const width = bounds.width > 0 ? bounds.width : 180;
+      setShallowMenuPosition({
+        top: Math.min(
+          shallowMenuAnchor.bottom + 2,
+          Math.max(margin, viewportHeight - height - margin),
+        ),
+        right: Math.max(margin, Math.min(shallowMenuAnchor.right, viewportWidth - width - margin)),
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    if (typeof ResizeObserver === 'undefined') {
+      return () => window.removeEventListener('resize', updatePosition);
+    }
+    const observer = new ResizeObserver(updatePosition);
+    observer.observe(menu);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [shallowMenuExpanded, shallowMenuAnchor]);
   useEffect(() => {
     if (!window.matchMedia) return;
     const filesQuery = window.matchMedia('(max-width: 900px)');
@@ -397,6 +452,7 @@ function Workbench() {
       if (
         target.closest('.context-menu') ||
         target.closest('.filter-popover') ||
+        target.closest('.shallow-menu') ||
         // flatpickr mounts its calendar on document.body, so it is not a
         // descendant of the popover that owns the input. Without this the very
         // click that picks a date would register as an outside click and close
@@ -408,6 +464,11 @@ function Workbench() {
       }
       setContextMenu(undefined);
       setFilterPopup(undefined);
+      setShallowMenuExpanded(false);
+      // Drop the stale anchor so a reopened menu is positioned from the fresh trigger bounds
+      // rather than the previous click's geometry.
+      setShallowMenuAnchor(undefined);
+      setShallowMenuPosition(undefined);
     };
     window.addEventListener('pointerdown', dismissOpenMenus);
     return () => window.removeEventListener('pointerdown', dismissOpenMenus);
@@ -1839,12 +1900,74 @@ function Workbench() {
               <span className="shallow-status-text">
                 This is a shallow clone, so the history below is truncated.
               </span>
+              <div className="shallow-actions" role="group" aria-label="Fetch more history">
+                <button
+                  className="shallow-action-button"
+                  type="button"
+                  disabled={selectedOperationInFlight}
+                  title={`Fetch ${String(SHALLOW_DEPTH_STEP)} more commits (git fetch --deepen=${String(SHALLOW_DEPTH_STEP)})`}
+                  onClick={() => runOperation({ kind: 'fetchFullHistory', depth: SHALLOW_DEPTH_STEP })}
+                >
+                  {`Fetch ${String(SHALLOW_DEPTH_STEP)} more`}
+                </button>
+                <button
+                  className="shallow-more-button"
+                  type="button"
+                  data-popup-trigger="true"
+                  aria-label="More history fetch options"
+                  title="More history fetch options"
+                  aria-haspopup="menu"
+                  aria-expanded={shallowMenuExpanded}
+                  disabled={selectedOperationInFlight}
+                  onClick={(event) => {
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    setShallowMenuAnchor({
+                      right: Math.max(0, window.innerWidth - bounds.right),
+                      bottom: bounds.bottom,
+                    });
+                    setShallowMenuExpanded((current) => !current);
+                  }}
+                >
+                  <span aria-hidden="true">▾</span>
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {shallowMenuExpanded && shallowNoticeVisible ? (
+            <div
+              className="shallow-menu"
+              ref={shallowMenuRef}
+              role="menu"
+              aria-label="Fetch more history"
+              style={shallowMenuPosition}
+            >
+              {SHALLOW_DEPTH_CHOICES.map((depth) => (
+                <button
+                  className="shallow-menu-item"
+                  type="button"
+                  role="menuitem"
+                  key={depth}
+                  disabled={selectedOperationInFlight}
+                  title={`Add ${String(depth)} commits to the current history (git fetch --deepen=${String(depth)})`}
+                  onClick={() => {
+                    setShallowMenuExpanded(false);
+                    runOperation({ kind: 'fetchFullHistory', depth });
+                  }}
+                >
+                  {`+${depth.toLocaleString('en-US')} commits`}
+                </button>
+              ))}
+              <div className="shallow-menu-separator" role="separator" />
               <button
-                className="shallow-action-button"
+                className="shallow-menu-item"
                 type="button"
+                role="menuitem"
                 disabled={selectedOperationInFlight}
                 title="Download the complete history (git fetch --unshallow)"
-                onClick={() => runOperation({ kind: 'fetchFullHistory' })}
+                onClick={() => {
+                  setShallowMenuExpanded(false);
+                  runOperation({ kind: 'fetchFullHistory' });
+                }}
               >
                 Fetch full history
               </button>

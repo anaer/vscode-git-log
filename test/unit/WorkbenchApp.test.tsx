@@ -1389,7 +1389,7 @@ describe('WorkbenchApp', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
 
-  it('shows a truncated-history notice with a fetch-full-history action for shallow clones', () => {
+  it('sends a depth increment when the shallow notice primary action is pressed', () => {
     render(<App />);
     act(() => {
       window.dispatchEvent(
@@ -1424,13 +1424,113 @@ describe('WorkbenchApp', () => {
     postedMessages.length = 0;
 
     const note = screen.getByRole('note', { name: 'History is truncated' });
-    fireEvent.click(within(note).getByRole('button', { name: 'Fetch full history' }));
+    fireEvent.click(within(note).getByRole('button', { name: 'Fetch 100 more' }));
+
+    const operation = postedMessages.find((message) => message.type === 'runOperation');
+    if (!operation || operation.type !== 'runOperation') {
+      throw new Error('Expected a runOperation message to be posted.');
+    }
+    // `depth` is what makes the host build `--deepen` instead of `--unshallow`.
+    expect(operation.operation).toEqual({ kind: 'fetchFullHistory', depth: 100 });
+  });
+
+  it('offers depth increments and a full-history fallback from the shallow notice menu', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-shallow-menu',
+            repositories: [
+              {
+                id: 'repo-shallow',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                currentBranch: 'main',
+                isShallow: true,
+              },
+            ],
+            selectedRepositoryId: 'repo-shallow',
+            pageSize: 2,
+            maxCachedCommits: 3,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+    postedMessages.length = 0;
+
+    const note = screen.getByRole('note', { name: 'History is truncated' });
+    // The menu is not rendered until the tail button is pressed.
+    expect(screen.queryByRole('menu', { name: 'Fetch more history' })).toBeNull();
+
+    fireEvent.click(within(note).getByRole('button', { name: 'More history fetch options' }));
+
+    const menu = screen.getByRole('menu', { name: 'Fetch more history' });
+    // The full-history fallback omits `depth`, which selects `--unshallow` over `--deepen`.
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Fetch full history' }));
 
     const operation = postedMessages.find((message) => message.type === 'runOperation');
     if (!operation || operation.type !== 'runOperation') {
       throw new Error('Expected a runOperation message to be posted.');
     }
     expect(operation.operation).toEqual({ kind: 'fetchFullHistory' });
+    // Choosing an entry closes the menu.
+    expect(screen.queryByRole('menu', { name: 'Fetch more history' })).toBeNull();
+  });
+
+  it('sends the chosen depth from a non-default menu entry', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-shallow-choice',
+            repositories: [
+              {
+                id: 'repo-shallow',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                currentBranch: 'main',
+                isShallow: true,
+              },
+            ],
+            selectedRepositoryId: 'repo-shallow',
+            pageSize: 2,
+            maxCachedCommits: 3,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+    postedMessages.length = 0;
+
+    const note = screen.getByRole('note', { name: 'History is truncated' });
+    fireEvent.click(within(note).getByRole('button', { name: 'More history fetch options' }));
+    const menu = screen.getByRole('menu', { name: 'Fetch more history' });
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '+1,000 commits' }));
+
+    const operation = postedMessages.find((message) => message.type === 'runOperation');
+    if (!operation || operation.type !== 'runOperation') {
+      throw new Error('Expected a runOperation message to be posted.');
+    }
+    expect(operation.operation).toEqual({ kind: 'fetchFullHistory', depth: 1000 });
   });
 
   it('hides the truncated-history notice for complete clones', () => {

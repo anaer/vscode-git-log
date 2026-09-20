@@ -18,7 +18,8 @@
 | **mailmap** | Git 身份别名映射文件，把同一作者的不同姓名与邮箱归并为一个显示身份（见 ADR-0009） |
 | **作者身份改写** | 在提交对象重建闭环中重写 commit 的 `author` 与 `committer` 行，改变受影响 commit 的 oid（见 ADR-0009） |
 | **浅克隆** | 只含有限历史的仓库（`git clone --depth`），提交图会被截断（见 ADR-0010） |
-| **unshallow** | `git fetch --unshallow`，把浅克隆补全为完整历史（见 ADR-0010） |
+| **unshallow** | `git fetch --unshallow`，把浅克隆补全为完整历史；深度已越根提交时再调会报错（见 ADR-0010） |
+| **deepen** | `git fetch --deepen=N`，在当前深度上再增加 N 条历史，可反复调用逐步加深；越过根提交后 git 自动清除 shallow 边界（见 ADR-0010） |
 | **补丁导出** | 把对比结果写成 `.patch` 文件，二进制文件被排除（见 ADR-0011） |
 | **孤儿分支** | 通过 `git switch --orphan` 创建、无父提交且与既有历史无共同祖先的分支；首个提交前不存在对应 ref（见 ADR-0012） |
 | **未出生分支** | HEAD 已指向某分支但该分支尚无提交、因而无 ref 的状态（见 ADR-0012） |

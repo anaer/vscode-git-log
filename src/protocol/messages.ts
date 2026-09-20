@@ -21,6 +21,8 @@ const MAX_UNIX_SECONDS = 253_402_300_799;
 const MAX_COMMIT_RANGE = 100;
 const MAX_BRANCH_BATCH = 100;
 const MAX_COMMIT_MESSAGE_LENGTH = 100_000;
+/** Upper bound for a single `--deepen` increment, in commits. Shared with the extension host. */
+export const MAX_FETCH_DEPTH = 500_000;
 
 export interface LogFilters {
   text: string;
@@ -170,7 +172,7 @@ export type GitOperationRequest =
   | { kind: 'checkoutRemote'; name: string; startPoint: string }
   | { kind: 'deleteRemoteBranch'; remote: string; branch: string }
   | { kind: 'fetch'; remote?: string }
-  | { kind: 'fetchFullHistory'; remote?: string; refspecFrom?: string; refspecTo?: string }
+  | { kind: 'fetchFullHistory'; remote?: string; refspecFrom?: string; refspecTo?: string; depth?: number }
   | { kind: 'pull' }
   | { kind: 'push'; forceWithLease?: boolean; remote?: string; targetRef?: string }
   | { kind: 'publishBranch'; remote?: string; branch?: string }
@@ -605,6 +607,16 @@ function isRefspecDisplay(value: unknown): value is string {
   );
 }
 
+/**
+ * Bounds a `--deepen` increment. The ceiling keeps an accidental huge value from turning a
+ * partial fetch into a full clone, which is what the unbounded `--unshallow` action is for.
+ */
+function isFetchDepth(value: unknown): value is number {
+  return (
+    Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= MAX_FETCH_DEPTH
+  );
+}
+
 function isGitOperationRequest(value: unknown): value is GitOperationRequest {
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
   // Discriminate over the closed union so the default branch's `never` check
@@ -631,7 +643,8 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       return (
         (value.remote === undefined || isSafeGitToken(value.remote)) &&
         (value.refspecFrom === undefined || isRefspecDisplay(value.refspecFrom)) &&
-        (value.refspecTo === undefined || isRefspecDisplay(value.refspecTo))
+        (value.refspecTo === undefined || isRefspecDisplay(value.refspecTo)) &&
+        (value.depth === undefined || isFetchDepth(value.depth))
       );
     case 'pull':
       return true;

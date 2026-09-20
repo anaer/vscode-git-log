@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { normalize, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import type { GitOperationRequest } from '../protocol/messages';
+import { MAX_FETCH_DEPTH, type GitOperationRequest } from '../protocol/messages';
 import type { RepositorySummary } from '../shared/models';
 import { inspectRepository } from '../repositories/discoverRepositories';
 import { GitCommandError, type GitRunner } from './GitRunner';
@@ -39,6 +39,14 @@ function validateToken(value: string, label: string): string {
 
 function validateHash(value: string): string {
   if (!/^[0-9a-f]{4,64}$/iu.test(value)) throw new Error(`Invalid commit hash: ${value}`);
+  return value;
+}
+
+/** Mirrors the protocol's depth bound; the extension is the last line of defence before spawn. */
+function validateFetchDepth(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_FETCH_DEPTH) {
+    throw new Error(`Invalid fetch depth: ${String(value)}`);
+  }
   return value;
 }
 
@@ -129,11 +137,17 @@ export function buildOperationArguments(
       return operation.remote
         ? ['fetch', validateToken(operation.remote, 'remote')]
         : ['fetch', '--all', '--prune'];
-    case 'fetchFullHistory':
+    case 'fetchFullHistory': {
       if (!operation.remote) {
         throw new Error('Fetch remote must be resolved before execution.');
       }
-      return ['fetch', '--unshallow', validateToken(operation.remote, 'remote')];
+      const remote = validateToken(operation.remote, 'remote');
+      // `--deepen N` adds N commits to the current depth and is cumulative across calls. Once
+      // the increment reaches past the root, git drops the shallow boundary entirely.
+      return operation.depth === undefined
+        ? ['fetch', '--unshallow', remote]
+        : ['fetch', `--deepen=${String(validateFetchDepth(operation.depth))}`, remote];
+    }
     case 'pull':
       return ['pull'];
     case 'push':
@@ -314,6 +328,16 @@ export function getOperationConfirmation(
       operation.refspecTo !== undefined
         ? ` It will also change “remote.${operation.remote}.fetch” from “${operation.refspecFrom}” to “${operation.refspecTo}” so other branches become visible.`
         : '';
+    if (operation.depth !== undefined) {
+      return {
+        title: `Fetch ${String(operation.depth)} more commits?`,
+        detail:
+          `Repository “${repository.displayName}” will run “git fetch --deepen=${String(operation.depth)}” against remote “${operation.remote}” to add ${String(operation.depth)} more commits of history. ` +
+          `Existing history is kept, and this can be repeated. It contacts the remote and downloads history, so it may take a while.${refspecChange}`,
+        confirmLabel: `Fetch ${String(operation.depth)} More`,
+        destructive: true,
+      };
+    }
     return {
       title: 'Fetch full history?',
       detail:
@@ -887,7 +911,12 @@ export class GitOperationService {
         }
         if (operation.kind === 'fetchFullHistory') {
           const plan = await this.planFullHistory(freshRepository);
-          preparedOperation = { ...operation, ...plan };
+          preparedOperation =
+            operation.depth === undefined
+              ? { ...operation, ...plan }
+              : // A depth increment only deepens history. Broadening the fetch refspec would change
+                // which branches are visible, which is a separate concern the user did not ask for.
+                { ...operation, remote: plan.remote };
         }
         const confirmation = getOperationConfirmation(freshRepository, preparedOperation);
         if (confirmation) {
@@ -990,6 +1019,14 @@ export class GitOperationService {
             ...(batchDeletion.deletedRefs.length > 0
               ? { deletedRefs: batchDeletion.deletedRefs }
               : {}),
+          };
+        }
+        if (preparedOperation.kind === 'fetchFullHistory') {
+          return {
+            message:
+              preparedOperation.depth === undefined
+                ? 'Fetched the full history.'
+                : `Fetched ${String(preparedOperation.depth)} more commits.`,
           };
         }
         return { message: `${operation.kind} completed.` };
