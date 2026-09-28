@@ -4951,6 +4951,7 @@ describe('WorkbenchApp', () => {
     completeLatestOperation();
     fireEvent.contextMenu(remote);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Remote Branch…' }));
+    completeLatestOperation();
 
     fireEvent.contextMenu(screen.getByTitle('refs/remotes/origin/HEAD'));
     menu = screen.getByRole('menu', { name: 'ref actions' });
@@ -4964,6 +4965,14 @@ describe('WorkbenchApp', () => {
     expect(within(menu).queryByRole('menuitem', { name: 'Merge into Current' })).not.toBeInTheDocument();
     expect(within(menu).queryByRole('menuitem', { name: 'Rebase Current onto This' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Create Branch from…' })).toBeEnabled();
+    // A local tag is the one ref the panel cannot push on its own, so the menu offers it
+    // alongside checkout instead of leaving the tag stranded in the local repository.
+    expect(within(menu).getByRole('menuitem', { name: 'Push Tag' })).toBeEnabled();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Push Tag' }));
+    expect(postedMessages.at(-1)).toMatchObject({
+      type: 'runOperation',
+      operation: { kind: 'pushTag', name: 'v1' },
+    });
 
     fireEvent.contextMenu(screen.getByTitle(mainHash));
     const headMenu = screen.getByRole('menu', { name: 'head actions' });

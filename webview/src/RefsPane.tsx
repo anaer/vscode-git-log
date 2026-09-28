@@ -124,6 +124,9 @@ function RefTreeNodes({
       >
         <span className="ref-folder-chevron" aria-hidden="true" />
         <span className="ref-name">{node.name}</span>
+        {group.kind === 'tag' && ref.pushedTo?.length ? (
+          <span className="tag-remote">{ref.pushedTo.join(' ')}</span>
+        ) : null}
         {ref.ahead || ref.behind ? (
           <span className="tracking">
             {ref.ahead ? `↑${String(ref.ahead)}` : ''}
@@ -182,7 +185,7 @@ export function RefsPane({
 }: RefsPaneProps) {
   const visibleRefs = refSearch.trim()
     ? refs.filter((ref) =>
-        [ref.shortName, ref.fullName, ref.remote]
+        [ref.shortName, ref.fullName, ref.remote, ...(ref.pushedTo ?? [])]
           .filter((value): value is string => Boolean(value))
           .some((value) => value.toLocaleLowerCase().includes(refSearch.trim().toLocaleLowerCase())),
       )

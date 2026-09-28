@@ -9,6 +9,7 @@ import {
   type OperationConfirmation,
 } from '../git/GitOperationService';
 import { EMPTY_LOG_FILTERS } from '../git/logQuery';
+import { withPushedTags } from '../git/parsers/parseRefs';
 import type { GraphContinuationState } from '../shared/layoutCommitGraph';
 import type {
   ErrorRecoveryAction,
@@ -120,6 +121,11 @@ function mergeSelectedCommitFiles(files: readonly ChangedFile[]): ChangedFile[] 
 export class WorkbenchController {
   private repositories = new Map<string, RepositorySummary>();
   private refs = new Map<string, RefLabel[]>();
+  /**
+   * Cancels an in-flight remote tag probe. Separate from the log abort controller: the
+   * log load must not wait for the probe, but a newer load should still cancel it.
+   */
+  private pushedTagsAbortController: AbortController | undefined;
   private filters = new Map<string, LogFilters>();
   private selectedCommits = new Map<string, string>();
   private selectedCommitRanges = new Map<string, string[]>();
@@ -499,6 +505,7 @@ export class WorkbenchController {
     this.logAbortController?.abort();
     this.selectionAbortController?.abort();
     this.historyAbortController?.abort();
+    this.pushedTagsAbortController?.abort();
   }
 
   async openEditorHistory(request: EditorHistoryRequest): Promise<void> {
@@ -1117,6 +1124,8 @@ export class WorkbenchController {
       hasMore,
     });
 
+    this.enrichRefsWithPushedTags(repositoryId, cwd, refs, logSequence);
+
     if (replace && restoredSelectedHash && !abortController.signal.aborted) {
       await this.loadSelection(
         repositoryId,
@@ -1126,6 +1135,49 @@ export class WorkbenchController {
         restoredSelectedHashes,
       );
     }
+  }
+
+  /**
+   * Probes remotes for tag state and delivers it as a follow-up to `repositoryData`.
+   *
+   * Deliberately not awaited by the log load: the ref list is already on screen and
+   * waiting on `ls-remote` here would put the network back on the critical path.
+   *
+   * A superseded probe is stopped by cancelling the previous controller; the sequence
+   * and ref-identity checks below are defence in depth for a probe that answers anyway
+   * (a remote that ignores cancellation still must not overwrite a newer ref list).
+   */
+  private async enrichRefsWithPushedTags(
+    repositoryId: string,
+    cwd: string,
+    refs: RefLabel[],
+    logSequence: number,
+  ): Promise<void> {
+    // With no local tags there is nothing to attribute, so the remote round trip would
+    // answer a question nobody asked.
+    if (!refs.some((ref) => ref.kind === 'tag')) return;
+    const abortController = new AbortController();
+    this.pushedTagsAbortController?.abort();
+    this.pushedTagsAbortController = abortController;
+    let pushedTags: Map<string, readonly string[]>;
+    try {
+      pushedTags = await this.options.gitService.getPushedTags(cwd, abortController.signal);
+    } catch {
+      // Unreachable remotes are already reported per-remote by `getPushedTags`; a
+      // failure here means the probe itself could not run, and there is nothing to add.
+      return;
+    }
+    if (abortController.signal.aborted) return;
+    if (logSequence !== this.logRequestSequence) return;
+    if (repositoryId !== this.selectedRepositoryId) return;
+    if (this.refs.get(repositoryId) !== refs) return;
+    const enriched = withPushedTags(refs, pushedTags);
+    this.refs.set(repositoryId, enriched);
+    await this.options.postMessage({
+      type: 'pushedTagsLoaded',
+      repositoryId,
+      refs: enriched,
+    });
   }
 
   private async loadSelection(

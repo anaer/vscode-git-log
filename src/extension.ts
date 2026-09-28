@@ -315,7 +315,7 @@ export function activate(context: vscode.ExtensionContext): void {
     logLevel: configuration.get<'off' | 'error' | 'debug'>('debug.logLevel', 'debug'),
     onDiagnostic: (line) => output.appendLine(line),
   });
-  const gitService = new GitService(runner);
+  const gitService = new GitService(runner, (line) => output.appendLine(line));
   void gitService.cleanupStaleTemporaryDirectories();
   const lineBlameService = new LineBlameService(runner);
   const fileHistoryService = new FileHistoryService(runner);

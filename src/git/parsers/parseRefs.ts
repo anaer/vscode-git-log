@@ -50,6 +50,40 @@ function shortenUpstream(upstream: string): string {
   return upstream;
 }
 
+/**
+ * Folds remote tag state into an already-parsed ref list.
+ *
+ * Kept separate from `parseRefs` so the ref listing can ship without waiting on the
+ * network: the caller renders local refs first, then applies this once the remote probe
+ * returns. Only `tag` refs gain `pushedTo` — on a tracking ref, `remote` already means
+ * "tracked from", and a `pushedTo` there would be a different claim about the same word.
+ */
+export function withPushedTags(
+  refs: readonly RefLabel[],
+  pushedTags: ReadonlyMap<string, readonly string[]>,
+): RefLabel[] {
+  // One reverse index instead of scanning every remote's list for every tag ref: a
+  // repository with thousands of tags would otherwise cost O(tags²) here.
+  const remotesByTag = new Map<string, string[]>();
+  for (const [remote, tags] of pushedTags) {
+    for (const tag of tags) {
+      const remotes = remotesByTag.get(tag);
+      if (remotes) remotes.push(remote);
+      else remotesByTag.set(tag, [remote]);
+    }
+  }
+  return refs.map((ref) => {
+    if (ref.kind !== 'tag') return ref;
+    const remotes = remotesByTag.get(ref.shortName);
+    if (!remotes) {
+      const cleared = { ...ref };
+      delete cleared.pushedTo;
+      return cleared;
+    }
+    return { ...ref, pushedTo: remotes };
+  });
+}
+
 export function parseRefs(
   output: Buffer,
   currentBranch?: string,

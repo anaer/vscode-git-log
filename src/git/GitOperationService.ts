@@ -173,6 +173,15 @@ export function buildOperationArguments(
         validateToken(operation.remote, 'push remote'),
         validateToken(operation.branch, 'branch name'),
       ];
+    case 'pushTag':
+      if (!operation.remote) {
+        throw new Error('Push tag target must be resolved before execution.');
+      }
+      return [
+        'push',
+        validateToken(operation.remote, 'push remote'),
+        `refs/tags/${validateToken(operation.name, 'tag name')}`,
+      ];
     case 'cherryPick':
       return ['cherry-pick', validateHash(operation.hash)];
     case 'revert':
@@ -713,6 +722,41 @@ export class GitOperationService {
   }
 
   /**
+   * Resolves which remote a tag push should target.
+   *
+   * A tag has no upstream, so the `branch.*` config that `resolvePushPlan` relies on
+   * cannot apply. What remains is `remote.pushDefault`, then the conventional `origin`,
+   * then the only configured remote. Anything else is genuinely ambiguous and guessing
+   * would push a tag somewhere the user never chose.
+   */
+  private async resolvePushTagRemote(repository: RepositorySummary): Promise<{ remote: string }> {
+    if (repository.isBare) throw new Error(`Bare repository “${repository.displayName}” is read-only.`);
+    const cwd = fileURLToPath(repository.rootUri);
+    const pushDefault = await this.readConfig(cwd, 'remote.pushDefault');
+    if (pushDefault) {
+      if (pushDefault === '.') {
+        throw new Error('Pushing a tag to the local repository is not supported.');
+      }
+      return { remote: pushDefault };
+    }
+    const remotesResult = await this.runner.run(['remote'], { cwd, timeoutMs: 30_000 });
+    const remotes = remotesResult.stdout
+      .toString('utf8')
+      .split(/\r?\n/u)
+      .filter(Boolean);
+    if (remotes.includes('origin')) return { remote: 'origin' };
+    if (remotes.length === 1) {
+      const [only] = remotes;
+      if (only) return { remote: only };
+    }
+    throw new Error(
+      remotes.length === 0
+        ? 'This repository has no remote to push the tag to.'
+        : `Git could not resolve a unique push remote among ${remotes.join(', ')}; set “remote.pushDefault” to choose one.`,
+    );
+  }
+
+  /**
    * `git push --set-upstream` writes the upstream configuration, but it only creates the
    * `refs/remotes/<remote>/<branch>` ref when the remote's fetch refspec covers that branch.
    * Repositories cloned with `--single-branch` (and remotes whose fetch refspec was narrowed)
@@ -909,6 +953,10 @@ export class GitOperationService {
             branch: plan.branch,
           };
         }
+        if (operation.kind === 'pushTag') {
+          const plan = await this.resolvePushTagRemote(freshRepository);
+          preparedOperation = { ...operation, remote: plan.remote };
+        }
         if (operation.kind === 'fetchFullHistory') {
           const plan = await this.planFullHistory(freshRepository);
           preparedOperation =
@@ -1027,6 +1075,11 @@ export class GitOperationService {
               preparedOperation.depth === undefined
                 ? 'Fetched the full history.'
                 : `Fetched ${String(preparedOperation.depth)} more commits.`,
+          };
+        }
+        if (preparedOperation.kind === 'pushTag') {
+          return {
+            message: `Pushed tag ${preparedOperation.name} to ${preparedOperation.remote ?? ''}.`,
           };
         }
         return { message: `${operation.kind} completed.` };

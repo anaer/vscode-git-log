@@ -176,6 +176,7 @@ export type GitOperationRequest =
   | { kind: 'pull' }
   | { kind: 'push'; forceWithLease?: boolean; remote?: string; targetRef?: string }
   | { kind: 'publishBranch'; remote?: string; branch?: string }
+  | { kind: 'pushTag'; name: string; remote?: string }
   | { kind: 'cherryPick'; hash: string }
   | { kind: 'revert'; hash: string }
   | { kind: 'merge'; ref: string }
@@ -232,6 +233,15 @@ export type ExtensionToWebviewMessage =
       graphContinuation?: GraphContinuationState;
       replace: boolean;
       hasMore: boolean;
+    }
+  | {
+      /**
+       * Remote tag state, delivered after `repositoryData`. Refs ship locally first and
+       * are enriched here so the ref listing never waits on the network.
+       */
+      type: 'pushedTagsLoaded';
+      repositoryId: string;
+      refs: RefLabel[];
     }
   | {
       type: 'repositoriesUpdated';
@@ -658,6 +668,11 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       return (
         (value.remote === undefined || isSafeGitToken(value.remote)) &&
         (value.branch === undefined || isGitRefName(value.branch))
+      );
+    case 'pushTag':
+      return (
+        isGitRefName(value.name) &&
+        (value.remote === undefined || isSafeGitToken(value.remote))
       );
     case 'cherryPick':
     case 'revert':

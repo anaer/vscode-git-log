@@ -26,6 +26,28 @@ const LOG_FORMAT = '%x1e%H%x00%P%x00%aN%x00%aE%x00%at%x00%ct%x00%s%x00';
 const SEARCH_LOG_FORMAT = `${LOG_FORMAT}%B%x00`;
 const DETAILS_FORMAT = '%H%x00%P%x00%aN%x00%aE%x00%at%x00%cN%x00%cE%x00%ct%x00%B%x00%G?';
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{4,64}$/iu;
+/**
+ * `ls-remote` is the only way to learn which tags a remote carries, but it costs a network
+ * round trip. Measured against a GitHub HTTPS remote, a single `ls-remote --tags` ranged
+ * from ~2.9s to ~9.4s on an ordinary connection, so any cap in the low seconds fails the
+ * common case rather than the exceptional one. The probe is deliberately off the critical
+ * path (see `getPushedTags`), so waiting longer costs the user nothing: the ref list is
+ * already rendered while this runs in the background.
+ */
+const REMOTE_TAG_TIMEOUT_MS = 15_000;
+const LS_REMOTE_TAG_PATTERN = /^[0-9a-f]{4,64}\s+refs\/tags\/(.*)$/u;
+const PEELED_TAG_SUFFIX = '^{}';
+
+/**
+ * Tag name from one `ls-remote --tags` line, or undefined when the line is not a tag.
+ * Annotated tags yield two lines — the tag object and its peeled `^{}` form — which
+ * must collapse to one name.
+ */
+function readLsRemoteTagName(line: string): string | undefined {
+  const name = LS_REMOTE_TAG_PATTERN.exec(line)?.[1];
+  if (!name) return undefined;
+  return name.endsWith(PEELED_TAG_SUFFIX) ? name.slice(0, -PEELED_TAG_SUFFIX.length) : name;
+}
 const TEXT_SCAN_PAGE_SIZE = 5000;
 const TEXT_SCAN_MAX_STDOUT_BYTES = 64 * 1024 * 1024;
 const MAX_RETAINED_TEXT_MATCHES = 10_000;
@@ -530,8 +552,21 @@ export class GitService {
    * the same filters would otherwise race on `matches`/`scannedCommits` etc.
    */
   private readonly textSearchLocks = new Map<string, Promise<unknown>>();
+  /**
+   * Remotes already reported as unreachable during this session, keyed per repository.
+   *
+   * A remote that is merely slow is re-probed on every load, so without this the same
+   * line lands in the Output panel each time the workbench refreshes — noise that
+   * buries real diagnostics. The first report carries the information; repeats do not.
+   * Keyed per repository because one repository's `origin` failing says nothing about
+   * another repository's `origin`.
+   */
+  private readonly reportedRemoteTagFailures = new Set<string>();
 
-  constructor(private readonly runner: GitRunner) {}
+  constructor(
+    private readonly runner: GitRunner,
+    private readonly onDiagnostic?: (line: string) => void,
+  ) {}
 
   async cleanupStaleTemporaryDirectories(): Promise<void> {
     const entries = await readdir(tmpdir(), { withFileTypes: true }).catch(() => []);
@@ -635,6 +670,11 @@ export class GitService {
     return result.stdout.toString('utf8').trim();
   }
 
+  /**
+   * Local refs only — deliberately free of network access, because five callers depend
+   * on this being fast. Remote tag state is a separate, asynchronously delivered step;
+   * see `getPushedTags`.
+   */
   async getRefs(cwd: string, currentBranch?: string, signal?: AbortSignal): Promise<RefLabel[]> {
     const options = { cwd, ...(signal ? { signal } : {}), timeoutMs: 30_000 };
     const [result, remotes] = await Promise.all([
@@ -655,6 +695,89 @@ export class GitService {
       .split(/\r?\n/u)
       .filter(Boolean);
     return parseRefs(result.stdout, currentBranch, remoteNames);
+  }
+
+  /**
+   * Tags each configured remote advertises, keyed by remote name.
+   *
+   * Separate from `getRefs` because `ls-remote` is a network round trip: callers render
+   * local refs first, then fold this in with `withPushedTags`. Every remote is queried in
+   * parallel under its own short timeout, and a remote that cannot be reached is reported
+   * and omitted rather than silently treated as carrying no tags. Omitting a remote leaves
+   * its tags without a `pushedTo` entry, which reads as "not known to be pushed" rather than
+   * the false "local only" a silently failed probe would produce.
+   */
+  async getPushedTags(
+    cwd: string,
+    signal?: AbortSignal,
+  ): Promise<Map<string, readonly string[]>> {
+    const options = { cwd, ...(signal ? { signal } : {}), timeoutMs: 30_000 };
+    const remotes = await this.runner.run(['remote'], options);
+    const remoteNames = remotes.stdout
+      .toString('utf8')
+      .split(/\r?\n/u)
+      .filter(Boolean);
+    // Remotes are probed in parallel but collected positionally: building the map
+    // inside the callbacks would order it by which probe finished first, making
+    // `pushedTo` — and the label the user reads — vary between loads.
+    const probed = await Promise.all(
+      remoteNames.map((remote) => this.readRemoteTags(remote, options)),
+    );
+    const pushed = new Map<string, readonly string[]>();
+    for (const [index, remote] of remoteNames.entries()) {
+      const tags = probed[index];
+      if (tags) pushed.set(remote, tags);
+    }
+    return pushed;
+  }
+
+  /**
+   * Reports an unreachable remote once per repository per session.
+   *
+   * A slow remote is not a broken repository, so the wording says the label is simply
+   * missing rather than implying the refs themselves are wrong — the ref list the user is
+   * looking at stays correct either way. Repeats stay silent via `reportedRemoteTagFailures`.
+   */
+  private reportRemoteTagFailure(cwd: string, remote: string, error: unknown): void {
+    const key = `${cwd}\0${remote}`;
+    if (this.reportedRemoteTagFailures.has(key)) return;
+    this.reportedRemoteTagFailures.add(key);
+    const detail =
+      error instanceof GitCommandError && error.timedOut
+        ? `did not answer within ${String(REMOTE_TAG_TIMEOUT_MS)}ms`
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    this.onDiagnostic?.(
+      `[refs] remote ${remote} ${detail}; its tags cannot be marked as pushed. ` +
+        'The ref list is unaffected. Reported once per remote per repository.',
+    );
+  }
+
+  /** Tag names a single remote advertises, or undefined when it could not be reached. */
+  private async readRemoteTags(
+    remote: string,
+    options: { cwd: string; signal?: AbortSignal },
+  ): Promise<readonly string[] | undefined> {
+    const result = await this.runner
+      .run(['ls-remote', '--tags', '--', remote], {
+        ...options,
+        timeoutMs: REMOTE_TAG_TIMEOUT_MS,
+      })
+      .catch((error: unknown) => {
+        // A cancelled probe is a superseded load, not a remote fault. Reporting it would
+        // log a false failure and poison the dedup set, silencing a later real failure.
+        if (error instanceof GitCommandError && error.cancelled) return undefined;
+        this.reportRemoteTagFailure(options.cwd, remote, error);
+        return undefined;
+      });
+    if (!result) return undefined;
+    const tags = new Set<string>();
+    for (const line of result.stdout.toString('utf8').split(/\r?\n/u)) {
+      const name = readLsRemoteTagName(line);
+      if (name) tags.add(name);
+    }
+    return [...tags];
   }
 
   async getContributors(cwd: string, signal?: AbortSignal): Promise<Contributor[]> {

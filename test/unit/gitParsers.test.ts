@@ -79,6 +79,65 @@ describe('Git machine-readable parsers', () => {
     expect(ref).not.toHaveProperty('remote');
   });
 
+  it('records every remote a tag is published to', async () => {
+    const { parseRefs, withPushedTags } = await import('../../src/git/parsers/parseRefs');
+    const output = Buffer.from(
+      [
+        'refs/tags/v1.0.0\0tag-object\0cccccccc\0\0\0\n',
+        'refs/tags/v2.0.0\0tag-object\0dddddddd\0\0\0\n',
+      ].join(''),
+    );
+
+    const refs = withPushedTags(
+      parseRefs(output, undefined, ['origin', 'upstream']),
+      new Map([
+        ['origin', ['v1.0.0']],
+        ['upstream', ['v1.0.0', 'v2.0.0']],
+      ]),
+    );
+
+    expect(refs[0]).toMatchObject({ kind: 'tag', shortName: 'v1.0.0', pushedTo: ['origin', 'upstream'] });
+    expect(refs[1]).toMatchObject({ kind: 'tag', shortName: 'v2.0.0', pushedTo: ['upstream'] });
+  });
+
+  it('leaves a tag unpublished when no probed remote carries it', async () => {
+    const { parseRefs, withPushedTags } = await import('../../src/git/parsers/parseRefs');
+    const output = Buffer.from('refs/tags/v1.0.0\0tag-object\0cccccccc\0\0\0\n');
+
+    const [ref] = withPushedTags(
+      parseRefs(output, undefined, ['origin']),
+      new Map([['origin', ['v0.9.0']]]),
+    );
+
+    expect(ref).toMatchObject({ kind: 'tag', shortName: 'v1.0.0' });
+    expect(ref).not.toHaveProperty('pushedTo');
+  });
+
+  it('does not mark a remote tracking ref as a pushed tag sharing its name', async () => {
+    const { parseRefs, withPushedTags } = await import('../../src/git/parsers/parseRefs');
+    const output = Buffer.from('refs/remotes/origin/v1.0.0\0aaaaaaaa\0\0\0\n');
+
+    const [ref] = withPushedTags(
+      parseRefs(output, undefined, ['origin']),
+      new Map([['origin', ['v1.0.0']]]),
+    );
+
+    expect(ref).toMatchObject({ kind: 'remote', shortName: 'origin/v1.0.0' });
+    expect(ref).not.toHaveProperty('pushedTo');
+  });
+
+  it('clears a stale pushedTo when a later probe no longer reports the tag', async () => {
+    const { parseRefs, withPushedTags } = await import('../../src/git/parsers/parseRefs');
+    const [tag] = parseRefs(Buffer.from('refs/tags/v1.0.0\0tag-object\0cccccccc\0\0\0\n'));
+    if (!tag) throw new Error('expected the fixture tag to parse');
+
+    const pushed = withPushedTags([tag], new Map([['origin', ['v1.0.0']]]));
+    const cleared = withPushedTags(pushed, new Map());
+
+    expect(pushed[0]).toMatchObject({ pushedTo: ['origin'] });
+    expect(cleared[0]).not.toHaveProperty('pushedTo');
+  });
+
   it('marks a local branch whose upstream is gone and leaves other tracking fields intact', async () => {
     const { parseRefs } = await import('../../src/git/parsers/parseRefs');
     const output = Buffer.from(

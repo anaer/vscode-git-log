@@ -766,6 +766,18 @@ export function ContextMenu(props: ContextMenuProps) {
                     role="menuitem"
                     onClick={() =>
                       runOperation(
+                        { kind: 'pushTag', name: contextMenu.ref.shortName },
+                        contextMenu.repositoryId,
+                      )
+                    }
+                  >
+                    Push Tag
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() =>
+                      runOperation(
                         { kind: 'deleteTag', name: contextMenu.ref.shortName },
                         contextMenu.repositoryId,
                       )

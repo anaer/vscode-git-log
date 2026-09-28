@@ -1628,6 +1628,95 @@ describe('GitOperationService', () => {
     await expect(git(remote, 'show-ref', '--verify', 'refs/heads/other')).rejects.toBeDefined();
   });
 
+  it('maps a tag push to an explicit tag refspec', async () => {
+    const { buildOperationArguments } = await import('../../src/git/GitOperationService');
+
+    expect(
+      buildOperationArguments({ kind: 'pushTag', remote: 'origin', name: 'v1.0.0' }),
+    ).toEqual(['push', 'origin', 'refs/tags/v1.0.0']);
+    expect(() => buildOperationArguments({ kind: 'pushTag', name: 'v1.0.0' })).toThrow(
+      'Push tag target must be resolved before execution.',
+    );
+  });
+
+  it('treats pushing a tag as a non-destructive operation', () => {
+    expect(getOperationConfirmation(repository, { kind: 'pushTag', name: 'v1.0.0' })).toBeUndefined();
+  });
+
+  it('pushes a tag to origin', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-pushtag-origin-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'tag', 'v1.0.0');
+    const head = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'pushTag', name: 'v1.0.0' });
+
+    expect(await git(remote, 'rev-parse', 'refs/tags/v1.0.0')).toBe(head);
+  });
+
+  it('pushes a tag to the only configured remote even when it is not origin', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-pushtag-single-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'upstream', remote);
+    await git(fixture.path, 'tag', 'v1.0.0');
+    const head = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'pushTag', name: 'v1.0.0' });
+
+    expect(await git(remote, 'rev-parse', 'refs/tags/v1.0.0')).toBe(head);
+  });
+
+  it('refuses to push a tag when the repository has no remote', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-pushtag-none-');
+    await git(fixture.path, 'tag', 'v1.0.0');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(fixture.summary, { kind: 'pushTag', name: 'v1.0.0' }),
+    ).rejects.toThrow(/no remote to push the tag/u);
+  });
+
+  it('refuses to guess among several non-origin remotes when pushing a tag', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-pushtag-multi-');
+    const upstream = await createBareRemote();
+    const fork = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'upstream', upstream);
+    await git(fixture.path, 'remote', 'add', 'fork', fork);
+    await git(fixture.path, 'tag', 'v1.0.0');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(fixture.summary, { kind: 'pushTag', name: 'v1.0.0' }),
+    ).rejects.toThrow(/unique push remote/u);
+    await expect(git(upstream, 'show-ref', '--verify', 'refs/tags/v1.0.0')).rejects.toBeDefined();
+    await expect(git(fork, 'show-ref', '--verify', 'refs/tags/v1.0.0')).rejects.toBeDefined();
+  });
+
+  it('honours remote.pushDefault when pushing a tag', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-pushtag-pushdefault-');
+    const origin = await createBareRemote();
+    const second = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', origin);
+    await git(fixture.path, 'remote', 'add', 'second', second);
+    await git(fixture.path, 'config', 'remote.pushDefault', 'second');
+    await git(fixture.path, 'tag', 'v1.0.0');
+    const head = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await service.run(fixture.summary, { kind: 'pushTag', name: 'v1.0.0' });
+
+    expect(await git(second, 'rev-parse', 'refs/tags/v1.0.0')).toBe(head);
+    await expect(git(origin, 'show-ref', '--verify', 'refs/tags/v1.0.0')).rejects.toBeDefined();
+  });
+
   it('materializes the remote tracking ref when the fetch refspec does not cover the branch', async () => {
     const { GitOperationService } = await import('../../src/git/GitOperationService');
     const fixture = await createFixtureRepository('git-publish-narrow-');
@@ -1755,6 +1844,19 @@ describe('GitOperationService', () => {
     expect(forced.message).toBe('Deleted 1 branch.');
     expect(forced.deletedRefs).toEqual(['refs/heads/unmerged-branch']);
     expect(await git(fixture.path, 'branch', '--list', 'unmerged-branch')).toBe('');
+  });
+
+  it('reports a tag push with a readable message instead of the raw operation kind', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-pushtag-message-');
+    const remote = await createBareRemote();
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'tag', 'v1.0.0');
+    const service = new GitOperationService(new RealGitRunner());
+
+    const result = await service.run(fixture.summary, { kind: 'pushTag', name: 'v1.0.0' });
+
+    expect(result.message).toBe('Pushed tag v1.0.0 to origin.');
   });
 
   it('aborts the whole batch when the confirmation is declined', async () => {

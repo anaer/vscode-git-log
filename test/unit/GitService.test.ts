@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GitRunner } from '../../src/git/GitRunner';
+import { GitCommandError, GitRunner, type GitRunOptions } from '../../src/git/GitRunner';
 import { GitService } from '../../src/git/GitService';
+import { withPushedTags } from '../../src/git/parsers/parseRefs';
 import { layoutCommitGraph } from '../../src/shared/layoutCommitGraph';
 import { extractLineHistoryContextPatch } from '../../src/git/lineHistoryContext';
 import { EMPTY_LOG_FILTERS } from '../../src/git/logQuery';
@@ -441,6 +442,182 @@ describe('GitService', () => {
         remote: 'team/origin',
       }),
     );
+  });
+
+  it('serves local refs without contacting any remote, then enriches them', async () => {
+    const remote = await mkdtemp(join(tmpdir(), 'git-log-workbench-tag-remote-'));
+    temporaryDirectories.push(remote);
+    await git(remote, 'init', '--bare');
+    const repository = await createHistoryFixture();
+    await git(repository, 'remote', 'add', 'origin', remote);
+    await git(repository, 'tag', 'v3.0.0');
+    await git(repository, 'tag', '-a', 'v4.0.0', '-m', 'annotated');
+    await git(
+      repository,
+      'push',
+      'origin',
+      'refs/tags/v3.0.0:refs/tags/v3.0.0',
+      'refs/tags/v4.0.0:refs/tags/v4.0.0',
+    );
+    await git(repository, 'tag', 'v5.0.0');
+
+    const service = new GitService(new GitRunner());
+
+    // Phase one: local refs alone, with no remote state attached.
+    const local = await service.getRefs(repository, 'main');
+    expect(local.find((ref) => ref.shortName === 'v3.0.0')).not.toHaveProperty('pushedTo');
+
+    // Phase two: the remote probe supplies the state.
+    const refs = withPushedTags(local, await service.getPushedTags(repository));
+    const pushed = refs.find((ref) => ref.shortName === 'v3.0.0');
+    const annotated = refs.find((ref) => ref.shortName === 'v4.0.0');
+    const localOnly = refs.find((ref) => ref.shortName === 'v5.0.0');
+
+    // v4.0.0 is annotated, so the remote advertises it twice: once as the tag
+    // object and once peeled with `^{}`. Both lines must resolve to one tag.
+    expect(pushed).toMatchObject({ kind: 'tag', pushedTo: ['origin'] });
+    expect(annotated).toMatchObject({ kind: 'tag', pushedTo: ['origin'] });
+    expect(localOnly).toMatchObject({ kind: 'tag' });
+    expect(localOnly).not.toHaveProperty('pushedTo');
+  });
+
+  it('attributes a tag to every remote that carries it, not just the first', async () => {
+    const origin = await mkdtemp(join(tmpdir(), 'git-log-workbench-tag-origin-'));
+    const mirror = await mkdtemp(join(tmpdir(), 'git-log-workbench-tag-mirror-'));
+    temporaryDirectories.push(origin, mirror);
+    await git(origin, 'init', '--bare');
+    await git(mirror, 'init', '--bare');
+    const repository = await createHistoryFixture();
+    await git(repository, 'remote', 'add', 'upstream', origin);
+    await git(repository, 'remote', 'add', 'origin', mirror);
+    await git(repository, 'tag', 'v2.0.0');
+    await git(repository, 'push', 'upstream', 'refs/tags/v1.0.0:refs/tags/v1.0.0');
+    await git(repository, 'push', 'origin', 'refs/tags/v1.0.0:refs/tags/v1.0.0');
+    await git(repository, 'push', 'origin', 'refs/tags/v2.0.0:refs/tags/v2.0.0');
+
+    const service = new GitService(new GitRunner());
+    const refs = withPushedTags(
+      await service.getRefs(repository, 'main'),
+      await service.getPushedTags(repository),
+    );
+    const both = refs.find((ref) => ref.shortName === 'v1.0.0');
+    const originOnly = refs.find((ref) => ref.shortName === 'v2.0.0');
+
+    // `origin` is listed before `upstream` in `git remote` output, so keying off the
+    // first configured remote would drop upstream and mislabel v2.0.0.
+    expect(both).toMatchObject({ kind: 'tag', pushedTo: ['origin', 'upstream'] });
+    expect(originOnly).toMatchObject({ kind: 'tag', pushedTo: ['origin'] });
+  });
+
+  it('leaves tags unmarked and reports a remote failure once per session', async () => {
+    const reachable = await mkdtemp(join(tmpdir(), 'git-log-workbench-tag-reachable-'));
+    temporaryDirectories.push(reachable);
+    await git(reachable, 'init', '--bare');
+    const repository = await createHistoryFixture();
+    await git(repository, 'remote', 'add', 'origin', reachable);
+    await git(repository, 'remote', 'add', 'broken', join(reachable, 'missing.git'));
+    await git(repository, 'push', 'origin', 'refs/tags/v1.0.0:refs/tags/v1.0.0');
+
+    const diagnostics: string[] = [];
+    const service = new GitService(new GitRunner(), (line) => diagnostics.push(line));
+
+    const first = withPushedTags(
+      await service.getRefs(repository, 'main'),
+      await service.getPushedTags(repository),
+    );
+    const tag = first.find((ref) => ref.shortName === 'v1.0.0');
+
+    // The healthy remote still resolves; the broken one is reported, not swallowed.
+    expect(tag).toMatchObject({ kind: 'tag', pushedTo: ['origin'] });
+    expect(diagnostics).toEqual([
+      expect.stringContaining('[refs] remote broken'),
+    ]);
+    expect(diagnostics[0]).toContain('The ref list is unaffected');
+
+    // Re-probing a slow remote happens on every load, so the same line must not
+    // accumulate in the Output panel.
+    await service.getPushedTags(repository);
+    expect(diagnostics).toHaveLength(1);
+  });
+
+  it('stays silent when a probe is cancelled, and still reports a later real failure', async () => {
+    const reachable = await mkdtemp(join(tmpdir(), 'git-log-workbench-tag-cancel-'));
+    temporaryDirectories.push(reachable);
+    await git(reachable, 'init', '--bare');
+    const repository = await createHistoryFixture();
+    await git(repository, 'remote', 'add', 'origin', reachable);
+    await git(repository, 'remote', 'add', 'broken', join(reachable, 'missing.git'));
+    await git(repository, 'push', 'origin', 'refs/tags/v1.0.0:refs/tags/v1.0.0');
+
+    const diagnostics: string[] = [];
+    const runner = new GitRunner();
+    const realRun = runner.run.bind(runner);
+    runner.run = (args: string[], options: GitRunOptions) => {
+      if (args[0] === 'ls-remote') {
+        return Promise.reject(
+          new GitCommandError(
+            'cancelled',
+            args,
+            options.cwd,
+            null,
+            Buffer.alloc(0),
+            Buffer.alloc(0),
+            true,
+            false,
+          ),
+        );
+      }
+      return realRun(args, options);
+    };
+    const service = new GitService(runner, (line) => diagnostics.push(line));
+
+    // A superseded load cancels the in-flight probe; that is not a remote fault.
+    await service.getPushedTags(repository);
+    expect(diagnostics).toEqual([]);
+
+    // Cancelling must not poison the dedup set: a real failure is still reported.
+    runner.run = realRun;
+    await service.getPushedTags(repository);
+    expect(diagnostics).toEqual([expect.stringContaining('[refs] remote broken')]);
+  });
+
+  it('reports the same remote name failing in a different repository', async () => {
+    const diagnostics: string[] = [];
+    const service = new GitService(new GitRunner(), (line) => diagnostics.push(line));
+
+    for (const name of ['first', 'second']) {
+      const reachable = await mkdtemp(join(tmpdir(), `git-log-workbench-tag-xrepo-${name}-`));
+      temporaryDirectories.push(reachable);
+      await git(reachable, 'init', '--bare');
+      const repository = await createHistoryFixture();
+      await git(repository, 'remote', 'add', 'origin', join(reachable, 'missing.git'));
+      await service.getPushedTags(repository);
+    }
+
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics[0]).toContain('remote origin');
+    expect(diagnostics[1]).toContain('remote origin');
+  });
+
+  it('resolves pushed tags without spawning ls-remote for a repository with no remotes', async () => {
+    const repository = await createHistoryFixture();
+    const runner = new GitRunner();
+    const commands: string[][] = [];
+    const original = runner.run.bind(runner);
+    runner.run = (args: string[], options: GitRunOptions) => {
+      commands.push(args);
+      return original(args, options);
+    };
+
+    const service = new GitService(runner);
+    const refs = withPushedTags(
+      await service.getRefs(repository, 'main'),
+      await service.getPushedTags(repository),
+    );
+
+    expect(await service.getPushedTags(repository)).toEqual(new Map());
+    expect(refs.every((ref) => !('pushedTo' in ref))).toBe(true);
+    expect(commands.filter((args) => args.includes('ls-remote'))).toEqual([]);
   });
 
   it('leaves overlapping remote tracking namespaces unowned', async () => {

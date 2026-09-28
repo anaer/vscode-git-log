@@ -218,6 +218,13 @@ export function createMessageProcessor(
             : current,
         );
         break;
+      case 'pushedTagsLoaded':
+        // Ref-only follow-up to `repositoryData`. Guarded by the accepted repository so a
+        // probe that resolves after the user switched repositories cannot repopulate the
+        // ref tree from a repository that is no longer on screen.
+        if (race.acceptedRepositoryId !== message.repositoryId) break;
+        setState((current) => ({ ...current, refs: message.refs }));
+        break;
       case 'repositoryData': {
         if (race.acceptedRepositoryId !== message.repositoryId) {
           race.requestById.delete(message.requestId);

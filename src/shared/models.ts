@@ -27,10 +27,17 @@ export interface RefLabel {
   ahead: number;
   behind: number;
   isCurrent: boolean;
+  /** The remote a `remote`-kind ref is tracked from. Unset when the owning remote is ambiguous. */
   remote?: string;
   upstream?: string;
   /** True when the configured upstream no longer exists (`%(upstream:track)` reported `[gone]`). */
   gone?: boolean;
+  /**
+   * Remotes that advertise this tag, for `tag`-kind refs only. Distinct from `remote`,
+   * which on a tracking ref names the remote it is tracked from. Unset when no configured
+   * remote could be reached, so an empty list never masquerades as "local only".
+   */
+  pushedTo?: string[];
 }
 
 /** A local branch offered for deletion by the batch branch-cleanup dialog. */

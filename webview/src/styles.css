@@ -1080,6 +1080,12 @@ select:focus-visible,
   font-size: 11px;
 }
 
+.tag-remote {
+  margin-left: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
 .log-pane {
   display: grid;
   grid-column: 3;

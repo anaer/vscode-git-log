@@ -49,6 +49,168 @@ async function createRepository(): Promise<string> {
 }
 
 describe('WorkbenchController', () => {
+  it('posts local refs first, then delivers remote tag state as a follow-up', async () => {
+    const repository = await createRepository();
+    await execFileAsync('git', ['tag', 'v1.0.0'], { cwd: repository });
+
+    const runner = new GitRunner();
+    const realService = new GitService(runner);
+    let releaseProbe: (() => void) | undefined;
+    const probeGate = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    let probeStarted: (() => void) | undefined;
+    const probeEntered = new Promise<void>((resolve) => {
+      probeStarted = resolve;
+    });
+    const gitService = {
+      getRefs: realService.getRefs.bind(realService),
+      getLog: realService.getLog.bind(realService),
+      getContributors: realService.getContributors.bind(realService),
+      async getPushedTags(...args: Parameters<GitService['getPushedTags']>) {
+        probeStarted?.();
+        await probeGate;
+        return realService.getPushedTags(...args);
+      },
+    } as unknown as GitService;
+
+    const messages: ExtensionToWebviewMessage[] = [];
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService,
+      gitRunner: runner,
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: {
+        refsWidth: 220,
+        filesWidth: 320,
+        detailsHeight: 156,
+        filesViewMode: 'tree',
+      },
+      postMessage(message: ExtensionToWebviewMessage) {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+    });
+
+    await controller.handleMessage({ type: 'ready', requestId: 'pushed-tags-ready' });
+    const loaded = controller.handleMessage({
+      type: 'requestLogPage',
+      requestId: 'pushed-tags-log',
+      repositoryId: (messages.find((message) => message.type === 'initialize') as
+        | Extract<ExtensionToWebviewMessage, { type: 'initialize' }>
+        | undefined)?.repositories[0]?.id as string,
+      skip: 0,
+    });
+
+    // The ref list must reach the webview while the probe is still blocked, carrying no
+    // remote state — that is the whole point of splitting the load in two.
+    await vi.waitFor(() => {
+      expect(messages.some((message) => message.type === 'repositoryData')).toBe(true);
+    });
+    const repositoryData = messages.find((message) => message.type === 'repositoryData');
+    if (repositoryData?.type !== 'repositoryData') throw new Error('expected repositoryData');
+    expect(repositoryData.refs.every((ref) => !('pushedTo' in ref))).toBe(true);
+    expect(messages.some((message) => message.type === 'pushedTagsLoaded')).toBe(false);
+
+    await probeEntered;
+    releaseProbe?.();
+    await loaded;
+
+    await vi.waitFor(() => {
+      expect(messages.some((message) => message.type === 'pushedTagsLoaded')).toBe(true);
+    });
+    const enrichment = messages.find((message) => message.type === 'pushedTagsLoaded');
+    if (enrichment?.type !== 'pushedTagsLoaded') throw new Error('expected pushedTagsLoaded');
+    // No remote is configured here, so the follow-up must not invent any.
+    expect(enrichment.refs.every((ref) => !('pushedTo' in ref))).toBe(true);
+  });
+
+  it('drops a remote tag probe that resolves after the log was reloaded', async () => {
+    const repository = await createRepository();
+    await execFileAsync('git', ['tag', 'v1.0.0'], { cwd: repository });
+
+    const runner = new GitRunner();
+    const realService = new GitService(runner);
+    const releases: Array<() => void> = [];
+    const gitService = {
+      getRefs: realService.getRefs.bind(realService),
+      getLog: realService.getLog.bind(realService),
+      getContributors: realService.getContributors.bind(realService),
+      getPushedTags() {
+        return new Promise<Map<string, readonly string[]>>((resolve) => {
+          // Models a slow remote that answers regardless of cancellation. The
+          // controller's own guards — not the abort signal — must be what rejects the
+          // superseded answer, so this deliberately resolves even for a dead signal.
+          releases.push(() => resolve(new Map([['origin', ['v1.0.0']]])));
+        });
+      },
+    } as unknown as GitService;
+
+    const messages: ExtensionToWebviewMessage[] = [];
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService,
+      gitRunner: runner,
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: {
+        refsWidth: 220,
+        filesWidth: 320,
+        detailsHeight: 156,
+        filesViewMode: 'tree',
+      },
+      postMessage(message: ExtensionToWebviewMessage) {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+    });
+
+    await controller.handleMessage({ type: 'ready', requestId: 'stale-probe-ready' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    if (initialized?.type !== 'initialize') throw new Error('expected initialize');
+    const repositoryId = initialized.repositories[0]?.id;
+    if (!repositoryId) throw new Error('expected a repository');
+
+    const first = controller.handleMessage({
+      type: 'requestLogPage',
+      requestId: 'stale-probe-first',
+      repositoryId,
+      skip: 0,
+    });
+    await vi.waitFor(() => {
+      expect(releases).toHaveLength(1);
+    });
+
+    // A second load supersedes the first; its probe replaces the pending one.
+    void controller.handleMessage({
+      type: 'requestLogPage',
+      requestId: 'stale-probe-second',
+      repositoryId,
+      skip: 0,
+    });
+    await vi.waitFor(() => {
+      expect(releases).toHaveLength(2);
+    });
+
+    messages.length = 0;
+    // The current probe answers first and must publish.
+    releases[1]?.();
+    await vi.waitFor(() => {
+      expect(messages.filter((message) => message.type === 'pushedTagsLoaded')).toHaveLength(1);
+    });
+
+    // The superseded probe answers last, and must not add a second, stale update.
+    releases[0]?.();
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(messages.filter((message) => message.type === 'pushedTagsLoaded')).toHaveLength(1);
+  });
+
   it('keeps a newly opened folder history when repository initialization finishes later', async () => {
     const repository = await createRepository();
     await mkdir(join(repository, 'src'));
