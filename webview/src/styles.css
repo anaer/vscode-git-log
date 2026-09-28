@@ -413,7 +413,10 @@ select:focus-visible,
   min-width: 180px;
   padding: 4px 0;
   border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
-  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  background: var(
+    --vscode-menu-background,
+    var(--vscode-editorWidget-background)
+  );
   color: var(--vscode-menu-foreground, var(--vscode-foreground));
   box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgb(0 0 0 / 36%));
 }
@@ -431,8 +434,14 @@ select:focus-visible,
 
 .shallow-menu-item:hover:not(:disabled),
 .shallow-menu-item:focus-visible {
-  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
-  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
+  background: var(
+    --vscode-menu-selectionBackground,
+    var(--vscode-list-activeSelectionBackground)
+  );
+  color: var(
+    --vscode-menu-selectionForeground,
+    var(--vscode-list-activeSelectionForeground)
+  );
 }
 
 .shallow-menu-item:disabled {
@@ -443,7 +452,10 @@ select:focus-visible,
 .shallow-menu-separator {
   height: 1px;
   margin: 4px 0;
-  background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border));
+  background: var(
+    --vscode-menu-separatorBackground,
+    var(--vscode-panel-border)
+  );
 }
 
 .filter-popover {
@@ -742,9 +754,15 @@ select:focus-visible,
 .flatpickr-day.prevMonthDay.inRange:hover,
 .flatpickr-day.nextMonthDay.inRange:hover {
   border-color: transparent;
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  background: var(
+    --vscode-list-activeSelectionBackground,
+    var(--vscode-list-hoverBackground)
+  );
   box-shadow: none;
-  color: var(--vscode-list-activeSelectionForeground, var(--vscode-menu-foreground));
+  color: var(
+    --vscode-list-activeSelectionForeground,
+    var(--vscode-menu-foreground)
+  );
 }
 
 .flatpickr-day.flatpickr-disabled,
@@ -901,7 +919,10 @@ select:focus-visible,
 }
 
 .pane-heading-action:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(
+    --vscode-toolbar-hoverBackground,
+    var(--vscode-list-hoverBackground)
+  );
 }
 
 .pane-heading-action:disabled {
@@ -976,7 +997,7 @@ select:focus-visible,
   background: var(--vscode-list-hoverBackground);
 }
 
-.ref-item[title^='refs/heads/'] {
+.ref-item[title^="refs/heads/"] {
   cursor: pointer;
 }
 
@@ -1009,13 +1030,16 @@ select:focus-visible,
 }
 
 .ref-tree-directory::before {
-  content: '';
+  content: "";
   position: absolute;
   left: calc(var(--indent-guide-left, 0px) + 8px);
   top: 26px;
   bottom: 0;
   width: 1px;
-  background: var(--vscode-tree-inactiveIndentGuidesStroke, rgba(128, 128, 128, 0.3));
+  background: var(
+    --vscode-tree-inactiveIndentGuidesStroke,
+    rgba(128, 128, 128, 0.3)
+  );
 }
 
 .ref-folder-row,
@@ -1245,7 +1269,11 @@ select:focus-visible,
 }
 
 .commit-row.head-row:not(.selected) {
-  background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground) 9%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-gitDecoration-addedResourceForeground) 9%,
+    transparent
+  );
 }
 
 .commit-row.filter-context:not(.selected) {
@@ -1324,7 +1352,11 @@ select:focus-visible,
 }
 
 .details-actions .details-stop-button:hover {
-  background: color-mix(in srgb, var(--vscode-inputValidation-warningBackground, #352a05) 85%, var(--vscode-inputValidation-warningForeground, #ffffff));
+  background: color-mix(
+    in srgb,
+    var(--vscode-inputValidation-warningBackground, #352a05) 85%,
+    var(--vscode-inputValidation-warningForeground, #ffffff)
+  );
 }
 
 .details-actions .details-placement-button {
@@ -1350,7 +1382,7 @@ select:focus-visible,
 
 .pane-resizer::after {
   position: absolute;
-  content: '';
+  content: "";
   background: transparent;
 }
 
@@ -1422,7 +1454,11 @@ select:focus-visible,
   inset: 0;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--vscode-editor-background) 55%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-background) 55%,
+    transparent
+  );
 }
 
 .operation-dialog {
@@ -1533,11 +1569,14 @@ select:focus-visible,
   cursor: pointer;
 }
 
-.stash-checkbox input[type='checkbox'] {
+.stash-checkbox input[type="checkbox"] {
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-button-background));
+  accent-color: var(
+    --vscode-checkbox-selectBackground,
+    var(--vscode-button-background)
+  );
 }
 
 .stash-checkbox:has(input:disabled) {
@@ -1568,7 +1607,7 @@ select:focus-visible,
   gap: 6px;
 }
 
-.operation-dialog input:not([type='checkbox']),
+.operation-dialog input:not([type="checkbox"]),
 .operation-dialog textarea {
   height: 28px;
   padding: 0 7px;
@@ -1646,7 +1685,7 @@ select:focus-visible,
   border-radius: 3px;
 }
 
-.operation-dialog-actions button[type='submit'] {
+.operation-dialog-actions button[type="submit"] {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
 }
@@ -1664,16 +1703,64 @@ select:focus-visible,
   list-style: none;
 }
 
+.branch-cleanup-head-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.operation-dialog .branch-cleanup-head {
+  background: var(
+    --vscode-editorWidget-background,
+    var(--vscode-editor-background)
+  );
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.branch-cleanup-head:hover {
+  background: var(
+    --vscode-editorWidget-background,
+    var(--vscode-editor-background)
+  );
+}
+
+.branch-cleanup-colhead {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.branch-cleanup-colhead.end {
+  justify-self: end;
+  text-align: right;
+}
+
 .operation-dialog .branch-cleanup-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 96px 88px;
   align-items: center;
   gap: 8px;
   min-height: 24px;
   padding: 0 8px;
 }
 
+.operation-dialog.folder-delete-dialog .branch-cleanup-row {
+  grid-template-columns: auto minmax(0, 1fr) 64px 96px;
+}
+
 .branch-cleanup-row:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+.branch-cleanup-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .branch-cleanup-name {
@@ -1686,6 +1773,7 @@ select:focus-visible,
 
 .branch-cleanup-badge {
   flex: none;
+  justify-self: end;
   padding: 0 5px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -1711,8 +1799,10 @@ select:focus-visible,
 
 .branch-cleanup-date {
   flex: none;
+  justify-self: end;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .branch-cleanup-note,
@@ -1724,7 +1814,9 @@ select:focus-visible,
   line-height: 1.4;
 }
 
-.branch-cleanup-dialog .operation-dialog-actions button:last-child:not(:disabled) {
+.branch-cleanup-dialog
+  .operation-dialog-actions
+  button:last-child:not(:disabled) {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
 }
@@ -1825,7 +1917,7 @@ select:focus-visible,
   font-size: 11px;
 }
 
-.segmented-control button[aria-pressed='true'] {
+.segmented-control button[aria-pressed="true"] {
   color: var(--vscode-foreground);
   background: var(--vscode-button-secondaryBackground);
 }
@@ -1855,13 +1947,16 @@ select:focus-visible,
 }
 
 .file-tree-directory::before {
-  content: '';
+  content: "";
   position: absolute;
   left: calc(var(--indent-guide-left, 0px) + 8px);
   top: var(--explorer-row-height);
   bottom: 0;
   width: 1px;
-  background: var(--vscode-tree-inactiveIndentGuidesStroke, rgba(128, 128, 128, 0.3));
+  background: var(
+    --vscode-tree-inactiveIndentGuidesStroke,
+    rgba(128, 128, 128, 0.3)
+  );
 }
 
 .file-folder-row {
@@ -1939,33 +2034,81 @@ select:focus-visible,
   color: var(--vscode-descriptionForeground);
 }
 
-.file-type-dart { color: #40c4ff; }
-.file-type-typescript { color: #3178c6; }
-.file-type-javascript { color: #d6ba32; }
-.file-type-react { color: #61dafb; }
-.file-type-html { color: #e44d26; }
-.file-type-css { color: #42a5f5; }
+.file-type-dart {
+  color: #40c4ff;
+}
+.file-type-typescript {
+  color: #3178c6;
+}
+.file-type-javascript {
+  color: #d6ba32;
+}
+.file-type-react {
+  color: #61dafb;
+}
+.file-type-html {
+  color: #e44d26;
+}
+.file-type-css {
+  color: #42a5f5;
+}
 .file-type-json,
 .file-type-yaml,
-.file-type-config { color: var(--vscode-symbolIcon-objectForeground, #d7ba7d); }
-.file-type-markdown { color: #519aba; }
-.file-type-image { color: #a074c4; }
-.file-type-archive { color: #eca958; }
-.file-type-shell { color: #89e051; }
-.file-type-python { color: #3572a5; }
-.file-type-go { color: #00add8; }
-.file-type-rust { color: #dea584; }
+.file-type-config {
+  color: var(--vscode-symbolIcon-objectForeground, #d7ba7d);
+}
+.file-type-markdown {
+  color: #519aba;
+}
+.file-type-image {
+  color: #a074c4;
+}
+.file-type-archive {
+  color: #eca958;
+}
+.file-type-shell {
+  color: #89e051;
+}
+.file-type-python {
+  color: #3572a5;
+}
+.file-type-go {
+  color: #00add8;
+}
+.file-type-rust {
+  color: #dea584;
+}
 .file-type-c,
-.file-type-cpp { color: #00599c; }
-.file-type-java { color: #b07219; }
-.file-type-ruby { color: #cc342d; }
-.file-type-swift { color: #f05138; }
-.file-type-kotlin { color: #a97bff; }
-.file-type-php { color: #4f5d95; }
-.file-type-sql { color: #dcdee2; }
-.file-type-xml { color: #e44d26; }
-.file-type-document { color: var(--vscode-descriptionForeground); }
-.file-type-binary { color: var(--vscode-descriptionForeground); }
+.file-type-cpp {
+  color: #00599c;
+}
+.file-type-java {
+  color: #b07219;
+}
+.file-type-ruby {
+  color: #cc342d;
+}
+.file-type-swift {
+  color: #f05138;
+}
+.file-type-kotlin {
+  color: #a97bff;
+}
+.file-type-php {
+  color: #4f5d95;
+}
+.file-type-sql {
+  color: #dcdee2;
+}
+.file-type-xml {
+  color: #e44d26;
+}
+.file-type-document {
+  color: var(--vscode-descriptionForeground);
+}
+.file-type-binary {
+  color: var(--vscode-descriptionForeground);
+}
 
 .file-status {
   flex: 0 0 auto;

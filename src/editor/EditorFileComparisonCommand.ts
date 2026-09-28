@@ -1,4 +1,5 @@
 import type { GitService } from '../git/GitService';
+import { toUserMessage } from '../git/classifyGitError';
 import type { RefLabel, RepositorySummary } from '../shared/models';
 import type { EditorGitContextService } from './EditorGitContextService';
 
@@ -93,7 +94,7 @@ export class EditorFileComparisonCommand {
           : { workingContent: activeFile.workingContent }),
       });
     } catch (error) {
-      this.host.showErrorMessage(error instanceof Error ? error.message : String(error));
+      this.host.showErrorMessage(toUserMessage(error));
     }
   }
 }

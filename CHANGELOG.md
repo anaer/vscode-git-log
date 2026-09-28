@@ -2,6 +2,13 @@
 
 All notable changes to Git Log are documented in this file.
 
+## 26.928.1103
+
+### Changed
+
+- **More descriptive error messages**: folder-history unsupported and line-history missing-selection errors now tell users exactly what to do instead of generic "unavailable" wording.
+- **Git errors are classified before display**: all user-facing error paths now route through the Git error classifier, converting raw `fatal:`/`error:` output into actionable guidance (auth, conflicts, hooks, repository state, missing executable) instead of dumping raw stderr to the user.
+
 ## 26.920.1638
 
 ### Added

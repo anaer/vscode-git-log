@@ -1,6 +1,7 @@
 import type { RepositoryRegistry } from '../repositories/RepositoryRegistry';
 import type { EditorHistoryRequest, FolderHistoryRequest } from '../shared/models';
 import type { EditorGitContextService } from './EditorGitContextService';
+import { toUserMessage } from '../git/classifyGitError';
 
 export interface EditorSelectionSnapshot {
   startLine: number;
@@ -44,14 +45,14 @@ export class EditorHistoryCommands {
       const context = await this.contexts.resolveDirectory(resourcePath);
       this.repositories.upsert(context.repository);
       if (!this.host.openFolderHistory) {
-        throw new Error('Folder history is not available.');
+        throw new Error('Folder history is not supported in the current environment.');
       }
       await this.host.openFolderHistory({
         repository: context.repository,
         path: context.repositoryPath,
       });
     } catch (error) {
-      this.host.showErrorMessage(error instanceof Error ? error.message : String(error));
+      this.host.showErrorMessage(toUserMessage(error));
     }
   }
 
@@ -84,10 +85,10 @@ export class EditorHistoryCommands {
         path: context.repositoryPath,
       };
       if (kind === 'line') {
-        if (!editor) throw new Error('The active editor selection is unavailable.');
+        if (!editor) throw new Error('Open a file in the editor before viewing line history.');
         request.lineScope = useSelection ? 'selection' : 'current';
         const selection = editor.selection;
-        if (!selection) throw new Error('The active editor selection is unavailable.');
+        if (!selection) throw new Error('Select a line range in the editor before viewing selection history.');
         const startLine = selection.startLine + 1;
         const endLine = useSelection
           ? selection.endCharacter === 0 && selection.endLine > selection.startLine
@@ -110,7 +111,7 @@ export class EditorHistoryCommands {
         await this.host.openHistory(request);
       }
     } catch (error) {
-      this.host.showErrorMessage(error instanceof Error ? error.message : String(error));
+      this.host.showErrorMessage(toUserMessage(error));
     }
   }
 }

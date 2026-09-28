@@ -18,6 +18,7 @@ import {
 import { FileComparisonEditor } from './editor/FileComparisonEditor';
 import { FileHistoryEditor } from './editor/FileHistoryEditor';
 import { HistoryNativeDiffOpener } from './editor/HistoryNativeDiffOpener';
+import { toUserMessage } from './git/classifyGitError';
 import { HistoryPatchSyntaxHighlighter } from './editor/HistoryPatchSyntaxHighlighter';
 import { LineHistoryEditor } from './editor/LineHistoryEditor';
 import {
@@ -125,9 +126,7 @@ function initializeBlameFeature(
     persistLineEditTimesTimer = setTimeout(() => {
       persistLineEditTimesTimer = undefined;
       void writeLineEditTimes().catch((error: unknown) => {
-        output.appendLine(
-          `[line-blame] unable to persist edit times: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        output.appendLine(`[line-blame] unable to persist edit times: ${toUserMessage(error)}`);
       });
     }, 1_000);
   };
@@ -214,9 +213,7 @@ function initializeBlameFeature(
       },
       clear: clearLineBlame,
       onError: (error) => {
-        output.appendLine(
-          `[line-blame] ${error instanceof Error ? error.message : String(error)}`,
-        );
+        output.appendLine(`[line-blame] ${toUserMessage(error)}`);
       },
       locale: vscode.env.language,
       now: () => Date.now(),
@@ -287,9 +284,7 @@ function initializeBlameFeature(
       );
     })().catch((error: unknown) => {
       gitStateInitialization = undefined;
-      output.appendLine(
-        `[git] unable to subscribe to repository changes: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      output.appendLine(`[git] unable to subscribe to repository changes: ${toUserMessage(error)}`);
     });
   };
   const feature: BlameFeature = {
@@ -317,7 +312,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const configuration = vscode.workspace.getConfiguration('gitLogWorkbench');
   const runner = new GitRunner({
     executable: configuration.get<string>('git.path', 'git'),
-    logLevel: configuration.get<'off' | 'error' | 'debug'>('debug.logLevel', 'off'),
+    logLevel: configuration.get<'off' | 'error' | 'debug'>('debug.logLevel', 'debug'),
     onDiagnostic: (line) => output.appendLine(line),
   });
   const gitService = new GitService(runner);

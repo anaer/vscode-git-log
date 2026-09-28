@@ -1,7 +1,10 @@
-import { useLayoutEffect, useRef, useState, type ReactElement } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { RepositorySummary } from '../../src/shared/models';
-import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/protocol/messages';
+import { useLayoutEffect, useRef, useState, type ReactElement } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { RepositorySummary } from "../../src/shared/models";
+import type {
+  GitOperationRequest,
+  WebviewToExtensionMessage,
+} from "../../src/protocol/messages";
 import type {
   AmendDialogState,
   BranchCleanupDialogState,
@@ -10,10 +13,10 @@ import type {
   RewriteAuthorIdentityState,
   SquashOperationState,
   StashDialogState,
-} from './workbenchEffects';
-import type { FolderDeleteState, NamedOperationState } from './App';
-import { formatCommitDate } from './formatCommitDate';
-import { requestId } from './webviewUtils';
+} from "./workbenchEffects";
+import type { FolderDeleteState, NamedOperationState } from "./App";
+import { formatCommitDate } from "./formatCommitDate";
+import { requestId } from "./webviewUtils";
 
 interface DialogsProps {
   stashDialog: StashDialogState | undefined;
@@ -22,20 +25,30 @@ interface DialogsProps {
   amendDialog: AmendDialogState | undefined;
   setAmendDialog: Dispatch<SetStateAction<AmendDialogState | undefined>>;
   branchCleanup: BranchCleanupDialogState | undefined;
-  setBranchCleanup: Dispatch<SetStateAction<BranchCleanupDialogState | undefined>>;
+  setBranchCleanup: Dispatch<
+    SetStateAction<BranchCleanupDialogState | undefined>
+  >;
   submitBranchCleanup: () => void;
   folderDelete: FolderDeleteState | undefined;
   setFolderDelete: Dispatch<SetStateAction<FolderDeleteState | undefined>>;
   submitFolderDelete: () => void;
   historyParentPicker: HistoryParentPickerState | undefined;
-  setHistoryParentPicker: Dispatch<SetStateAction<HistoryParentPickerState | undefined>>;
+  setHistoryParentPicker: Dispatch<
+    SetStateAction<HistoryParentPickerState | undefined>
+  >;
   historyParentChoicesRef: RefObject<Map<string, string>>;
   squashOperation: SquashOperationState | undefined;
-  setSquashOperation: Dispatch<SetStateAction<SquashOperationState | undefined>>;
+  setSquashOperation: Dispatch<
+    SetStateAction<SquashOperationState | undefined>
+  >;
   editCommitMessages: EditCommitMessagesState | undefined;
-  setEditCommitMessages: Dispatch<SetStateAction<EditCommitMessagesState | undefined>>;
+  setEditCommitMessages: Dispatch<
+    SetStateAction<EditCommitMessagesState | undefined>
+  >;
   rewriteAuthorIdentity: RewriteAuthorIdentityState | undefined;
-  setRewriteAuthorIdentity: Dispatch<SetStateAction<RewriteAuthorIdentityState | undefined>>;
+  setRewriteAuthorIdentity: Dispatch<
+    SetStateAction<RewriteAuthorIdentityState | undefined>
+  >;
   setActiveCommitMessagesRequest: (requestId: string | undefined) => void;
   namedOperation: NamedOperationState | undefined;
   setNamedOperation: Dispatch<SetStateAction<NamedOperationState | undefined>>;
@@ -111,7 +124,9 @@ export function Dialogs(props: DialogsProps) {
                 disabled={Boolean(selectedRepository?.operationState)}
                 onChange={(event) =>
                   setStashDialog((current) =>
-                    current ? { ...current, stashMessage: event.target.value } : current,
+                    current
+                      ? { ...current, stashMessage: event.target.value }
+                      : current,
                   )
                 }
               />
@@ -124,7 +139,10 @@ export function Dialogs(props: DialogsProps) {
                     onChange={(event) =>
                       setStashDialog((current) =>
                         current
-                          ? { ...current, includeUntracked: event.target.checked }
+                          ? {
+                              ...current,
+                              includeUntracked: event.target.checked,
+                            }
                           : current,
                       )
                     }
@@ -135,12 +153,13 @@ export function Dialogs(props: DialogsProps) {
                   className="stash-submit-button"
                   type="button"
                   disabled={
-                    Boolean(selectedRepository?.operationState) || selectedOperationInFlight
+                    Boolean(selectedRepository?.operationState) ||
+                    selectedOperationInFlight
                   }
                   onClick={() =>
                     runOperation(
                       {
-                        kind: 'createStash',
+                        kind: "createStash",
                         message: stashDialog.stashMessage,
                         includeUntracked: stashDialog.includeUntracked,
                       },
@@ -160,8 +179,8 @@ export function Dialogs(props: DialogsProps) {
                     aria-label={`Show changes for ${stash.ref}`}
                     onClick={() =>
                       send({
-                        type: 'openStashComparison',
-                        requestId: requestId('stash-diff'),
+                        type: "openStashComparison",
+                        requestId: requestId("stash-diff"),
                         repositoryId: stashDialog.repositoryId,
                         hash: stash.hash,
                       })
@@ -172,11 +191,12 @@ export function Dialogs(props: DialogsProps) {
                   <button
                     type="button"
                     disabled={
-                      Boolean(selectedRepository?.operationState) || selectedOperationInFlight
+                      Boolean(selectedRepository?.operationState) ||
+                      selectedOperationInFlight
                     }
                     onClick={() =>
                       runOperation(
-                        { kind: 'applyStash', stash: stash.ref },
+                        { kind: "applyStash", stash: stash.ref },
                         stashDialog.repositoryId,
                       )
                     }
@@ -186,11 +206,12 @@ export function Dialogs(props: DialogsProps) {
                   <button
                     type="button"
                     disabled={
-                      Boolean(selectedRepository?.operationState) || selectedOperationInFlight
+                      Boolean(selectedRepository?.operationState) ||
+                      selectedOperationInFlight
                     }
                     onClick={() =>
                       runOperation(
-                        { kind: 'popStash', stash: stash.ref },
+                        { kind: "popStash", stash: stash.ref },
                         stashDialog.repositoryId,
                       )
                     }
@@ -200,11 +221,12 @@ export function Dialogs(props: DialogsProps) {
                   <button
                     type="button"
                     disabled={
-                      Boolean(selectedRepository?.operationState) || selectedOperationInFlight
+                      Boolean(selectedRepository?.operationState) ||
+                      selectedOperationInFlight
                     }
                     onClick={() =>
                       runOperation(
-                        { kind: 'dropStash', stash: stash.ref },
+                        { kind: "dropStash", stash: stash.ref },
                         stashDialog.repositoryId,
                       )
                     }
@@ -220,15 +242,24 @@ export function Dialogs(props: DialogsProps) {
 
       {amendDialog ? (
         <div className="operation-dialog-backdrop">
-          <div className="operation-dialog" role="dialog" aria-modal="true" aria-label="Amend HEAD">
+          <div
+            className="operation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Amend HEAD"
+          >
             <strong>Amend HEAD</strong>
-            <span>Currently staged changes will be included in the amended commit.</span>
+            <span>
+              Currently staged changes will be included in the amended commit.
+            </span>
             <textarea
               aria-label="Amend commit message"
               value={amendDialog.message}
               onChange={(event) =>
                 setAmendDialog((current) =>
-                  current ? { ...current, message: event.target.value } : current,
+                  current
+                    ? { ...current, message: event.target.value }
+                    : current,
                 )
               }
             />
@@ -242,7 +273,7 @@ export function Dialogs(props: DialogsProps) {
                 disabled={!amendDialog.message.trim()}
                 onClick={() => {
                   runOperation(
-                    { kind: 'amendCommit', message: amendDialog.message },
+                    { kind: "amendCommit", message: amendDialog.message },
                     amendDialog.repositoryId,
                   );
                   setAmendDialog(undefined);
@@ -273,10 +304,13 @@ export function Dialogs(props: DialogsProps) {
                   title={parent}
                   key={parent}
                   onClick={() => {
-                    historyParentChoicesRef.current.set(historyParentPicker.commit.hash, parent);
+                    historyParentChoicesRef.current.set(
+                      historyParentPicker.commit.hash,
+                      parent,
+                    );
                     send({
-                      type: 'openHistoryDiff',
-                      requestId: requestId('history-diff'),
+                      type: "openHistoryDiff",
+                      requestId: requestId("history-diff"),
                       repositoryId: historyParentPicker.repositoryId,
                       hash: historyParentPicker.commit.hash,
                       parent,
@@ -289,7 +323,10 @@ export function Dialogs(props: DialogsProps) {
               ))}
             </div>
             <div className="operation-dialog-actions">
-              <button type="button" onClick={() => setHistoryParentPicker(undefined)}>
+              <button
+                type="button"
+                onClick={() => setHistoryParentPicker(undefined)}
+              >
                 Cancel
               </button>
             </div>
@@ -306,10 +343,11 @@ export function Dialogs(props: DialogsProps) {
             aria-label="Squash Commits"
             onSubmit={(event) => {
               event.preventDefault();
-              if (squashOperation.loading || !squashOperation.message.trim()) return;
+              if (squashOperation.loading || !squashOperation.message.trim())
+                return;
               runOperation(
                 {
-                  kind: 'squashCommits',
+                  kind: "squashCommits",
                   hashes: squashOperation.hashes,
                   message: squashOperation.message,
                 },
@@ -327,7 +365,9 @@ export function Dialogs(props: DialogsProps) {
                 value={squashOperation.message}
                 onChange={(event) =>
                   setSquashOperation((current) =>
-                    current ? { ...current, message: event.target.value } : current,
+                    current
+                      ? { ...current, message: event.target.value }
+                      : current,
                   )
                 }
               />
@@ -344,7 +384,9 @@ export function Dialogs(props: DialogsProps) {
               </button>
               <button
                 type="submit"
-                disabled={squashOperation.loading || !squashOperation.message.trim()}
+                disabled={
+                  squashOperation.loading || !squashOperation.message.trim()
+                }
               >
                 Squash Commits
               </button>
@@ -368,7 +410,7 @@ export function Dialogs(props: DialogsProps) {
                 .filter((entry) => entry.message.length > 0);
               if (edits.length === 0) return;
               runOperation(
-                { kind: 'editCommitMessages', edits },
+                { kind: "editCommitMessages", edits },
                 editCommitMessages.repositoryId,
               );
               setEditCommitMessages(undefined);
@@ -376,8 +418,8 @@ export function Dialogs(props: DialogsProps) {
           >
             <strong>Edit Commit Messages</strong>
             <span>
-              Rewrites the selected commit messages and every affected descendant on the current
-              branch, amending their hashes.
+              Rewrites the selected commit messages and every affected
+              descendant on the current branch, amending their hashes.
             </span>
             <EditCommitMessagesEditor
               key={editCommitMessages.requestId}
@@ -389,7 +431,9 @@ export function Dialogs(props: DialogsProps) {
                     ? {
                         ...current,
                         edits: current.edits.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, message: value } : item,
+                          itemIndex === index
+                            ? { ...item, message: value }
+                            : item,
                         ),
                       }
                     : current,
@@ -410,7 +454,9 @@ export function Dialogs(props: DialogsProps) {
                 type="submit"
                 disabled={
                   editCommitMessages.loading ||
-                  editCommitMessages.edits.some((entry) => !entry.message.trim())
+                  editCommitMessages.edits.some(
+                    (entry) => !entry.message.trim(),
+                  )
                 }
               >
                 Rewrite Commit Messages
@@ -429,10 +475,14 @@ export function Dialogs(props: DialogsProps) {
             aria-label="Rewrite Author Identity"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!rewriteAuthorIdentity.name.trim() || !rewriteAuthorIdentity.email.trim()) return;
+              if (
+                !rewriteAuthorIdentity.name.trim() ||
+                !rewriteAuthorIdentity.email.trim()
+              )
+                return;
               runOperation(
                 {
-                  kind: 'rewriteAuthorIdentity',
+                  kind: "rewriteAuthorIdentity",
                   hashes: rewriteAuthorIdentity.hashes,
                   name: rewriteAuthorIdentity.name.trim(),
                   email: rewriteAuthorIdentity.email.trim(),
@@ -444,9 +494,11 @@ export function Dialogs(props: DialogsProps) {
           >
             <strong>Rewrite Author Identity</strong>
             <span>
-              Replaces the author and committer of the {String(rewriteAuthorIdentity.hashes.length)}{' '}
-              selected commit{rewriteAuthorIdentity.hashes.length === 1 ? '' : 's'} and rewrites
-              every affected descendant on the current branch, amending their hashes.
+              Replaces the author and committer of the{" "}
+              {String(rewriteAuthorIdentity.hashes.length)} selected commit
+              {rewriteAuthorIdentity.hashes.length === 1 ? "" : "s"} and
+              rewrites every affected descendant on the current branch, amending
+              their hashes.
             </span>
             <label>
               <span>Author name</span>
@@ -456,7 +508,9 @@ export function Dialogs(props: DialogsProps) {
                 value={rewriteAuthorIdentity.name}
                 onChange={(event) =>
                   setRewriteAuthorIdentity((current) =>
-                    current ? { ...current, name: event.target.value } : current,
+                    current
+                      ? { ...current, name: event.target.value }
+                      : current,
                   )
                 }
               />
@@ -468,19 +522,25 @@ export function Dialogs(props: DialogsProps) {
                 value={rewriteAuthorIdentity.email}
                 onChange={(event) =>
                   setRewriteAuthorIdentity((current) =>
-                    current ? { ...current, email: event.target.value } : current,
+                    current
+                      ? { ...current, email: event.target.value }
+                      : current,
                   )
                 }
               />
             </label>
             <div className="operation-dialog-actions">
-              <button type="button" onClick={() => setRewriteAuthorIdentity(undefined)}>
+              <button
+                type="button"
+                onClick={() => setRewriteAuthorIdentity(undefined)}
+              >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={
-                  !rewriteAuthorIdentity.name.trim() || !rewriteAuthorIdentity.email.trim()
+                  !rewriteAuthorIdentity.name.trim() ||
+                  !rewriteAuthorIdentity.email.trim()
                 }
               >
                 Rewrite Author Identity
@@ -497,15 +557,15 @@ export function Dialogs(props: DialogsProps) {
             role="dialog"
             aria-modal="true"
             aria-label={
-              namedOperation.kind === 'createBranch'
-                ? 'Create Branch'
-                : namedOperation.kind === 'createOrphanBranch'
-                  ? 'Create Orphan Branch'
-                  : namedOperation.kind === 'createTag'
-                    ? 'Create Tag'
-                    : namedOperation.kind === 'checkoutRemote'
-                      ? 'Checkout Remote Branch'
-                      : 'Rename Branch'
+              namedOperation.kind === "createBranch"
+                ? "Create Branch"
+                : namedOperation.kind === "createOrphanBranch"
+                  ? "Create Orphan Branch"
+                  : namedOperation.kind === "createTag"
+                    ? "Create Tag"
+                    : namedOperation.kind === "checkoutRemote"
+                      ? "Checkout Remote Branch"
+                      : "Rename Branch"
             }
             onSubmit={(event) => {
               event.preventDefault();
@@ -514,56 +574,62 @@ export function Dialogs(props: DialogsProps) {
           >
             <label>
               <span>
-                {namedOperation.kind === 'createBranch' ||
-                namedOperation.kind === 'createOrphanBranch'
-                  ? 'Branch name'
-                  : namedOperation.kind === 'createTag'
-                    ? 'Tag name'
-                    : namedOperation.kind === 'checkoutRemote'
-                      ? 'Local branch name'
-                      : 'New branch name'}
+                {namedOperation.kind === "createBranch" ||
+                namedOperation.kind === "createOrphanBranch"
+                  ? "Branch name"
+                  : namedOperation.kind === "createTag"
+                    ? "Tag name"
+                    : namedOperation.kind === "checkoutRemote"
+                      ? "Local branch name"
+                      : "New branch name"}
               </span>
               <input
                 autoFocus
                 aria-label={
-                  namedOperation.kind === 'createBranch' ||
-                  namedOperation.kind === 'createOrphanBranch'
-                    ? 'Branch name'
-                    : namedOperation.kind === 'createTag'
-                      ? 'Tag name'
-                      : namedOperation.kind === 'checkoutRemote'
-                        ? 'Local branch name'
-                        : 'New branch name'
+                  namedOperation.kind === "createBranch" ||
+                  namedOperation.kind === "createOrphanBranch"
+                    ? "Branch name"
+                    : namedOperation.kind === "createTag"
+                      ? "Tag name"
+                      : namedOperation.kind === "checkoutRemote"
+                        ? "Local branch name"
+                        : "New branch name"
                 }
                 value={namedOperation.value}
                 onChange={(event) =>
                   setNamedOperation((current) =>
-                    current ? { ...current, value: event.target.value } : current,
+                    current
+                      ? { ...current, value: event.target.value }
+                      : current,
                   )
                 }
               />
             </label>
-            {namedOperation.kind === 'createOrphanBranch' ? (
+            {namedOperation.kind === "createOrphanBranch" ? (
               <p className="named-operation-note">
-                Creates a branch with no parent commit. All tracked files are removed from the
-                working tree (untracked and ignored files are kept), and the branch appears in the
-                ref tree only after its first commit.
+                Creates a branch with no parent commit. All tracked files are
+                removed from the working tree (untracked and ignored files are
+                kept), and the branch appears in the ref tree only after its
+                first commit.
               </p>
             ) : null}
             <div className="operation-dialog-actions">
-              <button type="button" onClick={() => setNamedOperation(undefined)}>
+              <button
+                type="button"
+                onClick={() => setNamedOperation(undefined)}
+              >
                 Cancel
               </button>
               <button type="submit" disabled={!namedOperation.value.trim()}>
-                {namedOperation.kind === 'createBranch'
-                  ? 'Create Branch'
-                  : namedOperation.kind === 'createOrphanBranch'
-                    ? 'Create Orphan Branch'
-                    : namedOperation.kind === 'createTag'
-                      ? 'Create Tag'
-                      : namedOperation.kind === 'checkoutRemote'
-                        ? 'Checkout'
-                        : 'Rename Branch'}
+                {namedOperation.kind === "createBranch"
+                  ? "Create Branch"
+                  : namedOperation.kind === "createOrphanBranch"
+                    ? "Create Orphan Branch"
+                    : namedOperation.kind === "createTag"
+                      ? "Create Tag"
+                      : namedOperation.kind === "checkoutRemote"
+                        ? "Checkout"
+                        : "Rename Branch"}
               </button>
             </div>
           </form>
@@ -583,10 +649,48 @@ export function Dialogs(props: DialogsProps) {
               <p className="branch-cleanup-empty">Loading branches…</p>
             ) : branchCleanup.candidates.length === 0 ? (
               <p className="branch-cleanup-empty">
-                No branch is either merged into the current branch or missing its upstream.
+                No branch is either merged into the current branch or missing
+                its upstream.
               </p>
             ) : (
               <ul className="branch-cleanup-list">
+                <li className="branch-cleanup-head-row">
+                  <div className="branch-cleanup-row branch-cleanup-head">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all branches"
+                      checked={
+                        branchCleanup.selected.size ===
+                        branchCleanup.candidates.length
+                      }
+                      ref={(input) => {
+                        if (input)
+                          input.indeterminate =
+                            branchCleanup.selected.size > 0 &&
+                            branchCleanup.selected.size <
+                              branchCleanup.candidates.length;
+                      }}
+                      onChange={(event) =>
+                        setBranchCleanup((current) => {
+                          if (!current) return current;
+                          const selected = event.target.checked
+                            ? new Set(
+                                current.candidates.map(
+                                  (candidate) => candidate.name,
+                                ),
+                              )
+                            : new Set<string>();
+                          return { ...current, selected };
+                        })
+                      }
+                    />
+                    <span className="branch-cleanup-colhead">Branch</span>
+                    <span className="branch-cleanup-colhead end">Status</span>
+                    <span className="branch-cleanup-colhead end">
+                      Last commit
+                    </span>
+                  </div>
+                </li>
                 {branchCleanup.candidates.map((candidate) => (
                   <li key={candidate.name}>
                     <label className="branch-cleanup-row">
@@ -598,20 +702,30 @@ export function Dialogs(props: DialogsProps) {
                           setBranchCleanup((current) => {
                             if (!current) return current;
                             const selected = new Set(current.selected);
-                            if (event.target.checked) selected.add(candidate.name);
+                            if (event.target.checked)
+                              selected.add(candidate.name);
                             else selected.delete(candidate.name);
                             return { ...current, selected };
                           })
                         }
                       />
-                      <span className="branch-cleanup-name" title={candidate.name}>
-                        {candidate.name}
+                      <span className="branch-cleanup-name-cell">
+                        <span
+                          className="branch-cleanup-name"
+                          title={candidate.name}
+                        >
+                          {candidate.name}
+                        </span>
+                        {candidate.gone ? (
+                          <span className="branch-cleanup-badge gone">
+                            upstream gone
+                          </span>
+                        ) : null}
                       </span>
-                      {candidate.gone ? (
-                        <span className="branch-cleanup-badge gone">upstream gone</span>
-                      ) : null}
                       {candidate.merged ? (
-                        <span className="branch-cleanup-badge merged">merged</span>
+                        <span className="branch-cleanup-badge merged">
+                          merged
+                        </span>
                       ) : (
                         <span className="branch-cleanup-badge unmerged">
                           {String(candidate.aheadCount)} unmerged
@@ -628,9 +742,10 @@ export function Dialogs(props: DialogsProps) {
             <p className="branch-cleanup-note">
               {selectedRepository?.currentBranch
                 ? `“merged” means reachable from “${selectedRepository.currentBranch}”. `
-                : 'No branch is checked out, so the merged category is unavailable. '}
-              Branches whose upstream is gone are selected by default; unmerged branches never
-              are. Deleting an unmerged branch makes its commits unreachable.
+                : "No branch is checked out, so the merged category is unavailable. "}
+              Branches whose upstream is gone are selected by default; unmerged
+              branches never are. Deleting an unmerged branch makes its commits
+              unreachable.
             </p>
             <div className="operation-dialog-actions">
               <button type="button" onClick={() => setBranchCleanup(undefined)}>
@@ -638,11 +753,13 @@ export function Dialogs(props: DialogsProps) {
               </button>
               <button
                 type="button"
-                disabled={branchCleanup.loading || branchCleanup.selected.size === 0}
+                disabled={
+                  branchCleanup.loading || branchCleanup.selected.size === 0
+                }
                 onClick={submitBranchCleanup}
               >
                 {branchCleanup.selected.size === 1
-                  ? 'Delete 1 Branch'
+                  ? "Delete 1 Branch"
                   : `Delete ${String(branchCleanup.selected.size)} Branches`}
               </button>
             </div>
@@ -653,13 +770,43 @@ export function Dialogs(props: DialogsProps) {
       {folderDelete ? (
         <div className="operation-dialog-backdrop">
           <div
-            className="operation-dialog branch-cleanup-dialog"
+            className="operation-dialog branch-cleanup-dialog folder-delete-dialog"
             role="dialog"
             aria-modal="true"
             aria-label={`Delete references in ${folderDelete.path}`}
           >
             <strong>Delete references in “{folderDelete.path}/”</strong>
             <ul className="branch-cleanup-list">
+              <li className="branch-cleanup-head-row">
+                <div className="branch-cleanup-row branch-cleanup-head">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all references"
+                    checked={
+                      folderDelete.refs.length > 0 &&
+                      folderDelete.selected.size === folderDelete.refs.length
+                    }
+                    ref={(input) => {
+                      if (input)
+                        input.indeterminate =
+                          folderDelete.selected.size > 0 &&
+                          folderDelete.selected.size < folderDelete.refs.length;
+                    }}
+                    onChange={(event) =>
+                      setFolderDelete((current) => {
+                        if (!current) return current;
+                        const selected = event.target.checked
+                          ? new Set(current.refs.map((ref) => ref.fullName))
+                          : new Set<string>();
+                        return { ...current, selected };
+                      })
+                    }
+                  />
+                  <span className="branch-cleanup-colhead">Reference</span>
+                  <span className="branch-cleanup-colhead end">Type</span>
+                  <span className="branch-cleanup-colhead end">Status</span>
+                </div>
+              </li>
               {folderDelete.refs.map((ref) => (
                 <li key={ref.fullName}>
                   <label className="branch-cleanup-row">
@@ -680,17 +827,22 @@ export function Dialogs(props: DialogsProps) {
                     <span className="branch-cleanup-name" title={ref.fullName}>
                       {ref.shortName}
                     </span>
-                    <span className="branch-cleanup-badge merged">{ref.kind}</span>
+                    <span className="branch-cleanup-badge merged">
+                      {ref.kind}
+                    </span>
                     {ref.gone ? (
-                      <span className="branch-cleanup-badge gone">upstream gone</span>
+                      <span className="branch-cleanup-badge gone">
+                        upstream gone
+                      </span>
                     ) : null}
                   </label>
                 </li>
               ))}
             </ul>
             <p className="branch-cleanup-note">
-              Nothing is selected by default. Selecting a remote entry deletes that branch on the
-              shared remote; unmerged local branches are refused, not force-deleted.
+              Nothing is selected by default. Selecting a remote entry deletes
+              that branch on the shared remote; unmerged local branches are
+              refused, not force-deleted.
             </p>
             <div className="operation-dialog-actions">
               <button type="button" onClick={() => setFolderDelete(undefined)}>
@@ -702,7 +854,7 @@ export function Dialogs(props: DialogsProps) {
                 onClick={submitFolderDelete}
               >
                 Delete {String(folderDelete.selected.size)} item
-                {folderDelete.selected.size === 1 ? '' : 's'}
+                {folderDelete.selected.size === 1 ? "" : "s"}
               </button>
             </div>
           </div>
@@ -734,7 +886,7 @@ export function AutoGrowTextarea({
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-    element.style.height = 'auto';
+    element.style.height = "auto";
     // scrollHeight omits the 1px top/bottom borders; the box uses border-box, so
     // add them back to avoid clipping an exactly-fitting line.
     element.style.height = `${element.scrollHeight + 2}px`;
@@ -774,7 +926,9 @@ export function EditCommitMessagesEditor({
   return (
     <section className="edit-commit-messages-editor">
       {loading ? (
-        <div className="edit-commit-messages-loading">Loading commit messages…</div>
+        <div className="edit-commit-messages-loading">
+          Loading commit messages…
+        </div>
       ) : null}
       {entry ? (
         <>
@@ -797,7 +951,9 @@ export function EditCommitMessagesEditor({
               aria-label="Next commit"
               title="Next commit"
               disabled={current >= total - 1}
-              onClick={() => setIndex((value) => Math.min(value + 1, total - 1))}
+              onClick={() =>
+                setIndex((value) => Math.min(value + 1, total - 1))
+              }
             >
               ›
             </button>

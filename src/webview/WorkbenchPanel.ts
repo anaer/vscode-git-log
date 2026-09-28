@@ -12,6 +12,7 @@ import {
 } from '../protocol/messages';
 import type { RepositoryRegistry } from '../repositories/RepositoryRegistry';
 import { RepositoryWatchManager } from '../repositories/RepositoryWatchManager';
+import { toUserMessage } from '../git/classifyGitError';
 import type { EditorHistoryRequest, FolderHistoryRequest } from '../shared/models';
 import { createWebviewHtml } from './createWebviewHtml';
 import { WorkbenchController } from './WorkbenchController';
@@ -221,9 +222,7 @@ export class WorkbenchViewProvider implements vscode.WebviewViewProvider, vscode
     void Promise.resolve()
       .then(task)
       .catch((error: unknown) => {
-        this.output.appendLine(
-          `[workbench] ${label}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        this.output.appendLine(`[workbench] ${label}: ${toUserMessage(error)}`);
       });
   }
 }

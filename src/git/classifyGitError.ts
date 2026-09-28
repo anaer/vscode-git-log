@@ -1,4 +1,4 @@
-import type { GitCommandError } from './GitRunner';
+import { GitCommandError } from './GitRunner';
 
 export interface ClassifiedGitError {
   category: 'conflict' | 'authentication' | 'hook' | 'repository' | 'unknown';
@@ -72,4 +72,9 @@ export function classifyGitError(error: GitCommandError): ClassifiedGitError {
     return { category: 'repository', message: 'Git could not resolve the repository or revision.', detail };
   }
   return { category: 'unknown', message: detail.split(/\r?\n/u)[0] || error.message, detail };
+}
+
+export function toUserMessage(error: unknown): string {
+  if (error instanceof GitCommandError) return classifyGitError(error).message;
+  return error instanceof Error ? error.message : String(error);
 }
