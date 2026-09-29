@@ -211,6 +211,75 @@ describe('WorkbenchController', () => {
     expect(messages.filter((message) => message.type === 'pushedTagsLoaded')).toHaveLength(1);
   });
 
+  it('reuses a recent remote tag probe instead of probing again on the next load', async () => {
+    const repository = await createRepository();
+    await execFileAsync('git', ['tag', 'v1.0.0'], { cwd: repository });
+
+    const runner = new GitRunner();
+    const realService = new GitService(runner);
+    let probeCount = 0;
+    const gitService = {
+      getRefs: realService.getRefs.bind(realService),
+      getLog: realService.getLog.bind(realService),
+      getContributors: realService.getContributors.bind(realService),
+      async getPushedTags(...args: Parameters<GitService['getPushedTags']>) {
+        probeCount += 1;
+        return realService.getPushedTags(...args);
+      },
+    } as unknown as GitService;
+
+    const messages: ExtensionToWebviewMessage[] = [];
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService,
+      gitRunner: runner,
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: {
+        refsWidth: 220,
+        filesWidth: 320,
+        detailsHeight: 156,
+        filesViewMode: 'tree',
+      },
+      postMessage(message: ExtensionToWebviewMessage) {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+    });
+
+    await controller.handleMessage({ type: 'ready', requestId: 'pushed-tags-cache-ready' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    if (initialized?.type !== 'initialize') throw new Error('expected initialize');
+    const repositoryId = initialized.repositories[0]?.id;
+    if (!repositoryId) throw new Error('expected a repository');
+
+    await controller.handleMessage({
+      type: 'requestLogPage',
+      requestId: 'pushed-tags-cache-first',
+      repositoryId,
+      skip: 0,
+    });
+    await vi.waitFor(() => {
+      expect(messages.filter((message) => message.type === 'pushedTagsLoaded')).toHaveLength(1);
+    });
+    expect(probeCount).toBe(1);
+
+    // The second load for the same repository reuses the cached probe rather than paying
+    // another network round trip.
+    await controller.handleMessage({
+      type: 'requestLogPage',
+      requestId: 'pushed-tags-cache-second',
+      repositoryId,
+      skip: 0,
+    });
+    await vi.waitFor(() => {
+      expect(messages.filter((message) => message.type === 'pushedTagsLoaded')).toHaveLength(2);
+    });
+    expect(probeCount).toBe(1);
+  });
+
   it('keeps a newly opened folder history when repository initialization finishes later', async () => {
     const repository = await createRepository();
     await mkdir(join(repository, 'src'));
@@ -1977,6 +2046,70 @@ describe('WorkbenchController', () => {
       requestId: 'delete-unmerged-branch',
       repositoryId: initialized.selectedRepositoryId,
       recovery: { kind: 'forceDeleteBranch', branch: 'feature/assets-fix' },
+    });
+  });
+
+  it('deletes a local tag through the controller and drops it from the refreshed refs', async () => {
+    const repository = await createRepository();
+    await execFileAsync('git', ['tag', 'v1.0.0'], { cwd: repository });
+    const messages: ExtensionToWebviewMessage[] = [];
+    const runner = new GitRunner();
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService: new GitService(runner),
+      gitRunner: runner,
+      operationService: new GitOperationService(runner),
+      confirmOperation: () => Promise.resolve(true),
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: {
+        refsWidth: 220,
+        filesWidth: 320,
+        detailsHeight: 156,
+        filesViewMode: 'tree',
+      },
+      postMessage(message: ExtensionToWebviewMessage) {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+    });
+    await controller.handleMessage({ type: 'ready', requestId: 'ready-delete-tag' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    if (initialized?.type !== 'initialize' || !initialized.selectedRepositoryId) {
+      throw new Error('expected initialize');
+    }
+
+    await controller.handleMessage({
+      type: 'requestLogPage',
+      requestId: 'load-before-delete-tag',
+      repositoryId: initialized.selectedRepositoryId,
+      skip: 0,
+    });
+    await vi.waitFor(() => {
+      const data = [...messages].reverse().find((message) => message.type === 'repositoryData');
+      expect(
+        data?.type === 'repositoryData' && data.refs.some((ref) => ref.shortName === 'v1.0.0'),
+      ).toBe(true);
+    });
+
+    messages.length = 0;
+    await controller.handleMessage({
+      type: 'runOperation',
+      requestId: 'delete-tag',
+      repositoryId: initialized.selectedRepositoryId,
+      operation: { kind: 'deleteTag', name: 'v1.0.0' },
+    });
+
+    // The operation must actually remove the tag from Git, not just from the UI.
+    const tagList = await execFileAsync('git', ['tag', '--list', 'v1.0.0'], { cwd: repository });
+    expect(tagList.stdout.trim()).toBe('');
+    await vi.waitFor(() => {
+      const data = [...messages].reverse().find((message) => message.type === 'repositoryData');
+      expect(
+        data?.type === 'repositoryData' && data.refs.some((ref) => ref.shortName === 'v1.0.0'),
+      ).toBe(false);
     });
   });
 

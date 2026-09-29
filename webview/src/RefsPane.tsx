@@ -124,8 +124,10 @@ function RefTreeNodes({
       >
         <span className="ref-folder-chevron" aria-hidden="true" />
         <span className="ref-name">{node.name}</span>
-        {group.kind === 'tag' && ref.pushedTo?.length ? (
-          <span className="tag-remote">{ref.pushedTo.join(' ')}</span>
+        {group.kind === 'tag' && !ref.pushedTo?.length ? (
+          <span className="tag-local" title="Not pushed to any remote">
+            *
+          </span>
         ) : null}
         {ref.ahead || ref.behind ? (
           <span className="tracking">

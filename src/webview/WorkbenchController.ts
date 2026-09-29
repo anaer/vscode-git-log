@@ -118,6 +118,21 @@ function mergeSelectedCommitFiles(files: readonly ChangedFile[]): ChangedFile[] 
   return [...merged.values()];
 }
 
+/**
+ * How long a remote tag probe stays usable before it is repeated. `ls-remote` is a slow
+ * network round trip (measured at roughly 3–9s per remote), so re-running it on every ref
+ * load is wasteful; a short window keeps an external tag change from staying invisible for
+ * long while sparing the common refresh path.
+ */
+const PUSHED_TAGS_CACHE_MS = 5 * 60_000;
+
+/**
+ * Operations after which the cached remote-tag probe is dropped. Pushing a tag changes a
+ * remote's advertised tag list, and a plain push may carry tags depending on config; every
+ * other operation leaves the remote lists untouched, so the cache stays valid.
+ */
+const PUSHED_TAGS_INVALIDATING_OPERATIONS: ReadonlySet<string> = new Set(['pushTag', 'push']);
+
 export class WorkbenchController {
   private repositories = new Map<string, RepositorySummary>();
   private refs = new Map<string, RefLabel[]>();
@@ -126,6 +141,8 @@ export class WorkbenchController {
    * log load must not wait for the probe, but a newer load should still cancel it.
    */
   private pushedTagsAbortController: AbortController | undefined;
+  /** Last remote-tag probe per repository, reused until it ages out or a push invalidates it. */
+  private pushedTagsCache = new Map<string, { at: number; tags: Map<string, readonly string[]> }>();
   private filters = new Map<string, LogFilters>();
   private selectedCommits = new Map<string, string>();
   private selectedCommitRanges = new Map<string, string[]>();
@@ -1156,18 +1173,25 @@ export class WorkbenchController {
     // With no local tags there is nothing to attribute, so the remote round trip would
     // answer a question nobody asked.
     if (!refs.some((ref) => ref.kind === 'tag')) return;
-    const abortController = new AbortController();
-    this.pushedTagsAbortController?.abort();
-    this.pushedTagsAbortController = abortController;
+    const cached = this.pushedTagsCache.get(repositoryId);
     let pushedTags: Map<string, readonly string[]>;
-    try {
-      pushedTags = await this.options.gitService.getPushedTags(cwd, abortController.signal);
-    } catch {
-      // Unreachable remotes are already reported per-remote by `getPushedTags`; a
-      // failure here means the probe itself could not run, and there is nothing to add.
-      return;
+    if (cached && Date.now() - cached.at < PUSHED_TAGS_CACHE_MS) {
+      // Reuse the last probe rather than paying another network round trip on every refresh.
+      pushedTags = cached.tags;
+    } else {
+      const abortController = new AbortController();
+      this.pushedTagsAbortController?.abort();
+      this.pushedTagsAbortController = abortController;
+      try {
+        pushedTags = await this.options.gitService.getPushedTags(cwd, abortController.signal);
+      } catch {
+        // Unreachable remotes are already reported per-remote by `getPushedTags`; a
+        // failure here means the probe itself could not run, and there is nothing to add.
+        return;
+      }
+      if (abortController.signal.aborted) return;
+      this.pushedTagsCache.set(repositoryId, { at: Date.now(), tags: pushedTags });
     }
-    if (abortController.signal.aborted) return;
     if (logSequence !== this.logRequestSequence) return;
     if (repositoryId !== this.selectedRepositoryId) return;
     if (this.refs.get(repositoryId) !== refs) return;
@@ -1328,6 +1352,14 @@ export class WorkbenchController {
           filtersChanged = true;
         }
         if (filtersChanged) await this.persistWorkbenchState();
+      }
+      if (result && !result.cancelled && PUSHED_TAGS_INVALIDATING_OPERATIONS.has(operation.kind)) {
+        // The remote's tag list may have moved, so the next ref load must probe again.
+        for (const candidate of this.repositories.values()) {
+          if (this.getOperationGroup(candidate) === operationGroup) {
+            this.pushedTagsCache.delete(candidate.id);
+          }
+        }
       }
       if (!result?.cancelled) this.pendingOperationRefreshGroups.add(operationGroup);
       const remaining = Math.max(0, (this.activeOperationGroups.get(operationGroup) ?? 1) - 1);

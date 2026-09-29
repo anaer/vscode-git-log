@@ -96,7 +96,7 @@ describe('workbench styles', () => {
     const app = await readFile('webview/src/App.tsx', 'utf8');
 
     expect(styles).toMatch(
-      /\.workspace-grid\s*\{[^}]*grid-template-columns:\s*220px 1px minmax\(340px, 1fr\) 1px 320px;/su,
+      /\.workspace-grid\s*\{[^}]*grid-template-columns:\s*220px 1px minmax\(476px, 1fr\) 1px 320px;/su,
     );
     expect(app).toContain('refsCollapsed ? 0 : 1');
     expect(app).toContain('filesCollapsed ? 0 : 1');
@@ -202,13 +202,13 @@ describe('workbench styles', () => {
     expect(dialogs).toContain('className="stash-checkbox"');
     expect(dialogs).toContain('className="stash-submit-button"');
     expect(styles).toMatch(
-      /\.operation-dialog input:not\(\[type='checkbox'\]\),\s*\n\.operation-dialog textarea\s*\{/su,
+      /\.operation-dialog input:not\(\[type="checkbox"\]\),\s*\n\.operation-dialog textarea\s*\{/su,
     );
     expect(styles).toMatch(
       /\.stash-create-actions\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;[^}]*flex-wrap:\s*wrap;/su,
     );
     expect(styles).toMatch(
-      /\.stash-checkbox input\[type='checkbox'\]\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;/su,
+      /\.stash-checkbox input\[type="checkbox"\]\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;/su,
     );
   });
 

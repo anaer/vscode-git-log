@@ -32,7 +32,8 @@ import type {
 } from '../../src/shared/models';
 import { getVsCodeApi } from './vscodeApi';
 import { CommitList } from './CommitList';
-import { requestId, toggleSetMember } from './webviewUtils';
+import { requestId, reconcileCollapsedFolders, toggleSetMember } from './webviewUtils';
+import { buildRefTree, collectRefFolderKeys } from './buildRefTree';
 import {
   emptyCommitSelection,
   isContiguousSelection,
@@ -140,6 +141,8 @@ const SHALLOW_MENU_MAX_HEIGHT = 180;
  */
 const TOOLBAR_RIGHT_PADDING = 8;
 const LOG_COLUMN_MIN_WIDTH = 476;
+// Ref group kinds in pane display order; used to derive per-group folder keys.
+const REF_GROUP_ORDER = ['local', 'remote', 'tag'] as const;
 
 export type FolderDeleteState = {
   repositoryId: string;
@@ -261,6 +264,7 @@ function Workbench() {
   >();
   const [collapsedRefGroups, setCollapsedRefGroups] = useState<Set<string>>(new Set());
   const [collapsedRefFolders, setCollapsedRefFolders] = useState<Set<string>>(new Set());
+  const touchedRefFolders = useRef<Set<string>>(new Set());
   const [responsiveCollapse, setResponsiveCollapse] = useState(() => ({
     files: window.matchMedia?.('(max-width: 900px)').matches ?? false,
     refs: window.matchMedia?.('(max-width: 680px)').matches ?? false,
@@ -489,6 +493,34 @@ function Workbench() {
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
+
+  // Tag directories (both the remote roots such as `origin` and any nested tag
+  // namespace like `release/v1`) start collapsed so the flat tag list stays the primary
+  // entry point. The live/default key sets are derived from the same tree the pane
+  // renders, so a folder the user expanded stays expanded and a folder that vanished with
+  // a repository switch is forgotten.
+  const liveRefFolderKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const kind of REF_GROUP_ORDER) {
+      const groupRefs = state.refs.filter((ref) => ref.kind === kind);
+      if (!groupRefs.length) continue;
+      const prefix = `${state.selectedRepositoryId ?? ''}:${kind}`;
+      keys.push(...collectRefFolderKeys(buildRefTree(groupRefs), `${prefix}:`));
+    }
+    return keys;
+  }, [state.refs, state.selectedRepositoryId]);
+
+  useEffect(() => {
+    const repositoryId = state.selectedRepositoryId ?? '';
+    setCollapsedRefFolders((current) =>
+      reconcileCollapsedFolders(
+        current,
+        liveRefFolderKeys,
+        liveRefFolderKeys.filter((key) => key.startsWith(`${repositoryId}:tag:`)),
+        touchedRefFolders.current,
+      ),
+    );
+  }, [liveRefFolderKeys, state.selectedRepositoryId]);
 
   useEffect(() => {
     const dismissOpenMenus = (event: PointerEvent): void => {
@@ -915,6 +947,7 @@ function Workbench() {
   };
 
   const toggleRefFolder = (folder: string): void => {
+    touchedRefFolders.current.add(folder);
     setCollapsedRefFolders((current) => toggleSetMember(current, folder));
   };
 
