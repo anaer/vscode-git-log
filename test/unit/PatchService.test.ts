@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GitRunner } from '../../src/git/GitRunner';
 import { MAX_PATCH_BYTES, PatchService, parsePatchNumstat } from '../../src/git/PatchService';
+import { initRepository } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -23,7 +24,7 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 async function createRepository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'git-log-patch-'));
   temporaryDirectories.push(root);
-  await git(root, 'init', '-b', 'main');
+  await initRepository(root);
   await git(root, 'config', 'user.name', 'Patch Test');
   await git(root, 'config', 'user.email', 'patch@example.com');
   await writeFile(join(root, 'app.txt'), 'one\n');

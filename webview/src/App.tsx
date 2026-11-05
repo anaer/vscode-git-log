@@ -642,6 +642,7 @@ function Workbench() {
       setEditCommitMessages,
       setStashDialog,
       setAmendDialog,
+      setRewriteAuthorIdentity,
       setBranchCleanup,
       setResponsiveExpanded,
       setScrollTopByRepository,

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitRunner } from '../../src/git/GitRunner';
+import { initRepository } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -145,7 +146,7 @@ describe('FileHistoryService', () => {
   it('lets Git track a selected range to its older line coordinates', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-shifted-selection-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     const baseLines = Array.from({ length: 70 }, (_, index) => `line ${String(index + 1)}`);
     await writeFile(join(repository, 'app.txt'), `${baseLines.join('\n')}\n`);
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
@@ -180,7 +181,7 @@ describe('FileHistoryService', () => {
   it('keeps lines restored by reversing a deletion inside the selected range', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-deleted-selection-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     const baseLines = Array.from({ length: 70 }, (_, index) => `line ${String(index + 1)}`);
     await writeFile(join(repository, 'app.txt'), `${baseLines.join('\n')}\n`);
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
@@ -210,7 +211,7 @@ describe('FileHistoryService', () => {
   it('loads file-level statistics across a rename from a real repository', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-file-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'old.txt'), 'one\ntwo\n');
     await execFileAsync('git', ['add', '.'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add old'], { cwd: repository, env: environment });
@@ -268,18 +269,18 @@ describe('FileHistoryService', () => {
   it('follows the commits that changed the file without synthesizing a merge entry', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-file-history-merge-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'base\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'base'], { cwd: repository, env: environment });
-    await execFileAsync('git', ['switch', '-c', 'feature'], { cwd: repository });
+    await execFileAsync('git', ['checkout', '-b', 'feature'], { cwd: repository });
     await writeFile(join(repository, 'app.txt'), 'feature\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'feature app'], {
       cwd: repository,
       env: environment,
     });
-    await execFileAsync('git', ['switch', 'main'], { cwd: repository });
+    await execFileAsync('git', ['checkout', 'main'], { cwd: repository });
     await writeFile(join(repository, 'main.txt'), 'main\n');
     await execFileAsync('git', ['add', 'main.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'main work'], { cwd: repository, env: environment });
@@ -303,18 +304,18 @@ describe('FileHistoryService', () => {
   it('does not replace conflicting branch commits with the conflict-resolution merge', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-file-history-merge-parents-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'base\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'base'], { cwd: repository, env: environment });
-    await execFileAsync('git', ['switch', '-c', 'feature'], { cwd: repository });
+    await execFileAsync('git', ['checkout', '-b', 'feature'], { cwd: repository });
     await writeFile(join(repository, 'app.txt'), 'feature one\nfeature two\nfeature three\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'feature app'], {
       cwd: repository,
       env: environment,
     });
-    await execFileAsync('git', ['switch', 'main'], { cwd: repository });
+    await execFileAsync('git', ['checkout', 'main'], { cwd: repository });
     await writeFile(join(repository, 'app.txt'), 'main\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'main app'], { cwd: repository, env: environment });
@@ -344,7 +345,7 @@ describe('FileHistoryService', () => {
   it('maps a worktree line to HEAD and loads its line history from a real repository', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'first\nold target\nlast\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add target'], { cwd: repository, env: environment });
@@ -383,7 +384,7 @@ describe('FileHistoryService', () => {
   it('maps an unsaved editor line snapshot to HEAD without changing the working file', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-unsaved-line-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'first\ntarget\nlast\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add target'], {
@@ -416,7 +417,7 @@ describe('FileHistoryService', () => {
   it('maps a dirty CRLF editor snapshot using working-tree filters', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-crlf-line-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, '.gitattributes'), '*.txt text eol=crlf\n');
     await writeFile(join(repository, 'app.txt'), 'first\nold target\nlast\n');
     await execFileAsync('git', ['add', '.gitattributes', 'app.txt'], { cwd: repository });
@@ -443,7 +444,7 @@ describe('FileHistoryService', () => {
   it('maps a dirty working-tree-encoded editor snapshot as logical text', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-encoded-line-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(
       join(repository, '.gitattributes'),
       '*.txt text working-tree-encoding=UTF-16LE-BOM eol=crlf\n',
@@ -482,7 +483,7 @@ describe('FileHistoryService', () => {
   it('reports a purely uncommitted line and a file absent from HEAD', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-uncommitted-line-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'tracked.txt'), 'first\nsecond\n');
     await execFileAsync('git', ['add', 'tracked.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add tracked'], { cwd: repository, env: environment });
@@ -503,7 +504,7 @@ describe('FileHistoryService', () => {
   it('distinguishes a deleted historical file from an untracked file absent from HEAD', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-deleted-line-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'deleted.txt'), 'historical line\n');
     await execFileAsync('git', ['add', 'deleted.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add deleted file'], {
@@ -531,7 +532,7 @@ describe('FileHistoryService', () => {
   it('supports option-like Unicode and emoji paths in line history', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-special-line-path-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     const path = '-中文 😀.txt';
     await writeFile(join(repository, path), 'old\n');
     await execFileAsync('git', ['add', '--', path], { cwd: repository });
@@ -561,7 +562,7 @@ describe('FileHistoryService', () => {
     async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-newline-file-path-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     const path = 'line\nbreak.txt';
     await writeFile(join(repository, path), 'first\n');
     await execFileAsync('git', ['add', '--', path], { cwd: repository });
@@ -591,7 +592,7 @@ describe('FileHistoryService', () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-literal-file-history-'));
     temporaryDirectories.push(repository);
     const path = ':(exclude)other.txt';
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, path), 'target\n');
     await writeFile(join(repository, 'secret.txt'), 'old secret\n');
     await execFileAsync('git', ['add', '.'], { cwd: repository });
@@ -621,14 +622,14 @@ describe('FileHistoryService', () => {
   it('loads file history while HEAD is detached', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-detached-file-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'first\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'detached base'], {
       cwd: repository,
       env: environment,
     });
-    await execFileAsync('git', ['switch', '--detach', 'HEAD'], { cwd: repository });
+    await execFileAsync('git', ['checkout', '--detach', 'HEAD'], { cwd: repository });
     const { FileHistoryService } = await import('../../src/git/FileHistoryService');
 
     const entries = await new FileHistoryService(new GitRunner()).getFileHistory(
@@ -645,7 +646,7 @@ describe('FileHistoryService', () => {
   it('reuses a bounded file-history scan for the same HEAD and invalidates it when HEAD changes', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-file-history-cache-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'one\n');
     await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'first'], { cwd: repository, env: environment });

@@ -1610,6 +1610,21 @@ select:focus-visible,
   gap: 6px;
 }
 
+.identity-suggestion-button {
+  justify-self: start;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  cursor: pointer;
+}
+
+.identity-suggestion-button:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
 .operation-dialog input:not([type="checkbox"]),
 .operation-dialog textarea {
   height: 28px;

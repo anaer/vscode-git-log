@@ -21,6 +21,7 @@ import type {
   GitOperationRequest,
   PersistedWorkbenchState,
 } from '../../src/protocol/messages';
+import { initRepository, initRepositoryAt } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -32,7 +33,7 @@ afterEach(async () => {
 async function createRepository(): Promise<string> {
   const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-controller-'));
   temporaryDirectories.push(repository);
-  await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+  await initRepository(repository);
   await writeFile(join(repository, 'app.txt'), 'hello\n');
   await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
   await execFileAsync('git', ['commit', '-m', 'first commit'], {
@@ -483,7 +484,7 @@ describe('WorkbenchController', () => {
     const firstRoot = join(workspace, 'first');
     const secondRoot = join(workspace, 'second');
     for (const root of [firstRoot, secondRoot]) {
-      await execFileAsync('git', ['init', '-b', 'main', root]);
+      await initRepositoryAt(root);
       await mkdir(join(root, 'src'));
       await writeFile(join(root, 'src', 'app.txt'), `${root}\n`);
       await execFileAsync('git', ['add', 'src/app.txt'], { cwd: root });
@@ -873,7 +874,7 @@ describe('WorkbenchController', () => {
   it('loads an empty repository without reporting a Git revision error', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-empty-controller-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     const messages: ExtensionToWebviewMessage[] = [];
     const runner = new GitRunner();
     const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
@@ -910,7 +911,7 @@ describe('WorkbenchController', () => {
   it('opens file history in an empty repository as a clear empty state', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-empty-history-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'untracked.txt'), 'new file\n');
     const messages: ExtensionToWebviewMessage[] = [];
     const runner = new GitRunner();
@@ -1058,8 +1059,8 @@ describe('WorkbenchController', () => {
     temporaryDirectories.push(workspace);
     const firstRepository = join(workspace, 'first');
     const secondRepository = join(workspace, 'second');
-    await execFileAsync('git', ['init', '-b', 'main', firstRepository]);
-    await execFileAsync('git', ['init', '-b', 'main', secondRepository]);
+    await initRepositoryAt(firstRepository);
+    await initRepositoryAt(secondRepository);
     for (const repository of [firstRepository, secondRepository]) {
       await writeFile(join(repository, 'app.txt'), `${repository}\n`);
       await execFileAsync('git', ['add', 'app.txt'], { cwd: repository });
@@ -1313,6 +1314,66 @@ describe('WorkbenchController', () => {
     });
   });
 
+  it('refreshes contributors after a successful identity rewrite', async () => {
+    const repository = await createRepository();
+    const messages: ExtensionToWebviewMessage[] = [];
+    const service = new GitService(new GitRunner());
+    const getContributors = vi
+      .spyOn(service, 'getContributors')
+      .mockResolvedValueOnce([{ name: 'Old', email: 'old@example.com', commitCount: 1 }])
+      .mockResolvedValue([{ name: 'New', email: 'new@example.com', commitCount: 1 }]);
+    const hash = (
+      await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repository })
+    ).stdout.trim();
+    const run = vi.fn().mockResolvedValue({ message: 'rewritten' });
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService: service,
+      gitRunner: new GitRunner(),
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: { refsWidth: 220, filesWidth: 320, detailsHeight: 156, filesViewMode: 'tree' },
+      postMessage: (message) => {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+      operationService: { run },
+    });
+    await controller.handleMessage({ type: 'ready', requestId: 'ready-contributors' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    if (initialized?.type !== 'initialize' || !initialized.selectedRepositoryId) {
+      throw new Error('expected initialize');
+    }
+    await vi.waitFor(() => {
+      expect(messages.some((message) => message.type === 'repositoryData')).toBe(true);
+    });
+    expect(messages.find((message) => message.type === 'repositoryData')).toMatchObject({
+      contributors: [{ name: 'Old', email: 'old@example.com', commitCount: 1 }],
+    });
+
+    await controller.handleMessage({
+      type: 'runOperation',
+      requestId: 'identity-refresh',
+      repositoryId: initialized.selectedRepositoryId,
+      operation: {
+        kind: 'rewriteAuthorIdentity',
+        hashes: [hash],
+        name: 'New',
+        email: 'new@example.com',
+      },
+    });
+
+    await vi.waitFor(() => expect(getContributors).toHaveBeenCalledTimes(2));
+    const refreshed = messages.filter((message) => message.type === 'repositoryData').at(-1);
+    expect(refreshed).toMatchObject({
+      type: 'repositoryData',
+      contributors: [{ name: 'New', email: 'new@example.com', commitCount: 1 }],
+    });
+    controller.dispose();
+  });
+
   it('uses the configured pull strategy and accepts explicit overrides', async () => {
     const repository = await createRepository();
     const messages: ExtensionToWebviewMessage[] = [];
@@ -1480,8 +1541,8 @@ describe('WorkbenchController', () => {
     temporaryDirectories.push(workspace);
     const firstRepository = join(workspace, 'first');
     const secondRepository = join(workspace, 'second');
-    await execFileAsync('git', ['init', '-b', 'main', firstRepository]);
-    await execFileAsync('git', ['init', '-b', 'main', secondRepository]);
+    await initRepositoryAt(firstRepository);
+    await initRepositoryAt(secondRepository);
     const messages: ExtensionToWebviewMessage[] = [];
     let delaySelections = false;
     let releaseSecondPersist: (() => void) | undefined;
@@ -1913,8 +1974,8 @@ describe('WorkbenchController', () => {
     temporaryDirectories.push(workspace);
     const firstRepository = join(workspace, 'first');
     const secondRepository = join(workspace, 'second');
-    await execFileAsync('git', ['init', '-b', 'main', firstRepository]);
-    await execFileAsync('git', ['init', '-b', 'main', secondRepository]);
+    await initRepositoryAt(firstRepository);
+    await initRepositoryAt(secondRepository);
 
     const firstHash = 'a'.repeat(40);
     const secondHash = 'b'.repeat(40);
@@ -2779,7 +2840,7 @@ describe('WorkbenchController', () => {
     temporaryDirectories.push(workspace);
     const mainWorktree = join(workspace, 'main');
     const linkedWorktree = join(workspace, 'linked');
-    await execFileAsync('git', ['init', '-b', 'main', mainWorktree]);
+    await initRepositoryAt(mainWorktree);
     await execFileAsync('git', ['commit', '--allow-empty', '-m', 'base'], {
       cwd: mainWorktree,
       env: {
@@ -2873,7 +2934,7 @@ describe('WorkbenchController', () => {
     const firstRepository = join(workspace, 'first');
     const secondRepository = join(workspace, 'second');
     for (const repository of [firstRepository, secondRepository]) {
-      await execFileAsync('git', ['init', '-b', 'main', repository]);
+      await initRepositoryAt(repository);
       await execFileAsync('git', ['commit', '--allow-empty', '-m', 'base'], {
         cwd: repository,
         env: {

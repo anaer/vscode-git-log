@@ -10,6 +10,8 @@ import type { GitRunOptions, GitRunResult, GitRunner } from '../../src/git/GitRu
 import type { GitOperationRequest } from '../../src/protocol/messages';
 import type { RepositorySummary } from '../../src/shared/models';
 import { getOperationConfirmation } from '../../src/git/GitOperationService';
+import { initRepository, initRepositoryAt, currentBranch } from './support/gitFixture';
+import { supportsSwitchOrphan } from './support/gitVersion';
 
 const repository: RepositorySummary = {
   id: 'repo-1',
@@ -59,7 +61,7 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 async function createFixtureRepository(prefix = 'git-operation-'): Promise<{ path: string; summary: RepositorySummary }> {
   const path = await mkdtemp(join(tmpdir(), prefix));
   temporaryDirectories.push(path);
-  await git(path, 'init', '-b', 'main');
+  await initRepository(path);
   await git(path, 'config', 'user.name', 'Operation Test');
   await git(path, 'config', 'user.email', 'operation@example.com');
   await writeFile(join(path, 'base.txt'), 'base\n');
@@ -223,7 +225,7 @@ describe('GitOperationService', () => {
     );
 
     expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(base);
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await currentBranch(fixture.path)).toBe('main');
   });
 
   it('does not update other branches when rebase.updateRefs is enabled', async () => {
@@ -271,7 +273,7 @@ describe('GitOperationService', () => {
         },
       ),
     ).rejects.toThrow('changed during confirmation');
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('other');
+    expect(await currentBranch(fixture.path)).toBe('other');
     expect(await git(fixture.path, 'rev-parse', 'main')).toBe(newest);
   });
 
@@ -302,7 +304,7 @@ describe('GitOperationService', () => {
         { confirm: () => Promise.resolve(true) },
       ),
     ).rejects.toThrow('changed during confirmation');
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('other');
+    expect(await currentBranch(fixture.path)).toBe('other');
     expect(await git(fixture.path, 'rev-parse', 'main')).toBe(newest);
   });
 
@@ -371,7 +373,7 @@ describe('GitOperationService', () => {
     await expect(stat(join(fixture.path, 'descendant.txt'))).resolves.toBeDefined();
     // The rewritten history diverges from the previous tip but stays on branch main.
     expect(await git(fixture.path, 'rev-parse', 'HEAD')).not.toBe(newest);
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await currentBranch(fixture.path)).toBe('main');
     // An explicit backup branch is created for the pre-rewrite tip.
     expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).not.toBe('');
   });
@@ -392,7 +394,7 @@ describe('GitOperationService', () => {
     );
 
     expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('base edited');
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await currentBranch(fixture.path)).toBe('main');
   });
 
   it('refuses to rewrite history while HEAD is detached', async () => {
@@ -470,7 +472,7 @@ describe('GitOperationService', () => {
     ).rejects.toThrow('changed during confirmation');
     // The amended commit is preserved; nothing was rewritten.
     expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('amended during confirmation');
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await currentBranch(fixture.path)).toBe('main');
     expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).toBe('');
   });
 
@@ -520,7 +522,7 @@ describe('GitOperationService', () => {
     expect(topRow?.[3]).toBe('operation@example.com');
     // The rewritten history diverges from the old tip but stays on branch main.
     expect(await git(fixture.path, 'rev-parse', 'HEAD')).not.toBe(top);
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await currentBranch(fixture.path)).toBe('main');
     // Non-affected ancestors are untouched.
     expect(await git(fixture.path, 'rev-parse', 'HEAD~3')).toBe(base);
     // The author timestamp survives the identity rewrite.
@@ -618,7 +620,7 @@ describe('GitOperationService', () => {
     ).rejects.toThrow('changed during confirmation');
     // The amended commit is preserved; nothing was rewritten.
     expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('amended during confirmation');
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await currentBranch(fixture.path)).toBe('main');
     expect(await git(fixture.path, 'branch', '--list', 'identity-rewrite-backup/*')).toBe('');
   });
 
@@ -813,7 +815,7 @@ describe('GitOperationService', () => {
       expect.objectContaining({ confirmLabel: 'Abort Merge' }),
     );
     expect(await git(fixture.path, 'status', '--porcelain')).toBe('');
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+    expect(await currentBranch(fixture.path)).toBe('main');
 
     await expect(
       service.run(fixture.summary, { kind: 'mergeAbort' }, { confirm }),
@@ -1488,7 +1490,7 @@ describe('GitOperationService', () => {
       name: 'topic-local',
       startPoint: 'origin/topic',
     });
-    expect(await git(fixture.path, 'branch', '--show-current')).toBe('topic-local');
+    expect(await currentBranch(fixture.path)).toBe('topic-local');
     await service.run(fixture.summary, { kind: 'checkout', ref: 'main' });
     await service.run(
       fixture.summary,
@@ -1985,7 +1987,7 @@ describe('GitOperationService', () => {
     const clonePath = join(cloneDir, 'clone');
     // Build a shallow, single-branch clone deterministically (a local-path `git clone --depth 1`
     // can bypass shallow via git's local optimization). A `fetch --depth 1` always marks shallow.
-    await git(cloneDir, 'init', '-b', 'main', clonePath);
+    await initRepositoryAt(clonePath);
     await git(clonePath, 'config', 'user.name', 'Clone Test');
     await git(clonePath, 'config', 'user.email', 'clone@example.com');
     await git(clonePath, 'remote', 'add', 'origin', source.path);
@@ -2093,7 +2095,7 @@ describe('GitOperationService', () => {
     // remote over `file://` to end up genuinely shallow.
     const clonePath = await mkdtemp(join(tmpdir(), 'git-deepen-clone-'));
     temporaryDirectories.push(clonePath);
-    await git(clonePath, 'init', '-b', 'main');
+    await initRepository(clonePath);
     await git(clonePath, 'remote', 'add', 'origin', fixture.path);
     await git(clonePath, 'fetch', '--depth', '1', 'origin', 'main');
     await git(clonePath, 'checkout', '-q', 'main');
@@ -2149,7 +2151,7 @@ describe('GitOperationService', () => {
     expect(confirmation?.detail).toContain('+refs/heads/main:refs/remotes/origin/main');
   });
 
-  it('creates an orphan branch, removing tracked files while keeping untracked ones', async () => {
+  it.skipIf(!supportsSwitchOrphan)('creates an orphan branch, removing tracked files while keeping untracked ones', async () => {
     const { GitOperationService } = await import('../../src/git/GitOperationService');
     const fixture = await createFixtureRepository('git-orphan-');
     await writeFile(join(fixture.path, 'untracked.txt'), 'keep\n');
@@ -2172,7 +2174,7 @@ describe('GitOperationService', () => {
     expect(parents.split(/\s+/u)).toHaveLength(1);
   });
 
-  it('refuses to create an orphan branch whose name already exists', async () => {
+  it.skipIf(!supportsSwitchOrphan)('refuses to create an orphan branch whose name already exists', async () => {
     const { GitOperationService } = await import('../../src/git/GitOperationService');
     const fixture = await createFixtureRepository('git-orphan-dup-');
     const service = new GitOperationService(new RealGitRunner());
@@ -2187,7 +2189,7 @@ describe('GitOperationService', () => {
     expect(await git(fixture.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 
-  it('refuses to create an orphan branch while another operation is in progress', async () => {
+  it.skipIf(!supportsSwitchOrphan)('refuses to create an orphan branch while another operation is in progress', async () => {
     const { GitOperationService } = await import('../../src/git/GitOperationService');
     const fixture = await createFixtureRepository('git-orphan-busy-');
     const busy: RepositorySummary = {

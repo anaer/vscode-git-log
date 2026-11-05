@@ -163,6 +163,12 @@ export type WebviewToExtensionMessage =
     }
   | { type: 'updateLayout'; requestId: string; layout: WorkbenchLayout }
   | { type: 'applyPatch'; requestId: string; repositoryId: string }
+  | {
+      type: 'requestIdentityMappingCandidates';
+      requestId: string;
+      repositoryId: string;
+      hashes: string[];
+    }
   | { type: 'runOperation'; requestId: string; repositoryId: string; operation: GitOperationRequest };
 
 export type PullStrategy = 'default' | 'ff-only' | 'merge' | 'rebase';
@@ -269,6 +275,13 @@ export type ExtensionToWebviewMessage =
       requestId: string;
       repositoryId: string;
       messages: Array<{ hash: string; message: string }>;
+    }
+  | {
+      type: 'identityMappingSelected';
+      requestId: string;
+      repositoryId: string;
+      name: string;
+      email: string;
     }
   | {
       type: 'historyOpened';
@@ -1003,6 +1016,20 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
             type: value.type,
             requestId: value.requestId,
             repositoryId: value.repositoryId,
+          }
+        : undefined;
+    case 'requestIdentityMappingCandidates':
+      return hasRepository(value) &&
+        Array.isArray(value.hashes) &&
+        value.hashes.length >= 1 &&
+        value.hashes.length <= MAX_COMMIT_RANGE &&
+        value.hashes.every(isHash) &&
+        new Set(value.hashes).size === value.hashes.length
+        ? {
+            type: value.type,
+            requestId: value.requestId,
+            repositoryId: value.repositoryId,
+            hashes: value.hashes,
           }
         : undefined;
     case 'runOperation':

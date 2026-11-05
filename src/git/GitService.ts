@@ -16,6 +16,7 @@ import type {
   CommitDetails,
   CommitSummary,
   Contributor,
+  IdentityMappingCandidate,
   RefLabel,
   StashEntry,
 } from '../shared/models';
@@ -796,6 +797,68 @@ export class GitService {
       contributors.push({ name, email, commitCount: count });
     }
     return contributors;
+  }
+
+  async getIdentityMappingCandidates(
+    cwd: string,
+    hashes: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<IdentityMappingCandidate[]> {
+    const selected = [
+      ...new Set(hashes.filter((hash) => /^[0-9a-f]{4,64}$/iu.test(hash))),
+    ].slice(0, 100);
+    if (!selected.length) return [];
+
+    const raw = await this.runner.run(
+      ['log', '--no-walk', '--format=%an%x00%ae', ...selected, '--'],
+      { cwd, ...(signal ? { signal } : {}), timeoutMs: 30_000 },
+    );
+    const identities = new Map<string, { name: string; email: string; commitCount: number }>();
+    for (const line of raw.stdout.toString('utf8').split(/\r?\n/u)) {
+      if (!line) continue;
+      const separator = line.indexOf('\u0000');
+      if (separator <= 0) continue;
+      const name = line.slice(0, separator);
+      const email = line.slice(separator + 1);
+      if (!name || !email) continue;
+      const key = `${name}\u0000${email}`;
+      const existing = identities.get(key);
+      if (existing) existing.commitCount += 1;
+      else identities.set(key, { name, email, commitCount: 1 });
+    }
+    if (!identities.size) return [];
+
+    const originals = [...identities.values()];
+    const canonical: Array<{ name: string; email: string } | undefined> = [];
+    for (let start = 0; start < originals.length; start += 50) {
+      const chunk = originals.slice(start, start + 50);
+      const resolved = await this.runner.run(
+        ['check-mailmap', ...chunk.map((identity) => `${identity.name} <${identity.email}>`)],
+        { cwd, ...(signal ? { signal } : {}), timeoutMs: 30_000, maxStdoutBytes: 64 * 1024 },
+      );
+      const lines = resolved.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean);
+      for (let index = 0; index < chunk.length; index += 1) {
+        const match = /^(.*) <(.+)>$/u.exec(lines[index]?.trim() ?? '');
+        if (!match) continue;
+        canonical[start + index] = {
+          name: match[1]?.trim() ?? '',
+          email: match[2]?.trim() ?? '',
+        };
+      }
+    }
+
+    return originals.flatMap((identity, index) => {
+      const mapped = canonical[index];
+      if (!mapped?.name || !mapped.email) return [];
+      if (mapped.name === identity.name && mapped.email === identity.email) return [];
+      return [
+        {
+          from: { name: identity.name, email: identity.email },
+          to: mapped,
+          commitCount: identity.commitCount,
+        },
+      ];
+    });
   }
 
   /**

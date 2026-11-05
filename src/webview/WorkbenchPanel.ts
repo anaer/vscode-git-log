@@ -115,6 +115,25 @@ export class WorkbenchViewProvider implements vscode.WebviewViewProvider, vscode
           : 'default';
       },
       applyPatch: (repository) => this.applyPatch(fileURLToPath(repository.rootUri)),
+      pickIdentityMapping: async (candidates) => {
+        const selected = await vscode.window.showQuickPick(
+          candidates.map((candidate) => ({
+            label: `${candidate.to.name} <${candidate.to.email}>`,
+            description: `${candidate.from.name} <${candidate.from.email}> · ${String(
+              candidate.commitCount,
+            )} commit(s)`,
+            candidate,
+          })),
+          {
+            placeHolder: 'Select a .mailmap identity for the selected commits',
+            matchOnDescription: true,
+          },
+        );
+        return selected?.candidate;
+      },
+      showInformationMessage: (message) => {
+        void vscode.window.showInformationMessage(message);
+      },
       confirmOperation: async (confirmation) => {
         const selected = await vscode.window.showWarningMessage(
           confirmation.title,

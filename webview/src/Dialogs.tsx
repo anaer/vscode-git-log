@@ -529,6 +529,21 @@ export function Dialogs(props: DialogsProps) {
                 }
               />
             </label>
+            <button
+              type="button"
+              className="identity-suggestion-button"
+              title="Fill the identity from a .mailmap mapping for the selected commits"
+              onClick={() =>
+                send({
+                  type: "requestIdentityMappingCandidates",
+                  requestId: requestId("identity-candidates"),
+                  repositoryId: rewriteAuthorIdentity.repositoryId,
+                  hashes: rewriteAuthorIdentity.hashes,
+                })
+              }
+            >
+              Use .mailmap…
+            </button>
             <div className="operation-dialog-actions">
               <button
                 type="button"

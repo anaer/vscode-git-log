@@ -33,6 +33,7 @@ import type {
   FolderHistoryRequest,
   GitCapabilities,
   HistoryEntry,
+  IdentityMappingCandidate,
   RefLabel,
   RepositorySummary,
 } from '../shared/models';
@@ -80,6 +81,10 @@ export interface WorkbenchControllerOptions {
   withProgress?<T>(title: string, task: () => Promise<T>): Promise<T>;
   pullStrategy?(): PullStrategy;
   applyPatch?(repository: RepositorySummary): Promise<void>;
+  pickIdentityMapping?(
+    candidates: readonly IdentityMappingCandidate[],
+  ): Promise<IdentityMappingCandidate | undefined>;
+  showInformationMessage?(message: string): void;
   onRepositoriesChanged?(repositories: readonly RepositorySummary[]): void;
   openDiff?(
     repository: RepositorySummary,
@@ -478,6 +483,30 @@ export class WorkbenchController {
           if (!this.options.applyPatch) throw new Error('Patch application is not available.');
           const repository = this.requireRepository(message.repositoryId);
           await this.options.applyPatch(repository);
+          break;
+        }
+        case 'requestIdentityMappingCandidates': {
+          this.requireSelectedRepository(message.repositoryId);
+          const repository = this.requireRepository(message.repositoryId);
+          const candidates = await this.options.gitService.getIdentityMappingCandidates(
+            fileURLToPath(repository.rootUri),
+            message.hashes,
+          );
+          if (!candidates.length) {
+            this.options.showInformationMessage?.(
+              'No .mailmap mappings found for the selected commits.',
+            );
+            break;
+          }
+          const picked = await this.options.pickIdentityMapping?.(candidates);
+          if (!picked) break;
+          await this.options.postMessage({
+            type: 'identityMappingSelected',
+            requestId: message.requestId,
+            repositoryId: message.repositoryId,
+            name: picked.to.name,
+            email: picked.to.email,
+          });
           break;
         }
         case 'runOperation':

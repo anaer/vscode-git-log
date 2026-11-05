@@ -26,6 +26,18 @@ export interface Contributor {
   commitCount: number;
 }
 
+export interface IdentityMappingContact {
+  name: string;
+  email: string;
+}
+
+/** An original commit identity that `.mailmap` resolves to a different canonical identity. */
+export interface IdentityMappingCandidate {
+  from: IdentityMappingContact;
+  to: IdentityMappingContact;
+  commitCount: number;
+}
+
 export interface RefLabel {
   fullName: string;
   shortName: string;

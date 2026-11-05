@@ -638,6 +638,13 @@ export function createMessageProcessor(
           };
         });
         break;
+      case 'identityMappingSelected':
+        effects.setRewriteAuthorIdentity((current) =>
+          current && current.repositoryId === message.repositoryId
+            ? { ...current, name: message.name, email: message.email }
+            : current,
+        );
+        break;
       case 'operationCompleted':
         if (race.activeOperationByRepository.get(message.repositoryId) !== message.requestId) {
           race.requestById.delete(message.requestId);

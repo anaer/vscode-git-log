@@ -1855,12 +1855,27 @@ describe('WorkbenchApp', () => {
     if (!row) return;
     fireEvent.contextMenu(row);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rewrite Author Identity…' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Author name' }), {
-      target: { value: 'Bob' },
+    fireEvent.click(screen.getByRole('button', { name: 'Use .mailmap…' }));
+    expect(postedMessages.at(-1)).toMatchObject({
+      type: 'requestIdentityMappingCandidates',
+      repositoryId: 'repo-identity-rewrite',
+      hashes: [hash],
     });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Author email' }), {
-      target: { value: 'bob@example.com' },
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'identityMappingSelected',
+            requestId: 'identity-candidates',
+            repositoryId: 'repo-identity-rewrite',
+            name: 'Bob',
+            email: 'bob@example.com',
+          },
+        }),
+      );
     });
+    expect(screen.getByRole('textbox', { name: 'Author name' })).toHaveValue('Bob');
+    expect(screen.getByRole('textbox', { name: 'Author email' })).toHaveValue('bob@example.com');
     fireEvent.click(screen.getByRole('button', { name: 'Rewrite Author Identity' }));
 
     const operations = postedMessages.filter((message) => message.type === 'runOperation');

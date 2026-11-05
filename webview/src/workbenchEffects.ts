@@ -120,6 +120,14 @@ export interface WorkbenchEffects {
       | undefined
       | ((current: AmendDialogState | undefined) => AmendDialogState | undefined),
   ) => void;
+  setRewriteAuthorIdentity: (
+    next:
+      | RewriteAuthorIdentityState
+      | undefined
+      | ((
+          current: RewriteAuthorIdentityState | undefined,
+        ) => RewriteAuthorIdentityState | undefined),
+  ) => void;
   setBranchCleanup: (
     next:
       | BranchCleanupDialogState
@@ -171,6 +179,7 @@ export function createNoopEffects(): WorkbenchEffects {
     setEditCommitMessages: noop,
     setStashDialog: noop,
     setAmendDialog: noop,
+    setRewriteAuthorIdentity: noop,
     setBranchCleanup: noop,
     setResponsiveExpanded: noop,
     setScrollTopByRepository: noop,

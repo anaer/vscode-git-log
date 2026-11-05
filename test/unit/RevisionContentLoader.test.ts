@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitRunner } from '../../src/git/GitRunner';
 import { GitService } from '../../src/git/GitService';
 import { RepositoryRegistry } from '../../src/repositories/RepositoryRegistry';
+import { initRepository } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -27,7 +28,7 @@ describe('RevisionContentLoader', () => {
 
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-content-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'hello 娑擃厽鏋?txt'), 'hello revision\n');
     await writeFile(join(repository, 'binary.bin'), Buffer.from([0, 1, 2, 0, 255]));
     await execFileAsync('git', ['add', '.'], { cwd: repository });

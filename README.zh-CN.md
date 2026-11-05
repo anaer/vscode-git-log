@@ -262,6 +262,7 @@ npm run package
 - User 筛选会根据仓库的 `git config user.name/user.email` 始终置顶 `Me（当前 Git 用户）`，并优先使用邮箱过滤；顶部工具按钮均提供悬停说明。
 - Refresh 只读取本地状态；Fetch、Pull、Push 会访问用户现有 remote，并复用系统 credential helper/SSH Agent。
 - 普通 Push 要求当前分支已有上游；从未推送过的新分支请使用 Publish Branch，避免 `push.default=matching` 在未推送任何内容时静默报成功。
+- 在 Rewrite Author Identity 对话框中使用 `Use .mailmap…`，可从 `.mailmap` 为所选 commits 选择规范身份；姓名与邮箱会回填到表单，确认后再提交改写。
 - 顶部 `Stashes` 用于创建、查看、Apply、Pop 或 Drop 暂存工作。
 - merge、rebase、cherry-pick、revert 进行中时，Commit 列表上方会显示状态条；Continue/Abort 等动作集中在状态条中，冲突未解决时 Continue 不可用。
 - 使用命令面板的 `Apply Patch…` 或工具栏右键菜单中的同名项应用 `.patch` / `.diff`：先预览文件与增删行，再确认写入工作区；`--check` 失败时可选择 3-way 合并，并在 Source Control 中解决冲突。

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitCommandError, type GitRunner } from '../../src/git/GitRunner';
+import { initRepository } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -215,7 +216,7 @@ describe('LineBlameService', () => {
     const { LineBlameService } = await import('../../src/git/LineBlameService');
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-blame-rename-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'old-name.ts'), 'const answer = 42;\n');
     await execFileAsync('git', ['add', 'old-name.ts'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add original file'], {
@@ -241,7 +242,7 @@ describe('LineBlameService', () => {
     const { LineBlameService } = await import('../../src/git/LineBlameService');
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-blame-edited-rename-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'old-name.ts'), 'first\nsecond\nthird\nfourth\n');
     await execFileAsync('git', ['add', 'old-name.ts'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add original file'], {
@@ -267,7 +268,7 @@ describe('LineBlameService', () => {
     const { LineBlameService } = await import('../../src/git/LineBlameService');
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-blame-case-rename-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await execFileAsync('git', ['config', 'core.ignorecase', 'true'], { cwd: repository });
     await writeFile(join(repository, 'lower-name.ts'), 'const answer = 42;\n');
     await execFileAsync('git', ['add', 'lower-name.ts'], { cwd: repository });
@@ -297,7 +298,7 @@ describe('LineBlameService', () => {
     const { LineBlameService } = await import('../../src/git/LineBlameService');
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-blame-not-rename-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'deleted.ts'), 'shared-a\nshared-b\nold-one\nold-two\n');
     await execFileAsync('git', ['add', 'deleted.ts'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add deleted file'], {
@@ -317,7 +318,7 @@ describe('LineBlameService', () => {
     const { LineBlameService } = await import('../../src/git/LineBlameService');
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-blame-reordered-rename-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'old-name.ts'), 'A\nB\nC\n');
     await execFileAsync('git', ['add', 'old-name.ts'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add ordered file'], {
@@ -340,7 +341,7 @@ describe('LineBlameService', () => {
     const { LineBlameService } = await import('../../src/git/LineBlameService');
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-blame-incomplete-rename-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'large.ts'), `${'large-line\n'.repeat(220_000)}tail\n`);
     await writeFile(join(repository, 'similar.ts'), 'shared-a\nshared-b\nshared-c\nold\n');
     await execFileAsync('git', ['add', 'large.ts', 'similar.ts'], { cwd: repository });
@@ -362,7 +363,7 @@ describe('LineBlameService', () => {
     const { LineBlameService } = await import('../../src/git/LineBlameService');
     const repository = await mkdtemp(join(tmpdir(), 'git-log-line-blame-case-cache-'));
     temporaryDirectories.push(repository);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repository });
+    await initRepository(repository);
     await writeFile(join(repository, 'tracked.ts'), 'tracked\n');
     await execFileAsync('git', ['add', 'tracked.ts'], { cwd: repository });
     await execFileAsync('git', ['commit', '-m', 'add tracked file'], {

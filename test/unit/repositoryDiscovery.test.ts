@@ -5,6 +5,7 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitRunner } from '../../src/git/GitRunner';
+import { initRepositoryAt } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -15,7 +16,8 @@ afterEach(async () => {
 
 async function initializeRepository(path: string, bare = false): Promise<void> {
   await mkdir(path, { recursive: true });
-  await execFileAsync('git', bare ? ['init', '--bare', path] : ['init', '-b', 'main', path]);
+  if (bare) await execFileAsync('git', ['init', '--bare', path]);
+  else await initRepositoryAt(path);
 }
 
 describe('discoverRepositories', () => {
@@ -241,7 +243,7 @@ describe('discoverRepositories', () => {
     temporaryDirectories.push(workspace);
 
     const source = join(workspace, 'source');
-    await execFileAsync('git', ['init', '-b', 'main', source]);
+    await initRepositoryAt(source);
     await execFileAsync('git', ['config', 'user.name', 'Discovery Test'], { cwd: source });
     await execFileAsync('git', ['config', 'user.email', 'discovery@example.com'], { cwd: source });
     await writeFile(join(source, 'a.txt'), 'a\n');
@@ -252,7 +254,7 @@ describe('discoverRepositories', () => {
     await execFileAsync('git', ['commit', '-m', 'two'], { cwd: source });
 
     const clone = join(workspace, 'clone');
-    await execFileAsync('git', ['init', '-b', 'main', clone]);
+    await initRepositoryAt(clone);
     await execFileAsync('git', ['remote', 'add', 'origin', source], { cwd: clone });
     await execFileAsync('git', ['fetch', '--depth', '1', 'origin', 'main'], { cwd: clone });
     await execFileAsync('git', ['reset', '--hard', 'origin/main'], { cwd: clone });

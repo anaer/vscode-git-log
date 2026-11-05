@@ -10,6 +10,7 @@ import { withPushedTags } from '../../src/git/parsers/parseRefs';
 import { layoutCommitGraph } from '../../src/shared/layoutCommitGraph';
 import { extractLineHistoryContextPatch } from '../../src/git/lineHistoryContext';
 import { EMPTY_LOG_FILTERS } from '../../src/git/logQuery';
+import { initRepository } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -35,7 +36,7 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 async function createHistoryFixture(): Promise<string> {
   const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-service-'));
   temporaryDirectories.push(repository);
-  await git(repository, 'init', '-b', 'main');
+  await initRepository(repository);
   await writeFile(join(repository, 'README.md'), 'first\n');
   await git(repository, 'add', 'README.md');
   await git(repository, 'commit', '-m', '初始提交');
@@ -51,7 +52,7 @@ describe('GitService', () => {
     const repository = await createHistoryFixture();
     const remote = await mkdtemp(join(tmpdir(), 'git-log-cleanup-remote-'));
     temporaryDirectories.push(remote);
-    await git(remote, 'init', '--bare', '-b', 'main');
+    await git(remote, 'init', '--bare');
     await git(repository, 'remote', 'add', 'origin', remote);
     await git(repository, 'push', '-u', 'origin', 'main');
 
@@ -132,7 +133,7 @@ describe('GitService', () => {
   it('aggregates contributors from shortlog and merges mailmap aliases', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-mailmap-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'a.txt'), 'a\n');
     await git(repository, 'add', 'a.txt');
     await git(repository, 'commit', '-m', '首次提交');
@@ -171,6 +172,48 @@ describe('GitService', () => {
     const refs = await service.getRefs(repository, 'main');
     const page = await service.getLog(repository, { limit: 20, skip: 0, refs });
     expect(page[0]).toMatchObject({ authorName: '测试作者', authorEmail: 'author@example.com' });
+  });
+
+  it('generates identity mapping candidates from .mailmap for selected commits', async () => {
+    const repository = await mkdtemp(join(tmpdir(), 'git-log-identity-candidates-'));
+    temporaryDirectories.push(repository);
+    await initRepository(repository);
+    await writeFile(join(repository, 'a.txt'), 'a\n');
+    await git(repository, 'add', 'a.txt');
+    await git(repository, 'commit', '-m', 'first');
+    const first = await git(repository, 'rev-parse', 'HEAD');
+    await writeFile(join(repository, 'a.txt'), 'a\nb\n');
+    await git(repository, 'add', 'a.txt');
+    await execFileAsync('git', ['commit', '-m', 'second'], {
+      cwd: repository,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Old Author',
+        GIT_AUTHOR_EMAIL: 'old@example.com',
+        GIT_COMMITTER_NAME: 'CI Bot',
+        GIT_COMMITTER_EMAIL: 'ci@example.com',
+      },
+    });
+    const second = await git(repository, 'rev-parse', 'HEAD');
+    await writeFile(
+      join(repository, '.mailmap'),
+      '测试作者 <author@example.com> Old Author <old@example.com>\n',
+    );
+    const service = new GitService(new GitRunner());
+
+    await expect(
+      service.getIdentityMappingCandidates(repository, [second]),
+    ).resolves.toEqual([
+      {
+        from: { name: 'Old Author', email: 'old@example.com' },
+        to: { name: '测试作者', email: 'author@example.com' },
+        commitCount: 1,
+      },
+    ]);
+    await expect(
+      service.getIdentityMappingCandidates(repository, [first, second]),
+    ).resolves.toHaveLength(1);
+    await expect(service.getIdentityMappingCandidates(repository, [first])).resolves.toEqual([]);
   });
 
   it('resolves exact hash searches with Git 2.20-compatible arguments', async () => {
@@ -387,13 +430,13 @@ describe('GitService', () => {
 
   it('loads only commits reachable from the currently checked out HEAD by default', async () => {
     const repository = await createHistoryFixture();
-    await git(repository, 'switch', '-c', 'feature');
+    await git(repository, 'checkout', '-b', 'feature');
     await writeFile(join(repository, 'feature.txt'), 'feature\n');
     await git(repository, 'add', 'feature.txt');
     await git(repository, 'commit', '-m', 'feature-only commit');
     const featureHash = await git(repository, 'rev-parse', 'HEAD');
 
-    await git(repository, 'switch', 'main');
+    await git(repository, 'checkout', 'main');
     await writeFile(join(repository, 'main.txt'), 'main\n');
     await git(repository, 'add', 'main.txt');
     await git(repository, 'commit', '-m', 'main-only commit');
@@ -404,7 +447,7 @@ describe('GitService', () => {
     expect(mainCommits.map((commit) => commit.hash)).toContain(mainHash);
     expect(mainCommits.map((commit) => commit.hash)).not.toContain(featureHash);
 
-    await git(repository, 'switch', 'feature');
+    await git(repository, 'checkout', 'feature');
     const featureCommits = await service.getLog(repository, { limit: 20, skip: 0, refs: [] });
     expect(featureCommits.map((commit) => commit.hash)).toContain(featureHash);
     expect(featureCommits.map((commit) => commit.hash)).not.toContain(mainHash);
@@ -412,10 +455,10 @@ describe('GitService', () => {
 
   it('finds an exact commit hash even when it is outside the current HEAD history', async () => {
     const repository = await createHistoryFixture();
-    await git(repository, 'switch', '-c', 'feature');
+    await git(repository, 'checkout', '-b', 'feature');
     await git(repository, 'commit', '--allow-empty', '-m', 'feature hash target');
     const featureHash = await git(repository, 'rev-parse', 'HEAD');
-    await git(repository, 'switch', 'main');
+    await git(repository, 'checkout', 'main');
 
     const service = new GitService(new GitRunner());
     const commits = await service.getLog(repository, {
@@ -649,7 +692,7 @@ describe('GitService', () => {
   it('keeps child-before-parent topology when text matches the child message and parent author', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-skew-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     const commitAt = async (
       path: string,
       subject: string,
@@ -686,7 +729,7 @@ describe('GitService', () => {
   it('keeps paged text-search results in canonical child-before-ancestor order across hidden commits', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-search-pages-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     const commitAt = async (
       path: string,
       subject: string,
@@ -1452,7 +1495,7 @@ describe('GitService', () => {
 
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-service-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
 
     const service = new serviceModule.GitService(new GitRunner());
 
@@ -1476,7 +1519,7 @@ describe('GitService', () => {
   it('returns every parent of a merge commit', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-service-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'base.txt'), 'base\n');
     await git(repository, 'add', 'base.txt');
     await git(repository, 'commit', '-m', 'base');
@@ -1500,7 +1543,7 @@ describe('GitService', () => {
   it('loads added, modified, deleted, renamed, and binary changed files', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-service-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'modify.txt'), 'before\n');
     await writeFile(join(repository, 'delete.txt'), 'delete me\n');
     await writeFile(join(repository, 'rename-before.txt'), 'rename content\n');
@@ -1538,7 +1581,7 @@ describe('GitService', () => {
   it('detects a copied file even when the source is unchanged', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-copy-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'source.txt'), 'copy this content\n');
     await git(repository, 'add', 'source.txt');
     await git(repository, 'commit', '-m', 'source');
@@ -1632,7 +1675,7 @@ describe('GitService', () => {
   it('loads an inline patch for one file from root and ordinary commits', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-file-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'old line\n');
     await writeFile(join(repository, 'other.txt'), 'unrelated\n');
     await git(repository, 'add', '.');
@@ -1658,7 +1701,7 @@ describe('GitService', () => {
   it('keeps the entire file context in a commit file patch', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-full-file-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     const original = Array.from({ length: 14 }, (_, index) => `line ${String(index + 1)}`);
     await writeFile(join(repository, 'app.txt'), `${original.join('\n')}\n`);
     await git(repository, 'add', 'app.txt');
@@ -1685,7 +1728,7 @@ describe('GitService', () => {
   it('loads and extracts real Git context around a tracked line', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-line-context-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     const lines = Array.from({ length: 14 }, (_, index) => `line ${String(index + 1)}`);
     await writeFile(join(repository, 'app.txt'), `${lines.join('\n')}\n`);
     await git(repository, 'add', 'app.txt');
@@ -1724,7 +1767,7 @@ describe('GitService', () => {
   it('loads an inline patch between a revision and the working file', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-working-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'old line\n');
     await git(repository, 'add', 'app.txt');
     await git(repository, 'commit', '-m', 'add app');
@@ -1744,7 +1787,7 @@ describe('GitService', () => {
   it('keeps the entire file context in a branch or tag working-file patch', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-full-working-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     const lines = Array.from({ length: 14 }, (_, index) => `line ${String(index + 1)}`);
     await writeFile(join(repository, 'app.txt'), `${lines.join('\n')}\n`);
     await git(repository, 'add', 'app.txt');
@@ -1767,7 +1810,7 @@ describe('GitService', () => {
   it('uses unsaved editor content when loading a working-file patch', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-editor-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'app.txt'), 'old line\n');
     await git(repository, 'add', 'app.txt');
     await git(repository, 'commit', '-m', 'add app');
@@ -1789,7 +1832,7 @@ describe('GitService', () => {
   it('compares a saved untracked file against an empty ref side', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-untracked-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'tracked.txt'), 'tracked\n');
     await git(repository, 'add', 'tracked.txt');
     await git(repository, 'commit', '-m', 'base');
@@ -1808,7 +1851,7 @@ describe('GitService', () => {
   it('does not report a clean CRLF working file as an entire-file change', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-crlf-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, '.gitattributes'), 'app.txt text eol=crlf\n');
     await writeFile(join(repository, 'app.txt'), 'first line\nsecond line\n');
     await git(repository, 'add', '.gitattributes', 'app.txt');
@@ -1829,7 +1872,7 @@ describe('GitService', () => {
   it('surfaces a required working-tree filter failure instead of treating the ref side as empty', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-filter-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, '.gitattributes'), 'app.txt filter=broken\n');
     await writeFile(join(repository, 'app.txt'), 'tracked content\n');
     await git(repository, 'add', '.gitattributes', 'app.txt');
@@ -1846,7 +1889,7 @@ describe('GitService', () => {
   it('treats a directory at the ref path as an empty file side', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-tree-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, 'target.txt'), 'base\n');
     await git(repository, 'add', 'target.txt');
     await git(repository, 'commit', '-m', 'base');
@@ -1872,7 +1915,7 @@ describe('GitService', () => {
   it('honors a binary Git attribute for text-looking file content', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-binary-attr-patch-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, '.gitattributes'), '*.dat binary\n');
     await writeFile(join(repository, 'data.dat'), 'old ASCII content\n');
     await git(repository, 'add', '.gitattributes', 'data.dat');
@@ -1895,7 +1938,7 @@ describe('GitService', () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-literal-patch-'));
     temporaryDirectories.push(repository);
     const path = ':(exclude)other.txt';
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
     await writeFile(join(repository, path), 'old target\n');
     await writeFile(join(repository, 'secret.txt'), 'old secret\n');
     await git(repository, 'add', '.');
@@ -1923,7 +1966,7 @@ describe('GitService', () => {
   it('combines branch, author, date, and path filters against a real repository', async () => {
     const repository = await mkdtemp(join(tmpdir(), 'git-log-workbench-filters-'));
     temporaryDirectories.push(repository);
-    await git(repository, 'init', '-b', 'main');
+    await initRepository(repository);
 
     const commit = async (
       path: string,

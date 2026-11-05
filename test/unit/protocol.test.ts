@@ -116,6 +116,35 @@ describe('parseWebviewMessage', () => {
     expect(operation({ kind: 'createOrphanBranch', name: 'bad\nname' })).toBeUndefined();
   });
 
+  it('validates identity mapping candidate requests', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const hash = 'a'.repeat(40);
+    expect(
+      parseWebviewMessage({
+        type: 'requestIdentityMappingCandidates',
+        requestId: 'identity-candidates',
+        repositoryId: 'repository-1',
+        hashes: [hash],
+      }),
+    ).toBeDefined();
+    expect(
+      parseWebviewMessage({
+        type: 'requestIdentityMappingCandidates',
+        requestId: 'identity-candidates',
+        repositoryId: 'repository-1',
+        hashes: ['-oops'],
+      }),
+    ).toBeUndefined();
+    expect(
+      parseWebviewMessage({
+        type: 'requestIdentityMappingCandidates',
+        requestId: 'identity-candidates',
+        repositoryId: 'repository-1',
+        hashes: [hash, hash],
+      }),
+    ).toBeUndefined();
+  });
+
   it('validates pull strategies, merge abort, and apply-patch messages', async () => {
     const { parseWebviewMessage } = await import('../../src/protocol/messages');
     const operation = (value: Record<string, unknown>) =>

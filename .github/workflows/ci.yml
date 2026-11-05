@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Git ${{ matrix.git }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        git: [system, '2.20']
+
+    steps:
+      - name: Check out triggering commit
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache Git 2.20 build
+        if: matrix.git == '2.20'
+        id: git-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/git-2.20
+          key: git-2.20-${{ runner.os }}-v1
+
+      - name: Build Git 2.20
+        if: matrix.git == '2.20' && steps.git-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev
+          curl -fsSL -o "$RUNNER_TEMP/git-2.20.tar.gz" \
+            https://github.com/git/git/archive/refs/tags/v2.20.0.tar.gz
+          tar -xzf "$RUNNER_TEMP/git-2.20.tar.gz" -C "$RUNNER_TEMP"
+          make -C "$RUNNER_TEMP/git-2.20.0" -j"$(nproc)" \
+            prefix="$RUNNER_TEMP/git-2.20" \
+            NO_TCLTK=1 NO_GETTEXT=1 NO_CURL=1 NO_EXPAT=1 NO_OPENSSL=1 NO_PERL=1 NO_PYTHON=1
+          make -C "$RUNNER_TEMP/git-2.20.0" \
+            prefix="$RUNNER_TEMP/git-2.20" \
+            NO_TCLTK=1 NO_GETTEXT=1 NO_CURL=1 NO_EXPAT=1 NO_OPENSSL=1 NO_PERL=1 NO_PYTHON=1 install
+
+      - name: Use Git 2.20
+        if: matrix.git == '2.20'
+        run: echo "$RUNNER_TEMP/git-2.20/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Git version
+        run: |
+          if [ "${{ matrix.git }}" = "2.20" ]; then
+            test "$(git --version)" = "git version 2.20.0"
+          else
+            git --version
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build

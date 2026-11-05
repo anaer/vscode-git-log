@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GitRunner } from '../../src/git/GitRunner';
+import { initRepository } from './support/gitFixture';
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -17,7 +18,7 @@ describe('EditorGitContextService', () => {
   it('resolves the nearest repository and a normalized Git path without prior discovery', async () => {
     const root = await mkdtemp(join(tmpdir(), 'git-log-editor-context-'));
     temporaryDirectories.push(root);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: root });
+    await initRepository(root);
     await mkdir(join(root, 'src', 'nested'), { recursive: true });
     const file = join(root, 'src', 'nested', 'hello 中文.ts');
     await writeFile(file, 'export const value = 1;\n');
@@ -50,10 +51,10 @@ describe('EditorGitContextService', () => {
   it('selects the nearest nested repository', async () => {
     const root = await mkdtemp(join(tmpdir(), 'git-log-editor-nested-'));
     temporaryDirectories.push(root);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: root });
+    await initRepository(root);
     const nested = join(root, 'packages', 'nested');
     await mkdir(nested, { recursive: true });
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: nested });
+    await initRepository(nested);
     const file = join(nested, 'src', 'app.ts');
     await mkdir(join(nested, 'src'), { recursive: true });
     await writeFile(file, 'nested\n');
@@ -68,7 +69,7 @@ describe('EditorGitContextService', () => {
   it('resolves a repository root directory as the whole-repository path', async () => {
     const root = await mkdtemp(join(tmpdir(), 'git-log-editor-directory-root-'));
     temporaryDirectories.push(root);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: root });
+    await initRepository(root);
     const { EditorGitContextService } = await import('../../src/editor/EditorGitContextService');
 
     const context = await new EditorGitContextService(new GitRunner()).resolveDirectory(root);
@@ -84,7 +85,7 @@ describe('EditorGitContextService', () => {
     const main = join(root, 'main');
     const linked = join(root, 'linked');
     await mkdir(main, { recursive: true });
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: main });
+    await initRepository(main);
     await execFileAsync('git', ['config', 'user.name', 'Alice'], { cwd: main });
     await execFileAsync('git', ['config', 'user.email', 'alice@example.com'], { cwd: main });
     await writeFile(join(main, 'app.ts'), 'main\n');
@@ -104,7 +105,7 @@ describe('EditorGitContextService', () => {
   it('resolves a deleted tracked file that is still open in the editor', async () => {
     const root = await mkdtemp(join(tmpdir(), 'git-log-editor-deleted-file-'));
     temporaryDirectories.push(root);
-    await execFileAsync('git', ['init', '-b', 'main'], { cwd: root });
+    await initRepository(root);
     await mkdir(join(root, 'src'), { recursive: true });
     const file = join(root, 'src', 'deleted.ts');
     await writeFile(file, 'export const deleted = true;\n');
