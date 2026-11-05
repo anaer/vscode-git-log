@@ -1,4 +1,10 @@
-import { type CSSProperties, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import {
+  Fragment,
+  type CSSProperties,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import type { ChangedFile, RepositorySummary } from '../../src/shared/models';
 import type { GitOperationRequest, WebviewToExtensionMessage } from '../../src/protocol/messages';
 import type {
@@ -82,6 +88,7 @@ export function ContextMenu(props: ContextMenuProps) {
     Boolean(selectedRepository?.currentBranch) && !currentBranchHasUpstream;
   const refPublishesBranch =
     contextMenu.kind === 'ref' && contextMenu.ref.isCurrent && !contextMenu.ref.upstream;
+  const pullDisabled = !selectedRepository?.currentBranch || selectedOperationInFlight;
 
   return (
     <div
@@ -107,8 +114,9 @@ export function ContextMenu(props: ContextMenuProps) {
         ) : selectedRepository?.isBare ? (
           <span className="menu-note">Bare repositories are read-only.</span>
         ) : (
-          contextMenu.actions.map((action) => {
-            switch (action) {
+          <>
+            {contextMenu.actions.map((action) => {
+              switch (action) {
               case 'toggleRefs':
                 return (
                   <button
@@ -139,15 +147,55 @@ export function ContextMenu(props: ContextMenuProps) {
                 );
               case 'pull':
                 return (
-                  <button
-                    key={action}
-                    type="button"
-                    role="menuitem"
-                    disabled={!selectedRepository?.currentBranch || selectedOperationInFlight}
-                    onClick={() => runOperation({ kind: 'pull' }, contextMenu.repositoryId)}
-                  >
-                    Pull
-                  </button>
+                  <Fragment key={action}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={pullDisabled}
+                      onClick={() => runOperation({ kind: 'pull' }, contextMenu.repositoryId)}
+                    >
+                      Pull
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={pullDisabled}
+                      onClick={() =>
+                        runOperation(
+                          { kind: 'pull', strategy: 'ff-only' },
+                          contextMenu.repositoryId,
+                        )
+                      }
+                    >
+                      Pull (Fast-forward only)
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={pullDisabled}
+                      onClick={() =>
+                        runOperation(
+                          { kind: 'pull', strategy: 'merge' },
+                          contextMenu.repositoryId,
+                        )
+                      }
+                    >
+                      Pull (Merge)
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={pullDisabled}
+                      onClick={() =>
+                        runOperation(
+                          { kind: 'pull', strategy: 'rebase' },
+                          contextMenu.repositoryId,
+                        )
+                      }
+                    >
+                      Pull (Rebase)
+                    </button>
+                  </Fragment>
                 );
               case 'push':
                 return (
@@ -188,10 +236,25 @@ export function ContextMenu(props: ContextMenuProps) {
                     Force Push with Lease…
                   </button>
                 );
-              default:
-                return null;
-            }
-          })
+                default:
+                  return null;
+              }
+            })}
+            <button
+              type="button"
+              role="menuitem"
+              disabled={selectedOperationInFlight}
+              onClick={() =>
+                send({
+                  type: 'applyPatch',
+                  requestId: requestId('apply-patch'),
+                  repositoryId: contextMenu.repositoryId,
+                })
+              }
+            >
+              Apply Patch…
+            </button>
+          </>
         )
       ) : null}
       {contextMenu.kind === 'commit' ? (

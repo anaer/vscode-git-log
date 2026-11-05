@@ -765,6 +765,54 @@ describe('GitOperationService', () => {
     ]);
   });
 
+  it('aborts an in-progress merge and rejects when no merge is active', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-merge-abort-');
+    await git(fixture.path, 'checkout', '-b', 'side');
+    await commitFile(fixture.path, 'base.txt', 'side\n', 'side change');
+    await git(fixture.path, 'checkout', 'main');
+    await commitFile(fixture.path, 'base.txt', 'main\n', 'main change');
+    await expect(git(fixture.path, 'merge', 'side')).rejects.toThrow();
+
+    const service = new GitOperationService(new RealGitRunner());
+    const confirm = vi.fn().mockResolvedValue(true);
+    await service.run(fixture.summary, { kind: 'mergeAbort' }, { confirm });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ confirmLabel: 'Abort Merge' }),
+    );
+    expect(await git(fixture.path, 'status', '--porcelain')).toBe('');
+    expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
+
+    await expect(
+      service.run(fixture.summary, { kind: 'mergeAbort' }, { confirm }),
+    ).rejects.toThrow('No Git merge is in progress');
+  });
+
+  it('maps pull strategies and merge abort to git arguments', async () => {
+    const { buildOperationArguments } = await import('../../src/git/GitOperationService');
+    expect(buildOperationArguments({ kind: 'pull' })).toEqual(['pull']);
+    expect(buildOperationArguments({ kind: 'pull', strategy: 'default' })).toEqual(['pull']);
+    expect(buildOperationArguments({ kind: 'pull', strategy: 'ff-only' })).toEqual([
+      'pull',
+      '--ff-only',
+    ]);
+    expect(buildOperationArguments({ kind: 'pull', strategy: 'merge' })).toEqual([
+      'pull',
+      '--no-rebase',
+    ]);
+    expect(buildOperationArguments({ kind: 'pull', strategy: 'rebase' })).toEqual([
+      'pull',
+      '--rebase',
+    ]);
+    expect(buildOperationArguments({ kind: 'mergeAbort' })).toEqual(['merge', '--abort']);
+  });
+
+  it('confirms merge abort before discarding conflict resolutions', () => {
+    expect(
+      getOperationConfirmation(repository, { kind: 'mergeAbort' }),
+    ).toMatchObject({ confirmLabel: 'Abort Merge', destructive: true });
+  });
+
   it('requires explicit confirmation before deleting tags or remote branches', () => {
     const remote = getOperationConfirmation(repository, {
       kind: 'deleteRemoteBranch',

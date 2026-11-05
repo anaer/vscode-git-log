@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { ApplyPatchCommand } from './commands/ApplyPatchCommand';
+import { PullCommand } from './commands/PullCommand';
 import { DiffManager } from './diff/DiffManager';
 import { releaseNativeDiffResourcesIfUnused } from './diff/NativeDiffResources';
 import { RevisionContentLoader } from './diff/RevisionContentLoader';
@@ -29,12 +31,20 @@ import { ShikiHistoryCodeTokenizer } from './editor/ShikiHistoryCodeTokenizer';
 import { EditorGitContextService } from './editor/EditorGitContextService';
 import { EditorHistoryCommands } from './editor/EditorHistoryCommands';
 import { FileHistoryService } from './git/FileHistoryService';
+import { buildGitDiagnosticsReport } from './git/gitDiagnostics';
 import { GitRunner } from './git/GitRunner';
 import { GitService } from './git/GitService';
 import { GitOperationService } from './git/GitOperationService';
 import { LineBlameService } from './git/LineBlameService';
+import { PatchService } from './git/PatchService';
 import { registerExtension } from './registerExtension';
+import {
+  discoverRepositories,
+  ensureSupportedGit,
+  resolveGitCapabilities,
+} from './repositories/discoverRepositories';
 import { RepositoryRegistry } from './repositories/RepositoryRegistry';
+import type { RepositorySummary } from './shared/models';
 import { WorkbenchViewProvider } from './webview/WorkbenchPanel';
 
 const MAX_DIRTY_BLAME_CHARACTERS = 2 * 1024 * 1024;
@@ -320,6 +330,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const lineBlameService = new LineBlameService(runner);
   const fileHistoryService = new FileHistoryService(runner);
   const operationService = new GitOperationService(runner);
+  const patchService = new PatchService(runner);
+  const pullCommand = new PullCommand(runner, operationService, output);
+  const applyPatchCommand = new ApplyPatchCommand(runner, patchService, output);
   const repositories = new RepositoryRegistry();
   const maximumDiffFileBytes = configuration.get<number>(
     'performance.maxDiffFileBytes',
@@ -330,7 +343,7 @@ export function activate(context: vscode.ExtensionContext): void {
     gitService,
     maximumDiffFileBytes,
   );
-  const diffManager = new DiffManager();
+  const diffManager = new DiffManager(patchService);
   const editorContexts = new EditorGitContextService(runner);
   const blame = initializeBlameFeature(
     context,
@@ -420,6 +433,7 @@ export function activate(context: vscode.ExtensionContext): void {
     operationService,
     repositories,
     diffManager,
+    (root) => applyPatchCommand.run(root),
   );
   const workbenchViewRegistration = vscode.window.registerWebviewViewProvider(
     'gitLogWorkbench.log',
@@ -449,6 +463,62 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showErrorMessage(message);
     },
   });
+  const showGitDiagnostics = async (): Promise<void> => {
+    const workspaceRoots = (vscode.workspace.workspaceFolders ?? []).map(
+      (folder) => folder.uri.fsPath,
+    );
+    const current = vscode.workspace.getConfiguration('gitLogWorkbench');
+    const scanDepth = current.get<number>('repositories.scanDepth', 2);
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Collecting Git diagnostics',
+        cancellable: false,
+      },
+      async () => {
+        let gitVersion: string | undefined;
+        let gitVersionError: string | undefined;
+        try {
+          gitVersion = await ensureSupportedGit(runner, workspaceRoots[0] ?? process.cwd());
+        } catch (error) {
+          gitVersionError = toUserMessage(error);
+        }
+        let discovered: RepositorySummary[] = [];
+        try {
+          discovered = await discoverRepositories(
+            workspaceRoots.length ? workspaceRoots : [process.cwd()],
+            runner,
+            {
+              scanDepth,
+              excludePatterns: current.get<string[]>('repositories.exclude', [
+                '**/node_modules/**',
+                '**/.worktrees/**',
+              ]),
+            },
+          );
+        } catch (error) {
+          output.appendLine(`[diagnostics] repository discovery failed: ${toUserMessage(error)}`);
+        }
+        const report = buildGitDiagnosticsReport({
+          extensionVersion: String(context.extension.packageJSON.version ?? 'unknown'),
+          vscodeVersion: vscode.version,
+          platform: process.platform,
+          arch: process.arch,
+          gitPath: current.get<string>('git.path', 'git'),
+          ...(gitVersion ? { gitVersion } : {}),
+          ...(gitVersion ? { capabilities: resolveGitCapabilities(gitVersion) } : {}),
+          ...(gitVersionError ? { gitVersionError } : {}),
+          workspaceRoots,
+          scanDepth,
+          initialPageSize: current.get<number>('log.initialPageSize', 200),
+          pageSize: current.get<number>('log.pageSize', 500),
+          repositories: discovered,
+        });
+        output.appendLine(report);
+        output.show(true);
+      },
+    );
+  };
   const registrations = registerExtension({
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
     openWorkbench: () => {
@@ -471,6 +541,9 @@ export function activate(context: vscode.ExtensionContext): void {
     compareFileWithRef: () => {
       void compareFileCommand.run();
     },
+    applyPatch: () => applyPatchCommand.run(),
+    showDiagnostics: showGitDiagnostics,
+    pull: (strategy) => pullCommand.run(strategy),
   });
 
   context.subscriptions.push(

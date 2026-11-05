@@ -602,6 +602,7 @@ export function createMessageProcessor(
                 ...(current.selectedRepositoryId === repositoryId
                   ? {
                       error: message.message,
+                      errorNextStep: message.nextStep,
                       errorRecovery: message.recovery
                         ? { repositoryId, action: message.recovery }
                         : undefined,
@@ -629,6 +630,7 @@ export function createMessageProcessor(
             ...current,
             loading: undefined,
             error: message.message,
+            errorNextStep: message.nextStep,
             errorRecovery:
               message.recovery && message.repositoryId
                 ? { repositoryId: message.repositoryId, action: message.recovery }

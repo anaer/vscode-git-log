@@ -130,6 +130,7 @@ describe('WorkbenchViewProvider editor history handoff', () => {
       {} as never,
       {} as never,
       {} as never,
+      async () => undefined,
     );
     const repository = {
       id: 'repo-1',
@@ -215,6 +216,7 @@ describe('WorkbenchViewProvider editor history handoff', () => {
       {} as never,
       {} as never,
       {} as never,
+      async () => undefined,
     );
     const webview = {
       cspSource: 'vscode-webview:',

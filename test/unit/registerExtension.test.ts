@@ -9,6 +9,9 @@ describe('registerExtension', () => {
     const showFileHistory = vi.fn();
     const showFolderHistory = vi.fn();
     const compareFileWithRef = vi.fn();
+    const applyPatch = vi.fn();
+    const showDiagnostics = vi.fn();
+    const pull = vi.fn();
     const registeredCommands = new Map<string, (...args: unknown[]) => void>();
 
     const result = registerExtension({
@@ -22,9 +25,12 @@ describe('registerExtension', () => {
       showFileHistory,
       showFolderHistory,
       compareFileWithRef,
+      applyPatch,
+      showDiagnostics,
+      pull,
     });
 
-    expect(result).toHaveLength(6);
+    expect(result).toHaveLength(11);
     const fileResource = { scheme: 'file', fsPath: '/repo/src/app.ts' };
     const folderResource = { scheme: 'file', fsPath: '/repo/src' };
     registeredCommands.get('gitLogWorkbench.openLog')?.();
@@ -33,11 +39,19 @@ describe('registerExtension', () => {
     registeredCommands.get('gitLogWorkbench.editor.showFileHistory')?.(fileResource);
     registeredCommands.get('gitLogWorkbench.explorer.showFolderHistory')?.(folderResource);
     registeredCommands.get('gitLogWorkbench.editor.compareFileWithRef')?.();
+    registeredCommands.get('gitLogWorkbench.applyPatch')?.();
+    registeredCommands.get('gitLogWorkbench.showDiagnostics')?.();
+    registeredCommands.get('gitLogWorkbench.pull.ffOnly')?.();
+    registeredCommands.get('gitLogWorkbench.pull.merge')?.();
+    registeredCommands.get('gitLogWorkbench.pull.rebase')?.();
     expect(openWorkbench).toHaveBeenCalledOnce();
     expect(showLineHistory).toHaveBeenCalledOnce();
     expect(showSelectionHistory).toHaveBeenCalledOnce();
     expect(showFileHistory).toHaveBeenCalledWith(fileResource);
     expect(showFolderHistory).toHaveBeenCalledWith(folderResource);
     expect(compareFileWithRef).toHaveBeenCalledOnce();
+    expect(applyPatch).toHaveBeenCalledOnce();
+    expect(showDiagnostics).toHaveBeenCalledOnce();
+    expect(pull.mock.calls).toEqual([['ff-only'], ['merge'], ['rebase']]);
   });
 });

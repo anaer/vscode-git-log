@@ -1313,6 +1313,109 @@ describe('WorkbenchController', () => {
     });
   });
 
+  it('uses the configured pull strategy and accepts explicit overrides', async () => {
+    const repository = await createRepository();
+    const messages: ExtensionToWebviewMessage[] = [];
+    const run = vi.fn().mockResolvedValue({ message: 'pulled' });
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService: new GitService(new GitRunner()),
+      gitRunner: new GitRunner(),
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: { refsWidth: 220, filesWidth: 320, detailsHeight: 156, filesViewMode: 'tree' },
+      postMessage: (message) => {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+      operationService: { run },
+      pullStrategy: () => 'rebase',
+    });
+    await controller.handleMessage({ type: 'ready', requestId: 'ready-pull-strategy' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    if (initialized?.type !== 'initialize' || !initialized.selectedRepositoryId) {
+      throw new Error('expected initialize');
+    }
+    const repositoryId = initialized.selectedRepositoryId;
+
+    await controller.handleMessage({
+      type: 'runOperation',
+      requestId: 'pull-default',
+      repositoryId,
+      operation: { kind: 'pull' },
+    });
+    expect(run).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { kind: 'pull', strategy: 'rebase' },
+      expect.anything(),
+    );
+
+    await controller.handleMessage({
+      type: 'runOperation',
+      requestId: 'pull-explicit',
+      repositoryId,
+      operation: { kind: 'pull', strategy: 'ff-only' },
+    });
+    expect(run).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { kind: 'pull', strategy: 'ff-only' },
+      expect.anything(),
+    );
+  });
+
+  it('adds the next step to errors and delegates patch application', async () => {
+    const repository = await createRepository();
+    const messages: ExtensionToWebviewMessage[] = [];
+    const locked = "fatal: Unable to create '/repo/.git/index.lock': File exists.";
+    const run = vi.fn().mockRejectedValue(
+      new GitCommandError(locked, ['status'], repository, 128, Buffer.alloc(0), Buffer.from(locked), false, false),
+    );
+    const applyPatch = vi.fn().mockResolvedValue(undefined);
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService: new GitService(new GitRunner()),
+      gitRunner: new GitRunner(),
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: { refsWidth: 220, filesWidth: 320, detailsHeight: 156, filesViewMode: 'tree' },
+      postMessage: (message) => {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+      operationService: { run },
+      applyPatch,
+    });
+    await controller.handleMessage({ type: 'ready', requestId: 'ready-hint' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    if (initialized?.type !== 'initialize' || !initialized.selectedRepositoryId) {
+      throw new Error('expected initialize');
+    }
+    const repositoryId = initialized.selectedRepositoryId;
+
+    await controller.handleMessage({
+      type: 'runOperation',
+      requestId: 'locked-index',
+      repositoryId,
+      operation: { kind: 'fetch' },
+    });
+    expect(messages.at(-1)).toMatchObject({
+      type: 'error',
+      nextStep: expect.stringContaining('another Git process'),
+    });
+
+    await controller.handleMessage({
+      type: 'applyPatch',
+      requestId: 'apply-patch',
+      repositoryId,
+    });
+    expect(applyPatch).toHaveBeenCalledOnce();
+    expect(applyPatch.mock.calls[0]?.[0]).toMatchObject({ id: repositoryId });
+  });
+
   it('ignores an older workspace initialization that finishes after a newer one', async () => {
     const firstRepository = await createRepository();
     const secondRepository = await createRepository();

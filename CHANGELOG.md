@@ -2,6 +2,18 @@
 
 All notable changes to Git Log are documented in this file.
 
+## 26.1105.1412
+
+### Added
+
+- **Apply and export patches**: apply external patch files with preview and validation, and export commit comparisons as `.patch`.
+- **Pull strategies**: choose fast-forward-only, merge, or rebase per action, with a configurable default.
+- **Diagnostics**: a command that reports Git, extension, and repository facts for troubleshooting.
+
+### Changed
+
+- **Actionable errors and interrupted states**: errors include a next step, and merge/rebase/cherry-pick/revert share one status bar with context actions and a confirmed merge abort.
+
 ## 26.1105.1127
 
 ### Added

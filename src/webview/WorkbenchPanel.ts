@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import * as vscode from 'vscode';
 import type { GitRunner } from '../git/GitRunner';
 import type { GitService } from '../git/GitService';
@@ -51,6 +52,7 @@ export class WorkbenchViewProvider implements vscode.WebviewViewProvider, vscode
     private readonly operationService: GitOperationService,
     private readonly repositories: RepositoryRegistry,
     private readonly diffManager: DiffManager,
+    private readonly applyPatch: (repositoryRoot: string) => Promise<void>,
   ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -104,6 +106,15 @@ export class WorkbenchViewProvider implements vscode.WebviewViewProvider, vscode
       gitService: this.gitService,
       fileHistoryService: this.fileHistoryService,
       operationService: this.operationService,
+      pullStrategy: () => {
+        const value = vscode.workspace
+          .getConfiguration('gitLogWorkbench')
+          .get<string>('pull.strategy', 'default');
+        return value === 'ff-only' || value === 'merge' || value === 'rebase'
+          ? value
+          : 'default';
+      },
+      applyPatch: (repository) => this.applyPatch(fileURLToPath(repository.rootUri)),
       confirmOperation: async (confirmation) => {
         const selected = await vscode.window.showWarningMessage(
           confirmation.title,
@@ -147,7 +158,12 @@ export class WorkbenchViewProvider implements vscode.WebviewViewProvider, vscode
       openFile: (repository, request) =>
         this.diffManager.openFile(repository.id, vscode.Uri.parse(repository.rootUri), request),
       openCommitComparison: (repository, request, files) =>
-        this.diffManager.openCommit(repository.id, request, files),
+        this.diffManager.openCommit(
+          repository.id,
+          fileURLToPath(repository.rootUri),
+          request,
+          files,
+        ),
     });
     controllerRef.current = controller;
 

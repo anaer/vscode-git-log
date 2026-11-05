@@ -346,6 +346,17 @@ function Workbench() {
   const selectedOperationInFlight = state.selectedRepositoryId
     ? state.operationRepositoryIds.has(state.selectedRepositoryId)
     : false;
+  const operationState = selectedRepository?.operationState;
+  const operationLabel =
+    operationState === 'merge'
+      ? 'Merging'
+      : operationState === 'rebase'
+        ? 'Rebasing'
+        : operationState === 'cherry-pick'
+          ? 'Cherry-picking'
+          : operationState === 'revert'
+            ? 'Reverting'
+            : 'Git operation';
   const shallowNoticeVisible = Boolean(
     selectedRepository?.isShallow && !selectedRepository.isBare,
   );
@@ -1602,7 +1613,12 @@ function Workbench() {
       {globalToolbar}
       {state.error ? (
         <div className="error-banner" role="alert">
-          <span>{state.error}</span>
+          <span>
+            {state.error}
+            {state.errorNextStep ? (
+              <span className="error-next-step"> → {state.errorNextStep}</span>
+            ) : null}
+          </span>
           <span className="error-actions">
             {state.errorRecovery?.action.kind === 'forceDeleteBranch' ? (
               <button
@@ -1648,7 +1664,13 @@ function Workbench() {
               type="button"
               aria-label="Copy diagnostic"
               onClick={() =>
-                send({ type: 'copyToClipboard', requestId: requestId('diagnostic'), text: state.error ?? '' })
+                send({
+                  type: 'copyToClipboard',
+                  requestId: requestId('diagnostic'),
+                  text: `${state.error ?? ''}${
+                    state.errorNextStep ? ` → ${state.errorNextStep}` : ''
+                  }`,
+                })
               }
             >
               Copy
@@ -1724,9 +1746,9 @@ function Workbench() {
 
         <section
           ref={logRef}
-          className={`log-pane pane${
-            selectedRepository?.operationState === 'rebase' ? ' rebase-active' : ''
-          }${shallowNoticeVisible ? ' shallow-active' : ''}`}
+          className={`log-pane pane${operationState ? ' operation-active' : ''}${
+            shallowNoticeVisible ? ' shallow-active' : ''
+          }`}
           role="grid"
           aria-label="Commit log"
           tabIndex={0}
@@ -1760,11 +1782,11 @@ function Workbench() {
           }
         >
           {commitToolbar}
-          {selectedRepository?.operationState === 'rebase' ? (
+          {operationState ? (
             <div
-              className="rebase-status-row"
+              className="operation-status-row"
               role="toolbar"
-              aria-label="Rebase in progress"
+              aria-label={`${operationLabel} in progress`}
             >
               <button
                 className="operation-badge"
@@ -1778,38 +1800,58 @@ function Workbench() {
                   })
                 }
               >
-                Rebasing
+                {operationLabel}
               </button>
-              <div className="rebase-actions" role="group" aria-label="Rebase actions">
+              {selectedRepository?.hasUnresolvedConflicts ? (
+                <span className="operation-conflicts" role="status">
+                  Conflicts
+                </span>
+              ) : null}
+              <div className="operation-actions" role="group" aria-label={`${operationLabel} actions`}>
+                {operationState === 'rebase' ? (
+                  <>
+                    <button
+                      className="operation-action-button operation-continue-button"
+                      type="button"
+                      disabled={
+                        selectedOperationInFlight ||
+                        Boolean(selectedRepository?.hasUnresolvedConflicts)
+                      }
+                      title={
+                        selectedRepository?.hasUnresolvedConflicts
+                          ? 'Resolve all conflicts before continuing the rebase'
+                          : 'Continue rebase'
+                      }
+                      onClick={() => runOperation({ kind: 'rebaseContinue' })}
+                    >
+                      Continue
+                    </button>
+                    <button
+                      className="operation-action-button"
+                      type="button"
+                      disabled={selectedOperationInFlight}
+                      onClick={() => runOperation({ kind: 'rebaseSkip' })}
+                    >
+                      Skip
+                    </button>
+                  </>
+                ) : null}
                 <button
-                  className="rebase-action-button rebase-continue-button"
-                  type="button"
-                  disabled={
-                    selectedOperationInFlight ||
-                    Boolean(selectedRepository.hasUnresolvedConflicts)
-                  }
-                  title={
-                    selectedRepository.hasUnresolvedConflicts
-                      ? 'Resolve all conflicts before continuing the rebase'
-                      : 'Continue rebase'
-                  }
-                  onClick={() => runOperation({ kind: 'rebaseContinue' })}
-                >
-                  Continue
-                </button>
-                <button
-                  className="rebase-action-button"
+                  className="operation-action-button"
                   type="button"
                   disabled={selectedOperationInFlight}
-                  onClick={() => runOperation({ kind: 'rebaseSkip' })}
-                >
-                  Skip
-                </button>
-                <button
-                  className="rebase-action-button"
-                  type="button"
-                  disabled={selectedOperationInFlight}
-                  onClick={() => runOperation({ kind: 'rebaseAbort' })}
+                  onClick={() =>
+                    runOperation({
+                      kind:
+                        operationState === 'merge'
+                          ? 'mergeAbort'
+                          : operationState === 'cherry-pick'
+                            ? 'abortCherryPick'
+                            : operationState === 'revert'
+                              ? 'abortRevert'
+                              : 'rebaseAbort',
+                    })
+                  }
                 >
                   Abort
                 </button>

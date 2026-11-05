@@ -84,6 +84,7 @@ export interface WorkbenchState {
   filters: LogFilters;
   loading: Extract<ExtensionToWebviewMessage, { type: 'loading' }>['scope'] | undefined;
   error: string | undefined;
+  errorNextStep: string | undefined;
   errorRecovery: { repositoryId: string; action: ErrorRecoveryAction } | undefined;
   history:
     | {
@@ -133,6 +134,7 @@ export const initialWorkbenchState: WorkbenchState = {
   filters: defaultFilters,
   loading: undefined,
   error: undefined,
+  errorNextStep: undefined,
   errorRecovery: undefined,
   history: undefined,
   folderHistory: undefined,

@@ -7,7 +7,11 @@ const {
   panel,
   receiveMessage,
   revealRange,
+  showErrorMessage,
+  showInformationMessage,
+  showSaveDialog,
   tabGroups,
+  writeFile,
 } = vi.hoisted(() => {
   type TabChange = {
     opened: readonly unknown[];
@@ -45,6 +49,10 @@ const {
     },
     panel,
     receiveMessage: async (message: unknown) => messageHandler?.(message),
+    showErrorMessage: vi.fn(),
+    showInformationMessage: vi.fn(),
+    showSaveDialog: vi.fn(),
+    writeFile: vi.fn(),
   };
 });
 
@@ -52,6 +60,7 @@ vi.mock('vscode', () => ({
   commands: { executeCommand },
   workspace: {
     getConfiguration: vi.fn(() => ({ get: vi.fn((_key: string, fallback: boolean) => fallback) })),
+    fs: { writeFile },
   },
   ViewColumn: { One: 1, Two: 2, Beside: -2 },
   TextEditorRevealType: { InCenterIfOutsideViewport: 1 },
@@ -68,10 +77,16 @@ vi.mock('vscode', () => ({
     activeTextEditor: { revealRange, document: { lineCount: 100 } },
     visibleTextEditors: [],
     tabGroups,
+    showErrorMessage,
+    showInformationMessage,
+    showSaveDialog,
   },
   Uri: {
     from(value: { scheme: string; path: string; query?: string }) {
       return { ...value };
+    },
+    file(value: string) {
+      return { fsPath: value };
     },
   },
 }));
@@ -87,13 +102,18 @@ describe('DiffManager', () => {
     vi.mocked(vscode.workspace.getConfiguration).mockClear();
     panel.webview.html = '';
     panel.webview.postMessage.mockReset();
+    showSaveDialog.mockReset();
+    showErrorMessage.mockReset();
+    showInformationMessage.mockReset();
+    writeFile.mockReset();
     tabGroups.all = [{}, {}];
     tabGroups.activeTabGroup.activeTab = undefined;
   });
 
   it('keeps every selected file diff in the same second editor group', async () => {
-    await new DiffManager().openCommit(
+    await new DiffManager({} as never).openCommit(
       'repo-1',
+      '/repo',
       { parent: 'a'.repeat(40), hash: 'b'.repeat(40) },
       [
         {
@@ -117,6 +137,7 @@ describe('DiffManager', () => {
     expect(executeCommand).not.toHaveBeenCalled();
     expect(panel.webview.html).toContain('<details class="file-directory" open>');
     expect(panel.webview.html).toContain('<summary>src</summary>');
+    expect(panel.webview.html).toContain('Export Patch…');
     expect(panel.webview.html).toContain('<summary>features</summary>');
     expect(panel.webview.html).toContain('app.dart');
     expect(panel.webview.html).toContain('class="file-type-icon file-type-dart"');
@@ -143,8 +164,9 @@ describe('DiffManager', () => {
   });
 
   it('opens every text file in the native changes editor in the second editor group', async () => {
-    await new DiffManager().openCommit(
+    await new DiffManager({} as never).openCommit(
       'repo-1',
+      '/repo',
       { parent: 'a'.repeat(40), hash: 'b'.repeat(40) },
       [
         {
@@ -194,8 +216,9 @@ describe('DiffManager', () => {
 
   it('creates a second editor group before opening all comparison files when needed', async () => {
     tabGroups.all = [{}];
-    await new DiffManager().openCommit(
+    await new DiffManager({} as never).openCommit(
       'repo-1',
+      '/repo',
       { parent: 'a'.repeat(40), hash: 'b'.repeat(40) },
       [{ status: 'M', path: 'app.ts', binary: false }],
     );
@@ -214,8 +237,9 @@ describe('DiffManager', () => {
   it('clears the all changes selection when its native changes tab closes', async () => {
     const allChangesTab = { label: `Git Changes (${'a'.repeat(8)} ↔ ${'b'.repeat(8)})` };
     tabGroups.activeTabGroup.activeTab = { label: 'Previous editor' };
-    await new DiffManager().openCommit(
+    await new DiffManager({} as never).openCommit(
       'repo-1',
+      '/repo',
       { parent: 'a'.repeat(40), hash: 'b'.repeat(40) },
       [{ status: 'M', path: 'app.ts', binary: false }],
     );
@@ -229,7 +253,7 @@ describe('DiffManager', () => {
   });
 
   it('compares a selected revision or empty side with the current working file', async () => {
-    const manager = new DiffManager();
+    const manager = new DiffManager({} as never);
     const workingFile = { scheme: 'file', path: '/workspace/src/app.ts' };
 
     await manager.openWorkingFileAgainstRevision('repo-1', {
@@ -271,7 +295,7 @@ describe('DiffManager', () => {
     } as never);
     const workingFile = { scheme: 'file', path: '/workspace/src/app.ts' };
 
-    await new DiffManager().openWorkingFileAgainstRevision('repo-1', {
+    await new DiffManager({} as never).openWorkingFileAgainstRevision('repo-1', {
       revision: 'a'.repeat(40),
       revisionLabel: 'feature',
       path: 'src/app.ts',
@@ -303,7 +327,7 @@ describe('DiffManager', () => {
     } as never);
     const workingFile = { scheme: 'file', path: '/workspace/src/app.ts' };
 
-    await new DiffManager().openWorkingFileAgainstRevision('repo-1', {
+    await new DiffManager({} as never).openWorkingFileAgainstRevision('repo-1', {
       revision: 'a'.repeat(40),
       revisionLabel: 'feature',
       path: 'src/app.ts',
@@ -324,7 +348,7 @@ describe('DiffManager', () => {
     });
     const onWillOpen = vi.fn(() => events.push('retain'));
 
-    await new DiffManager().openWorkingFileAgainstRevision('repo-1', {
+    await new DiffManager({} as never).openWorkingFileAgainstRevision('repo-1', {
       revision: 'a'.repeat(40),
       revisionLabel: 'feature',
       path: 'src/app.ts',
@@ -340,7 +364,7 @@ describe('DiffManager', () => {
   });
 
   it('reveals the changed line after opening a history diff', async () => {
-    await new DiffManager().open('repo-1', {
+    await new DiffManager({} as never).open('repo-1', {
       hash: 'b'.repeat(40),
       parent: 'a'.repeat(40),
       path: 'src/app.ts',
@@ -379,7 +403,7 @@ describe('DiffManager', () => {
       document: { uri: { toString: () => 'file:///unrelated.txt' }, lineCount: 10 },
     };
 
-    await new DiffManager().open('repo-1', {
+    await new DiffManager({} as never).open('repo-1', {
       hash: 'b'.repeat(40),
       parent: 'a'.repeat(40),
       path: 'src/app.ts',
@@ -398,7 +422,7 @@ describe('DiffManager', () => {
     });
     const onWillOpen = vi.fn(() => events.push('retain'));
 
-    await new DiffManager().open('repo-1', {
+    await new DiffManager({} as never).open('repo-1', {
       hash: 'b'.repeat(40),
       parent: 'a'.repeat(40),
       path: 'src/app.ts',
@@ -410,6 +434,36 @@ describe('DiffManager', () => {
     expect(onWillOpen).toHaveBeenCalledWith(
       expect.objectContaining({ scheme: 'git-log-workbench' }),
       expect.objectContaining({ scheme: 'git-log-workbench' }),
+    );
+  });
+
+  it('exports the comparison as a patch and reports omitted binaries', async () => {
+    const exportDiff = vi.fn().mockResolvedValue('diff --git a/app.ts b/app.ts\n');
+    showSaveDialog.mockResolvedValue({ fsPath: '/repo/changes.patch' });
+    await new DiffManager({ exportDiff } as never).openCommit(
+      'repo-1',
+      '/repo',
+      { parent: 'a'.repeat(40), hash: 'b'.repeat(40) },
+      [
+        { status: 'M', path: 'app.ts', binary: false },
+        { status: 'M', path: 'logo.png', binary: true },
+      ],
+    );
+
+    await receiveMessage({ type: 'exportComparisonPatch' });
+
+    expect(exportDiff).toHaveBeenCalledWith(
+      '/repo',
+      'a'.repeat(40),
+      'b'.repeat(40),
+      ['app.ts'],
+    );
+    expect(writeFile).toHaveBeenCalledWith(
+      { fsPath: '/repo/changes.patch' },
+      expect.any(Buffer),
+    );
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining('1 binary file(s) omitted'),
     );
   });
 });

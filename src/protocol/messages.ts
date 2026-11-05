@@ -162,7 +162,10 @@ export type WebviewToExtensionMessage =
       parent?: string;
     }
   | { type: 'updateLayout'; requestId: string; layout: WorkbenchLayout }
+  | { type: 'applyPatch'; requestId: string; repositoryId: string }
   | { type: 'runOperation'; requestId: string; repositoryId: string; operation: GitOperationRequest };
+
+export type PullStrategy = 'default' | 'ff-only' | 'merge' | 'rebase';
 
 export type GitOperationRequest =
   | { kind: 'checkout'; ref: string }
@@ -174,7 +177,7 @@ export type GitOperationRequest =
   | { kind: 'deleteRemoteBranch'; remote: string; branch: string }
   | { kind: 'fetch'; remote?: string }
   | { kind: 'fetchFullHistory'; remote?: string; refspecFrom?: string; refspecTo?: string; depth?: number }
-  | { kind: 'pull' }
+  | { kind: 'pull'; strategy?: PullStrategy }
   | { kind: 'push'; forceWithLease?: boolean; remote?: string; targetRef?: string }
   | { kind: 'publishBranch'; remote?: string; branch?: string }
   | { kind: 'pushTag'; name: string; remote?: string }
@@ -205,7 +208,8 @@ export type GitOperationRequest =
   | { kind: 'editCommitMessages'; edits: Array<{ hash: string; message: string }> }
   | { kind: 'rewriteAuthorIdentity'; hashes: string[]; name: string; email: string }
   | { kind: 'abortCherryPick' }
-  | { kind: 'abortRevert' };
+  | { kind: 'abortRevert' }
+  | { kind: 'mergeAbort' };
 
 export type ErrorRecoveryAction = { kind: 'forceDeleteBranch'; branch: string };
 
@@ -320,6 +324,8 @@ export type ExtensionToWebviewMessage =
       repositoryId?: string;
       message: string;
       detail?: string;
+      /** Actionable guidance shown after the error message. */
+      nextStep?: string;
       recovery?: ErrorRecoveryAction;
     };
 
@@ -660,7 +666,13 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
         (value.depth === undefined || isFetchDepth(value.depth))
       );
     case 'pull':
-      return true;
+      return (
+        value.strategy === undefined ||
+        value.strategy === 'default' ||
+        value.strategy === 'ff-only' ||
+        value.strategy === 'merge' ||
+        value.strategy === 'rebase'
+      );
     case 'push':
       return (
         (value.forceWithLease === undefined || typeof value.forceWithLease === 'boolean') &&
@@ -743,6 +755,7 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
       );
     case 'abortCherryPick':
     case 'abortRevert':
+    case 'mergeAbort':
       return true;
     default: {
       // Exhaustiveness guard: any GitOperationKind added to the type union
@@ -982,6 +995,14 @@ export function parseWebviewMessage(value: unknown): WebviewToExtensionMessage |
             hash: value.hash,
             mode: value.mode,
             ...optionalParentOrOldPath(value, 'parent'),
+          }
+        : undefined;
+    case 'applyPatch':
+      return hasRepository(value)
+        ? {
+            type: value.type,
+            requestId: value.requestId,
+            repositoryId: value.repositoryId,
           }
         : undefined;
     case 'runOperation':

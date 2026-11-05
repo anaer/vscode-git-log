@@ -41,6 +41,22 @@ describe('classifyGitError', () => {
     );
   });
 
+  it('adds actionable next steps for common failures', async () => {
+    const { classifyGitError } = await import('../../src/git/classifyGitError');
+    const cases: Array<[string, RegExp]> = [
+      ["fatal: Unable to create '/repo/.git/index.lock': File exists.", /another Git process/u],
+      ['! [rejected] main -> main (non-fast-forward)', /Pull with merge or rebase/u],
+      ['fatal: Not possible to fast-forward, aborting.', /Merge or Rebase strategy/u],
+      ['error: Your local changes would be overwritten by checkout', /Commit or discard/u],
+      ['fatal: The current branch has no remote.', /Add a remote/u],
+      ["error: pathspec 'feature/x' did not match any file(s) known to git", /Fetch to refresh/u],
+      ['CONFLICT (content): Merge conflict in app.ts', /Resolve the conflicts/u],
+    ];
+    for (const [stderr, expected] of cases) {
+      expect(classifyGitError(error(stderr)).nextStep).toMatch(expected);
+    }
+  });
+
   it('provides installation guidance when the Git executable cannot start', async () => {
     const classifier = await import('../../src/git/classifyGitError');
     const unavailable = new GitCommandError(

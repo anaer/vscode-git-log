@@ -1297,17 +1297,16 @@ describe('WorkbenchApp', () => {
       );
     });
 
-    const rebaseRow = screen.getByRole('toolbar', { name: 'Rebase in progress' });
+    const rebaseRow = screen.getByRole('toolbar', { name: 'Rebasing in progress' });
     const badge = within(rebaseRow).getByRole('button', { name: 'Open Source Control' });
-    const actions = within(rebaseRow).getByRole('group', { name: 'Rebase actions' });
+    const actions = within(rebaseRow).getByRole('group', { name: 'Rebasing actions' });
     const continueButton = within(actions).getByRole('button', { name: 'Continue' });
     const skipButton = within(actions).getByRole('button', { name: 'Skip' });
     const abortButton = within(actions).getByRole('button', { name: 'Abort' });
     expect(badge).toHaveTextContent('Rebasing');
-    expect(continueButton).toHaveClass('rebase-continue-button');
-    expect(skipButton).toHaveClass('rebase-action-button');
-    expect(abortButton).toHaveClass('rebase-action-button');
-    expect(abortButton).not.toHaveClass('rebase-abort-button');
+    expect(continueButton).toHaveClass('operation-continue-button');
+    expect(skipButton).toHaveClass('operation-action-button');
+    expect(abortButton).toHaveClass('operation-action-button');
     expect(continueButton).toBeEnabled();
     expect(skipButton).toBeEnabled();
     expect(abortButton).toBeEnabled();
@@ -1335,6 +1334,48 @@ describe('WorkbenchApp', () => {
     fireEvent.click(abortButton);
     expect(postedMessages).toContainEqual(
       expect.objectContaining({ type: 'runOperation', operation: { kind: 'rebaseAbort' } }),
+    );
+  });
+
+  it('shows merge state with a conflicts badge and an abort action', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'initialize',
+            requestId: 'ready-merge-badge',
+            repositories: [
+              {
+                id: 'repo-merge-badge',
+                rootUri: 'file:///workspace/project',
+                gitDirUri: 'file:///workspace/project/.git',
+                displayName: 'project',
+                isBare: false,
+                operationState: 'merge',
+                hasUnresolvedConflicts: true,
+              },
+            ],
+            selectedRepositoryId: 'repo-merge-badge',
+            pageSize: 500,
+            layout: {
+              refsWidth: 220,
+              filesWidth: 320,
+              detailsHeight: 156,
+              filesViewMode: 'tree',
+            },
+          },
+        }),
+      );
+    });
+
+    const row = screen.getByRole('toolbar', { name: 'Merging in progress' });
+    expect(within(row).getByText('Conflicts')).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    const abort = within(row).getByRole('button', { name: 'Abort' });
+    fireEvent.click(abort);
+    expect(postedMessages).toContainEqual(
+      expect.objectContaining({ type: 'runOperation', operation: { kind: 'mergeAbort' } }),
     );
   });
 
@@ -4135,6 +4176,25 @@ describe('WorkbenchApp', () => {
     );
   });
 
+  it('shows the next-step hint after an error message', () => {
+    render(<App />);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'error',
+            requestId: 'error-next-step',
+            message: 'A Git hook rejected the operation.',
+            nextStep: 'Fix the hook output, then retry.',
+          },
+        }),
+      );
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Fix the hook output, then retry.',
+    );
+  });
+
   it('dismisses an error banner after five seconds', () => {
     vi.useFakeTimers();
     render(<App />);
@@ -5828,8 +5888,18 @@ describe('WorkbenchApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     const menu = screen.getByRole('menu', { name: 'toolbar actions' });
     expect(within(menu).getByRole('menuitem', { name: 'Pull' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Pull (Fast-forward only)' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Pull (Merge)' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Pull (Rebase)' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Push' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Force Push with Lease…' })).toBeInTheDocument();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Apply Patch…' }));
+    expect(postedMessages).toContainEqual(
+      expect.objectContaining({
+        type: 'applyPatch',
+        repositoryId: 'repo-toolbar-menu',
+      }),
+    );
   });
 
   it('drops stale same-repository log data when a newer log request supersedes it', () => {

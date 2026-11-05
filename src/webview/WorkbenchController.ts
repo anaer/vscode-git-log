@@ -16,6 +16,7 @@ import type {
   ExtensionToWebviewMessage,
   LogFilters,
   PersistedWorkbenchState,
+  PullStrategy,
   WebviewToExtensionMessage,
   WorkbenchLayout,
 } from '../protocol/messages';
@@ -77,6 +78,8 @@ export interface WorkbenchControllerOptions {
   operationService?: Pick<GitOperationService, 'run'>;
   confirmOperation?(confirmation: OperationConfirmation): Promise<boolean>;
   withProgress?<T>(title: string, task: () => Promise<T>): Promise<T>;
+  pullStrategy?(): PullStrategy;
+  applyPatch?(repository: RepositorySummary): Promise<void>;
   onRepositoriesChanged?(repositories: readonly RepositorySummary[]): void;
   openDiff?(
     repository: RepositorySummary,
@@ -471,6 +474,12 @@ export class WorkbenchController {
           await this.loadRepository(message.repositoryId, message.requestId, true, 0, logSequence);
           break;
         }
+        case 'applyPatch': {
+          if (!this.options.applyPatch) throw new Error('Patch application is not available.');
+          const repository = this.requireRepository(message.repositoryId);
+          await this.options.applyPatch(repository);
+          break;
+        }
         case 'runOperation':
           await this.runOperation(message);
           break;
@@ -508,6 +517,7 @@ export class WorkbenchController {
           classified.detail,
           repositoryId,
           recovery,
+          classified.nextStep,
         );
         return;
       }
@@ -1287,7 +1297,10 @@ export class WorkbenchController {
     if (!this.options.operationService) throw new Error('Git operations are not available.');
     this.requireSelectedRepository(message.repositoryId);
     const repository = this.requireRepository(message.repositoryId);
-    const operation = message.operation;
+    const operation =
+      message.operation.kind === 'pull' && message.operation.strategy === undefined
+        ? { ...message.operation, strategy: this.options.pullStrategy?.() ?? 'default' }
+        : message.operation;
     if (operation.kind === 'createOrphanBranch' && !this.gitCapabilities?.createOrphanBranch) {
       throw new Error('Creating an orphan branch requires Git 2.23 or newer.');
     }
@@ -1543,6 +1556,7 @@ export class WorkbenchController {
     detail?: string,
     repositoryId?: string,
     recovery?: ErrorRecoveryAction,
+    nextStep?: string,
   ): Promise<void> {
     await this.options.postMessage({
       type: 'error',
@@ -1550,6 +1564,7 @@ export class WorkbenchController {
       ...(repositoryId ? { repositoryId } : {}),
       message,
       ...(detail ? { detail } : {}),
+      ...(nextStep ? { nextStep } : {}),
       ...(recovery ? { recovery } : {}),
     });
   }

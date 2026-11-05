@@ -4,6 +4,51 @@ export interface ClassifiedGitError {
   category: 'conflict' | 'authentication' | 'hook' | 'repository' | 'unknown';
   message: string;
   detail: string;
+  /** One actionable sentence derived from the failure. */
+  nextStep?: string;
+}
+
+const NEXT_STEPS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bindex\.lock\b/u, 'Retry in a moment; another Git process is holding the index.'],
+  [
+    /not possible to fast-forward|diverging branches|--ff-only/u,
+    'Pull again with the Merge or Rebase strategy.',
+  ],
+  [
+    /non-fast-forward|\[rejected\]|fetch first/u,
+    'Pull with merge or rebase before pushing, or use Force Push with lease.',
+  ],
+  [
+    /would be overwritten by checkout|local changes to the following files would be overwritten/u,
+    'Commit or discard the listed changes, then try again.',
+  ],
+  [
+    /has no remote|no remote to push|no configured push destination/u,
+    'Add a remote first, then retry.',
+  ],
+  [
+    /did not match any file\(s\) known to git|unknown revision|bad revision/u,
+    'Fetch to refresh remote refs, then retry.',
+  ],
+  [
+    /\bconflict\b|could not apply|automatic merge failed/u,
+    'Resolve the conflicts in Source Control, then continue or abort.',
+  ],
+  [
+    /authentication failed|permission denied|could not read username|publickey/u,
+    'Check your credential helper or SSH agent, then retry.',
+  ],
+];
+
+function nextStepFor(lower: string): string | undefined {
+  return NEXT_STEPS.find(([pattern]) => pattern.test(lower))?.[1];
+}
+
+export function classifyGitError(error: GitCommandError): ClassifiedGitError {
+  const detail = redactGitDiagnostic(error.stderr.toString('utf8').trim() || error.message);
+  const classified = classifyGitErrorBase(error, detail.toLowerCase(), detail);
+  const nextStep = nextStepFor(detail.toLowerCase());
+  return nextStep ? { ...classified, nextStep } : classified;
 }
 
 export function redactGitDiagnostic(value: string): string {
@@ -18,10 +63,11 @@ export function redactGitDiagnostic(value: string): string {
  * Cancelled commands are handled by callers (they return before classifying),
  * so there is intentionally no cancellation branch here.
  */
-export function classifyGitError(error: GitCommandError): ClassifiedGitError {
-  const detail = redactGitDiagnostic(error.stderr.toString('utf8').trim() || error.message);
-  const lower = detail.toLowerCase();
-
+function classifyGitErrorBase(
+  error: GitCommandError,
+  lower: string,
+  detail: string,
+): ClassifiedGitError {
   if (error.timedOut) {
     return {
       category: 'unknown',

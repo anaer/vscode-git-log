@@ -2,7 +2,7 @@
   "name": "git-log-0",
   "displayName": "0: Git Log — Commit Graph & History",
   "description": "A visual Git log, commit graph, history browser, and repository operations extension for Visual Studio Code.",
-  "version": "26.1105.1127",
+  "version": "26.1105.1412",
   "publisher": "anaer",
   "license": "MIT",
   "icon": "media/git-log.png",
@@ -37,6 +37,11 @@
     "onCommand:gitLogWorkbench.editor.showFileHistory",
     "onCommand:gitLogWorkbench.explorer.showFolderHistory",
     "onCommand:gitLogWorkbench.editor.compareFileWithRef",
+    "onCommand:gitLogWorkbench.applyPatch",
+    "onCommand:gitLogWorkbench.showDiagnostics",
+    "onCommand:gitLogWorkbench.pull.ffOnly",
+    "onCommand:gitLogWorkbench.pull.merge",
+    "onCommand:gitLogWorkbench.pull.rebase",
     "onView:gitLogWorkbench.log"
   ],
   "contributes": {
@@ -70,6 +75,31 @@
       {
         "command": "gitLogWorkbench.editor.compareFileWithRef",
         "title": "Compare File with Branch or Tag…",
+        "category": "Git Log"
+      },
+      {
+        "command": "gitLogWorkbench.applyPatch",
+        "title": "Apply Patch…",
+        "category": "Git Log"
+      },
+      {
+        "command": "gitLogWorkbench.showDiagnostics",
+        "title": "Show Diagnostics",
+        "category": "Git Log"
+      },
+      {
+        "command": "gitLogWorkbench.pull.ffOnly",
+        "title": "Pull (Fast-forward only)",
+        "category": "Git Log"
+      },
+      {
+        "command": "gitLogWorkbench.pull.merge",
+        "title": "Pull (Merge)",
+        "category": "Git Log"
+      },
+      {
+        "command": "gitLogWorkbench.pull.rebase",
+        "title": "Pull (Rebase)",
         "category": "Git Log"
       }
     ],
@@ -164,6 +194,23 @@
           "type": "string",
           "default": "git",
           "description": "Path to the Git executable."
+        },
+        "gitLogWorkbench.pull.strategy": {
+          "type": "string",
+          "enum": [
+            "default",
+            "ff-only",
+            "merge",
+            "rebase"
+          ],
+          "enumDescriptions": [
+            "Use the repository's git configuration.",
+            "Fast-forward only; fail when the branches have diverged.",
+            "Merge the upstream branch.",
+            "Rebase the current branch onto the upstream branch."
+          ],
+          "default": "default",
+          "description": "Strategy used by the Pull button. Explicit Pull (Fast-forward only / Merge / Rebase) actions always override this setting."
         },
         "gitLogWorkbench.currentLineBlame.enabled": {
           "type": "boolean",

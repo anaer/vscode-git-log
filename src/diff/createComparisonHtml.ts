@@ -111,7 +111,7 @@ export function createComparisonHtml(options: {
     html, body { width: 100%; height: 100%; margin: 0; }
     body { overflow: hidden; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
     .comparison-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
-    .comparison-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 10px 12px; gap: 8px; border-bottom: 1px solid var(--vscode-panel-border); }
+    .comparison-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; padding: 10px 12px; gap: 8px; border-bottom: 1px solid var(--vscode-panel-border); }
     .comparison-heading { min-width: 0; }
     .comparison-title { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
     .comparison-summary { margin-top: 3px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
@@ -177,6 +177,9 @@ export function createComparisonHtml(options: {
         <div class="comparison-title">${escapeHtml(options.title)}</div>
         <div class="comparison-summary">${String(options.files.length)} changed files${binarySummary} · Select a file or show all changes</div>
       </div>
+      <button class="comparison-mode-button" type="button" data-export-patch aria-label="Export patch" title="Export these changes as a .patch file"${textFileCount > 0 ? '' : ' disabled'}>
+        <span>Export Patch…</span>
+      </button>
       <button class="comparison-mode-button" type="button" data-open-all-comparisons aria-label="Show all changes" title="Show all text changes"${textFileCount > 0 ? '' : ' disabled'}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h5v5H2V2Zm1 1v3h3V3H3Zm6-1h5v5H9V2Zm1 1v3h3V3h-3ZM2 9h5v5H2V9Zm1 1v3h3v-3H3Zm6-1h5v5H9V9Zm1 1v3h3v-3h-3Z"/></svg>
         <span>All Changes</span>
@@ -187,6 +190,11 @@ export function createComparisonHtml(options: {
   <script nonce="${options.nonce}">
     const vscode = acquireVsCodeApi();
     document.addEventListener('click', (event) => {
+      const exportPatch = event.target instanceof Element ? event.target.closest('[data-export-patch]') : null;
+      if (exportPatch instanceof HTMLButtonElement && !exportPatch.disabled) {
+        vscode.postMessage({ type: 'exportComparisonPatch' });
+        return;
+      }
       const allChanges = event.target instanceof Element ? event.target.closest('[data-open-all-comparisons]') : null;
       if (allChanges instanceof HTMLButtonElement && !allChanges.disabled) {
         document.querySelectorAll('.file-row.selected').forEach((row) => row.classList.remove('selected'));

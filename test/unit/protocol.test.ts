@@ -116,6 +116,32 @@ describe('parseWebviewMessage', () => {
     expect(operation({ kind: 'createOrphanBranch', name: 'bad\nname' })).toBeUndefined();
   });
 
+  it('validates pull strategies, merge abort, and apply-patch messages', async () => {
+    const { parseWebviewMessage } = await import('../../src/protocol/messages');
+    const operation = (value: Record<string, unknown>) =>
+      parseWebviewMessage({
+        type: 'runOperation',
+        requestId: 'operation',
+        repositoryId: 'repository-1',
+        operation: value,
+      });
+
+    expect(operation({ kind: 'pull' })).toBeDefined();
+    expect(operation({ kind: 'pull', strategy: 'rebase' })).toBeDefined();
+    expect(operation({ kind: 'pull', strategy: 'fast' })).toBeUndefined();
+    expect(operation({ kind: 'mergeAbort' })).toBeDefined();
+    expect(
+      parseWebviewMessage({
+        type: 'applyPatch',
+        requestId: 'apply-patch',
+        repositoryId: 'repository-1',
+      }),
+    ).toBeDefined();
+    expect(
+      parseWebviewMessage({ type: 'applyPatch', requestId: 'apply-patch' }),
+    ).toBeUndefined();
+  });
+
   it('validates cross-kind reference deletion payloads', async () => {
     const { parseWebviewMessage } = await import('../../src/protocol/messages');
     const operation = (value: Record<string, unknown>) =>

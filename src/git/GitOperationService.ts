@@ -149,7 +149,19 @@ export function buildOperationArguments(
         : ['fetch', `--deepen=${String(validateFetchDepth(operation.depth))}`, remote];
     }
     case 'pull':
-      return ['pull'];
+      switch (operation.strategy) {
+        case 'ff-only':
+          return ['pull', '--ff-only'];
+        case 'merge':
+          return ['pull', '--no-rebase'];
+        case 'rebase':
+          return ['pull', '--rebase'];
+        case undefined:
+        case 'default':
+          return ['pull'];
+        default:
+          throw new Error(`Invalid pull strategy: ${String(operation.strategy)}`);
+      }
     case 'push':
       if (operation.forceWithLease) {
         if (!operation.remote || !operation.targetRef || !forceSourceHash) {
@@ -247,6 +259,8 @@ export function buildOperationArguments(
       return ['cherry-pick', '--abort'];
     case 'abortRevert':
       return ['revert', '--abort'];
+    case 'mergeAbort':
+      return ['merge', '--abort'];
   }
 }
 
@@ -259,6 +273,14 @@ export function getOperationConfirmation(
       title: 'Hard reset current branch?',
       detail: `Repository “${repository.displayName}” will be hard reset to ${operation.hash}. Uncommitted changes can be lost.`,
       confirmLabel: 'Hard Reset',
+      destructive: true,
+    };
+  }
+  if (operation.kind === 'mergeAbort') {
+    return {
+      title: 'Abort merge?',
+      detail: `Repository “${repository.displayName}” will discard the current merge, including any conflict resolutions already made.`,
+      confirmLabel: 'Abort Merge',
       destructive: true,
     };
   }
@@ -916,6 +938,7 @@ export class GitOperationService {
           operation.kind !== 'fetch' &&
           operation.kind !== 'abortCherryPick' &&
           operation.kind !== 'abortRevert' &&
+          operation.kind !== 'mergeAbort' &&
           !(freshRepository.operationState === 'rebase' && isRebaseControl)
         ) {
           throw new Error(
@@ -924,6 +947,9 @@ export class GitOperationService {
         }
         if (!freshRepository.operationState && isRebaseControl) {
           throw new Error('No Git rebase is in progress.');
+        }
+        if (operation.kind === 'mergeAbort' && freshRepository.operationState !== 'merge') {
+          throw new Error('No Git merge is in progress.');
         }
         if (operation.kind === 'rebaseContinue' && freshRepository.hasUnresolvedConflicts) {
           throw new Error('Resolve all conflicts before continuing the rebase.');

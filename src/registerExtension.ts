@@ -10,6 +10,9 @@ export interface ExtensionRegistrationHost {
   showFileHistory(resource?: unknown): Promise<void>;
   showFolderHistory(resource?: unknown): Promise<void>;
   compareFileWithRef(): void;
+  applyPatch(): Promise<void>;
+  showDiagnostics(): Promise<void>;
+  pull(strategy: 'ff-only' | 'merge' | 'rebase'): Promise<void>;
 }
 
 export function registerExtension(host: ExtensionRegistrationHost): DisposableLike[] {
@@ -36,6 +39,21 @@ export function registerExtension(host: ExtensionRegistrationHost): DisposableLi
     'gitLogWorkbench.editor.compareFileWithRef',
     () => host.compareFileWithRef(),
   );
+  const applyPatchCommand = host.registerCommand('gitLogWorkbench.applyPatch', () =>
+    host.applyPatch(),
+  );
+  const showDiagnosticsCommand = host.registerCommand('gitLogWorkbench.showDiagnostics', () =>
+    host.showDiagnostics(),
+  );
+  const pullFastForwardOnlyCommand = host.registerCommand('gitLogWorkbench.pull.ffOnly', () =>
+    host.pull('ff-only'),
+  );
+  const pullMergeCommand = host.registerCommand('gitLogWorkbench.pull.merge', () =>
+    host.pull('merge'),
+  );
+  const pullRebaseCommand = host.registerCommand('gitLogWorkbench.pull.rebase', () =>
+    host.pull('rebase'),
+  );
 
   return [
     openLogCommand,
@@ -44,5 +62,10 @@ export function registerExtension(host: ExtensionRegistrationHost): DisposableLi
     showFileHistoryCommand,
     showFolderHistoryCommand,
     compareFileWithRefCommand,
+    applyPatchCommand,
+    showDiagnosticsCommand,
+    pullFastForwardOnlyCommand,
+    pullMergeCommand,
+    pullRebaseCommand,
   ];
 }

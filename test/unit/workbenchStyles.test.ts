@@ -170,16 +170,16 @@ describe('workbench styles', () => {
     const styles = await readFile('webview/src/styles.css', 'utf8');
 
     expect(styles).toMatch(
-      /\.log-pane\.rebase-active\s*\{[^}]*grid-template-rows:\s*38px 32px 30px minmax\(0, 1fr\);/su,
+      /\.log-pane\.operation-active\s*\{[^}]*grid-template-rows:\s*38px 32px 30px minmax\(0, 1fr\);/su,
     );
     expect(styles).toMatch(
-      /\.rebase-status-row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;/su,
+      /\.operation-status-row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;/su,
     );
     expect(styles).toMatch(
-      /\.rebase-actions\s*\{[^}]*display:\s*flex;[^}]*margin-left:\s*auto;/su,
+      /\.operation-actions\s*\{[^}]*display:\s*flex;[^}]*margin-left:\s*auto;/su,
     );
     expect(styles).toMatch(
-      /\.rebase-continue-button\s*\{[^}]*background:\s*var\(--vscode-button-background\);[^}]*color:\s*var\(--vscode-button-foreground\);/su,
+      /\.operation-continue-button\s*\{[^}]*background:\s*var\(--vscode-button-background\);[^}]*color:\s*var\(--vscode-button-foreground\);/su,
     );
   });
 

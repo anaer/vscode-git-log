@@ -112,6 +112,10 @@ The current version covers Milestones 0–6 and the editor history work from Mil
 - History tabs show an inline diff for the focused range or complete file. A separate Worker uses Shiki with lazily loaded grammars for syntax highlighting. `VS Code Diff` opens the current commit in the native Diff Editor with minimap, search, language support, and standard shortcuts. Switching commits cancels stale highlighting work, while timeouts, oversized patches, long lines, or excessive token budgets fall back to plain text without blocking the Extension Host.
 - Complete keyboard navigation, two-stage `Escape` handling in search, `Ctrl/Cmd+C` commit hash copying, and light, dark, and high-contrast theme support.
 - The current branch tip supports Amend HEAD with commit-message editing and staged-change inclusion.
+- Git errors now append an actionable next step (index locks, non-fast-forward pushes, dirty checkout, missing remotes, and more). Merge, rebase, cherry-pick, and revert share one interrupted-state bar with context actions, including a confirmed merge abort.
+- `Apply Patch…` previews a `.patch` or `.diff`, runs `git apply --check`, and applies it to the working tree; a failed check offers a 3-way fallback with a conflict warning. Commit comparisons offer `Export Patch…`, which excludes binary files and reports how many were omitted.
+- Pull honors `gitLogWorkbench.pull.strategy` and also exposes explicit fast-forward-only, merge, and rebase actions from the toolbar menu and command palette.
+- `Git Log: Show Diagnostics` writes the extension, VS Code, and detected Git versions, capabilities, and repository state to the Git Log output channel with credentials redacted.
 
 ## Local development
 
@@ -154,6 +158,11 @@ npm run package
 - The User filter pins `Me (current Git user)` to the top using the repository's `git config user.name/user.email`, preferring email matching. Toolbar buttons include hover descriptions.
 - Refresh reads local repository state only. Fetch, Pull, and Push access the configured remote and reuse the system credential helper or SSH Agent.
 - Use `Stashes` to create, inspect, apply, pop, or drop saved work.
+- While a merge, rebase, cherry-pick, or revert is in progress, the bar above the commit list shows its state and actions; Continue stays disabled until conflicts are resolved.
+- Run `Apply Patch…` from the command palette or the toolbar context menu to preview a patch, validate it with `git apply --check`, and apply it to the working tree. If the check fails, choose the 3-way fallback and resolve conflicts in Source Control.
+- Use `Export Patch…` in a commit comparison to save all text changes as a `.patch`; binary files are omitted and their count is reported.
+- Configure the default Pull behavior with `gitLogWorkbench.pull.strategy`, or pick fast-forward-only, merge, or rebase explicitly from the toolbar menu or command palette.
+- Run `Git Log: Show Diagnostics` when reporting an environment issue; it writes Git/extension/repository facts to the Git Log output channel without credentials.
 
 ## Security and privacy
 

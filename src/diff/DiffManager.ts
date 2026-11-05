@@ -1,6 +1,8 @@
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
+import { toUserMessage } from '../git/classifyGitError';
+import type { PatchService } from '../git/PatchService';
 import type { ChangedFile, ChangedFileStatus } from '../shared/models';
 import {
   buildDiffSides,
@@ -68,6 +70,8 @@ function comparisonResources(
 
 export class DiffManager {
   private comparisonPanel: vscode.WebviewPanel | undefined;
+
+  constructor(private readonly patches: PatchService) {}
 
   async open(
     repositoryId: string,
@@ -161,6 +165,7 @@ export class DiffManager {
 
   async openCommit(
     repositoryId: string,
+    repositoryRoot: string,
     request: { hash: string; parent: string },
     files: readonly ChangedFile[],
   ): Promise<void> {
@@ -197,6 +202,10 @@ export class DiffManager {
         message === null ||
         !('type' in message)
       ) {
+        return;
+      }
+      if (message.type === 'exportComparisonPatch') {
+        await this.exportComparisonPatch(repositoryRoot, request, files);
         return;
       }
       if (message.type === 'openAllComparisonFiles') {
@@ -237,5 +246,52 @@ export class DiffManager {
       messageSubscription.dispose();
       if (this.comparisonPanel === panel) this.comparisonPanel = undefined;
     });
+  }
+
+  private async exportComparisonPatch(
+    repositoryRoot: string,
+    request: { hash: string; parent: string },
+    files: readonly ChangedFile[],
+  ): Promise<void> {
+    const textFiles = files.filter((file) => !file.binary);
+    if (!textFiles.length) {
+      void vscode.window.showErrorMessage('This comparison has no text files to export.');
+      return;
+    }
+    try {
+      const paths = textFiles
+        .flatMap((file) => [file.oldPath, file.path])
+        .filter((path): path is string => Boolean(path));
+      const patch = await this.patches.exportDiff(
+        repositoryRoot,
+        request.parent,
+        request.hash,
+        paths,
+      );
+      if (!patch.trim()) {
+        void vscode.window.showErrorMessage('Git produced an empty patch.');
+        return;
+      }
+      const target = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(
+          join(
+            repositoryRoot,
+            `changes-${request.parent.slice(0, 8)}-${request.hash.slice(0, 8)}.patch`,
+          ),
+        ),
+        filters: { 'Patch files': ['patch', 'diff'] },
+        saveLabel: 'Export Patch',
+      });
+      if (!target) return;
+      await vscode.workspace.fs.writeFile(target, Buffer.from(patch, 'utf8'));
+      const omitted = files.length - textFiles.length;
+      void vscode.window.showInformationMessage(
+        `Exported ${String(textFiles.length)} file(s) to ${basename(target.fsPath)}${
+          omitted ? `; ${String(omitted)} binary file(s) omitted.` : '.'
+        }`,
+      );
+    } catch (error) {
+      void vscode.window.showErrorMessage(toUserMessage(error));
+    }
   }
 }

@@ -100,6 +100,10 @@ code --install-extension ascenx.git-log
 - History 右侧保留聚焦范围或完整文件的 Inline Diff，并由独立 Worker 使用按实际文件类型延迟加载 grammar 的 Shiki 生成语法高亮；右上角 `VS Code Diff` 可将当前 Commit 的文件变化打开到原生 Diff Editor，继承 minimap、搜索、语法能力和标准快捷键。切换 Commit 会终止旧高亮任务，超时、超大 patch、超长单行或过高 token 预算会自动退回纯文本预览，不阻塞 Extension Host。
 - 完整键盘导航、搜索框双层 `Escape`、`Ctrl/Cmd+C` 复制 Hash，以及浅色、深色和高对比主题支持。
 - 当前分支顶端的 Commit 支持 Amend HEAD，可编辑提交信息并包含已暂存变更。
+- Git 错误在分类文案后附带“下一步”提示（如 index.lock、非快进推送、脏工作区阻止 checkout 等）；merge、rebase、cherry-pick、revert 统一显示中断状态条，动作集中提供，merge 可直接 Abort。
+- 支持 `Apply Patch…`：选择 `.patch` / `.diff`，预览文件与增删行，`git apply --check` 通过后应用到工作区；检查失败时可改用 `--3way` 并提示可能留下冲突。Commit 对比窗口提供 `Export Patch…`，导出时排除二进制文件。
+- Pull 支持 `gitLogWorkbench.pull.strategy` 默认策略，并在工具栏菜单与命令面板提供 fast-forward-only、merge、rebase 三种显式入口。
+- 新增 `Git Log: Show Diagnostics` 命令，将扩展/VS Code/Git 版本、能力集与仓库状态写入输出通道，凭据自动脱敏。
 
 ## 命令与菜单
 
@@ -114,6 +118,11 @@ code --install-extension ascenx.git-log
 | Show History for Selection | `gitLogWorkbench.editor.showSelectionHistory` | ✅ | 查看当前编辑器选区的提交历史。 |
 | Show File History | `gitLogWorkbench.editor.showFileHistory` | ✅ | 打开当前文件的完整提交历史。 |
 | Compare File with Branch or Tag… | `gitLogWorkbench.editor.compareFileWithRef` | ✅ | 将当前文件与某个分支或标签中的同路径文件进行比较。 |
+| Apply Patch… | `gitLogWorkbench.applyPatch` | ✅ | 选择补丁文件，预览并校验后应用到工作区。 |
+| Show Diagnostics | `gitLogWorkbench.showDiagnostics` | ✅ | 输出 Git 版本、能力集与仓库状态到 Git Log 输出通道。 |
+| Pull (Fast-forward only) | `gitLogWorkbench.pull.ffOnly` | ✅ | 以 `--ff-only` 拉取当前仓库。 |
+| Pull (Merge) | `gitLogWorkbench.pull.merge` | ✅ | 以合并方式拉取当前仓库。 |
+| Pull (Rebase) | `gitLogWorkbench.pull.rebase` | ✅ | 以变基方式拉取当前仓库。 |
 | Show Folder History | `gitLogWorkbench.explorer.showFolderHistory` | ❌（仅右键菜单） | 在资源管理器中对文件夹按目录递归过滤提交；不在命令面板显示。 |
 
 ### 右键菜单
@@ -253,6 +262,11 @@ npm run package
 - User 筛选会根据仓库的 `git config user.name/user.email` 始终置顶 `Me（当前 Git 用户）`，并优先使用邮箱过滤；顶部工具按钮均提供悬停说明。
 - Refresh 只读取本地状态；Fetch、Pull、Push 会访问用户现有 remote，并复用系统 credential helper/SSH Agent。
 - 顶部 `Stashes` 用于创建、查看、Apply、Pop 或 Drop 暂存工作。
+- merge、rebase、cherry-pick、revert 进行中时，Commit 列表上方会显示状态条；Continue/Abort 等动作集中在状态条中，冲突未解决时 Continue 不可用。
+- 使用命令面板的 `Apply Patch…` 或工具栏右键菜单中的同名项应用 `.patch` / `.diff`：先预览文件与增删行，再确认写入工作区；`--check` 失败时可选择 3-way 合并，并在 Source Control 中解决冲突。
+- Commit Comparison 右上角的 `Export Patch…` 会把全部文本文件导出为 `.patch`；二进制文件会被排除并在提示中说明数量。
+- Pull 默认策略由 `gitLogWorkbench.pull.strategy` 控制（`default` / `ff-only` / `merge` / `rebase`）；工具栏右键菜单和命令面板提供三种显式策略入口。
+- 排查环境问题时运行 `Git Log: Show Diagnostics`，报告会写入 Git Log 输出通道，包含 Git 版本、能力集与仓库状态。
 
 ## 安全与隐私
 

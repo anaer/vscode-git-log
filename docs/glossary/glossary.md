@@ -21,14 +21,19 @@
 | **unshallow** | `git fetch --unshallow`，把浅克隆补全为完整历史；深度已越根提交时再调会报错（见 ADR-0010） |
 | **deepen** | `git fetch --deepen=N`，在当前深度上再增加 N 条历史，可反复调用逐步加深；越过根提交后 git 自动清除 shallow 边界（见 ADR-0010） |
 | **补丁导出** | 把对比结果写成 `.patch` 文件，二进制文件被排除（见 ADR-0011） |
+| **补丁应用** | 选择外部 `.patch` / `.diff`，经 `git apply --check` 预览确认后写入工作区；失败可改用 `--3way`（见 ADR-0026） |
 | **孤儿分支** | 通过 `git switch --orphan` 创建、无父提交且与既有历史无共同祖先的分支；首个提交前不存在对应 ref；要求 Git 2.23+，2.20–2.22 隐藏入口（见 ADR-0012、ADR-0024） |
 | **Git 能力集** | 按检测到的 Git 版本推导出的功能开关集合（当前含 `version`、`createOrphanBranch`），随初始化下发前端，用于隐藏旧版不支持的功能入口（见 ADR-0024） |
+| **诊断报告** | 汇总扩展、Git 版本/能力集与仓库状态并写入 Output Channel 的排障报告，凭据脱敏（见 ADR-0028） |
 | **未出生分支** | HEAD 已指向某分支但该分支尚无提交、因而无 ref 的状态（见 ADR-0012） |
 | **引用快照** | 扩展侧每次刷新时经 `for-each-ref` 实时取得的完整 ref 列表，随 `repositoryData` 整体下发、前端不缓存 |
 | **远程跟踪引用** | `refs/remotes/<remote>/<branch>`，由远程的 fetch refspec 物化；`git push --set-upstream` 只写入上游配置，**仅当 refspec 覆盖该分支时**才创建它（见 ADR-0013） |
 | **窄 refspec** | `remote.<remote>.fetch` 只覆盖部分分支的配置形态，`git clone --single-branch` 的典型产物（如 `+refs/heads/main:refs/remotes/origin/main`）；窄 refspec 下推送不会产生跟踪引用（见 ADR-0013） |
 | **引用目录节点** | 引用树中按分支名 `/` 分段生成的分组节点（如 `feature/`），聚合该前缀下的本地/远程/标签引用，可作为批量删除的目标（见 ADR-0015） |
 | **宿主默认右键菜单** | Electron / Chromium 为 webview 提供的原生剪切 / 复制 / 粘贴菜单；扩展面板内除可编辑元素外统一抑制（见 ADR-0014） |
+| **下一步提示** | 从 Git 错误输出映射出的一句可执行建议，随错误横幅一起展示（见 ADR-0025） |
+| **中断状态条** | merge / rebase / cherry-pick / revert 未完成时，在日志上方常驻显示当前操作与 Continue / Abort 的横幅（见 ADR-0025） |
+| **Pull 策略** | 显式选择 fast-forward-only / merge / rebase 的拉取方式，覆盖全局 git 配置（见 ADR-0027） |
 
 ## 技术术语
 
