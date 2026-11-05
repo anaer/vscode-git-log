@@ -204,6 +204,16 @@ export class DiffManager {
       ) {
         return;
       }
+      if (message.type === 'copyComparisonPaths') {
+        const paths = [...new Set(files.map((file) => file.path))].sort((left, right) =>
+          left < right ? -1 : left > right ? 1 : 0,
+        );
+        await vscode.env.clipboard.writeText(paths.join('\n'));
+        void vscode.window.showInformationMessage(
+          `Copied ${String(paths.length)} file path(s) to the clipboard.`,
+        );
+        return;
+      }
       if (message.type === 'exportComparisonPatch') {
         await this.exportComparisonPatch(repositoryRoot, request, files);
         return;

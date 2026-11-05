@@ -11,6 +11,7 @@ const {
   showInformationMessage,
   showSaveDialog,
   tabGroups,
+  writeClipboard,
   writeFile,
 } = vi.hoisted(() => {
   type TabChange = {
@@ -52,12 +53,14 @@ const {
     showErrorMessage: vi.fn(),
     showInformationMessage: vi.fn(),
     showSaveDialog: vi.fn(),
+    writeClipboard: vi.fn(),
     writeFile: vi.fn(),
   };
 });
 
 vi.mock('vscode', () => ({
   commands: { executeCommand },
+  env: { clipboard: { writeText: writeClipboard } },
   workspace: {
     getConfiguration: vi.fn(() => ({ get: vi.fn((_key: string, fallback: boolean) => fallback) })),
     fs: { writeFile },
@@ -105,6 +108,7 @@ describe('DiffManager', () => {
     showSaveDialog.mockReset();
     showErrorMessage.mockReset();
     showInformationMessage.mockReset();
+    writeClipboard.mockReset();
     writeFile.mockReset();
     tabGroups.all = [{}, {}];
     tabGroups.activeTabGroup.activeTab = undefined;
@@ -138,6 +142,7 @@ describe('DiffManager', () => {
     expect(panel.webview.html).toContain('<details class="file-directory" open>');
     expect(panel.webview.html).toContain('<summary>src</summary>');
     expect(panel.webview.html).toContain('Export Patch…');
+    expect(panel.webview.html).toContain('Copy Paths');
     expect(panel.webview.html).toContain('<summary>features</summary>');
     expect(panel.webview.html).toContain('app.dart');
     expect(panel.webview.html).toContain('class="file-type-icon file-type-dart"');
@@ -434,6 +439,26 @@ describe('DiffManager', () => {
     expect(onWillOpen).toHaveBeenCalledWith(
       expect.objectContaining({ scheme: 'git-log-workbench' }),
       expect.objectContaining({ scheme: 'git-log-workbench' }),
+    );
+  });
+
+  it('copies every changed file path in sorted order', async () => {
+    await new DiffManager({} as never).openCommit(
+      'repo-1',
+      '/repo',
+      { parent: 'a'.repeat(40), hash: 'b'.repeat(40) },
+      [
+        { status: 'M', path: 'src/z.ts', binary: false },
+        { status: 'M', path: 'logo.png', binary: true },
+        { status: 'M', path: 'src/a.ts', binary: false },
+      ],
+    );
+
+    await receiveMessage({ type: 'copyComparisonPaths' });
+
+    expect(writeClipboard).toHaveBeenCalledWith('logo.png\nsrc/a.ts\nsrc/z.ts');
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      'Copied 3 file path(s) to the clipboard.',
     );
   });
 

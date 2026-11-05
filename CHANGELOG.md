@@ -2,6 +2,12 @@
 
 All notable changes to Git Log are documented in this file.
 
+## Unreleased
+
+### Added
+
+- **Copy changed file paths**: commit comparisons can copy every changed path, including binary files, to the clipboard in sorted order.
+
 ## 26.1105.1412
 
 ### Added

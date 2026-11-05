@@ -101,7 +101,7 @@ code --install-extension ascenx.git-log
 - 完整键盘导航、搜索框双层 `Escape`、`Ctrl/Cmd+C` 复制 Hash，以及浅色、深色和高对比主题支持。
 - 当前分支顶端的 Commit 支持 Amend HEAD，可编辑提交信息并包含已暂存变更。
 - Git 错误在分类文案后附带“下一步”提示（如 index.lock、非快进推送、脏工作区阻止 checkout 等）；merge、rebase、cherry-pick、revert 统一显示中断状态条，动作集中提供，merge 可直接 Abort。
-- 支持 `Apply Patch…`：选择 `.patch` / `.diff`，预览文件与增删行，`git apply --check` 通过后应用到工作区；检查失败时可改用 `--3way` 并提示可能留下冲突。Commit 对比窗口提供 `Export Patch…`，导出时排除二进制文件。
+- 支持 `Apply Patch…`：选择 `.patch` / `.diff`，预览文件与增删行，`git apply --check` 通过后应用到工作区；检查失败时可改用 `--3way` 并提示可能留下冲突。Commit 对比窗口提供 `Copy Paths`（复制全部变更路径）与 `Export Patch…`（导出时排除二进制文件）。
 - Pull 支持 `gitLogWorkbench.pull.strategy` 默认策略，并在工具栏菜单与命令面板提供 fast-forward-only、merge、rebase 三种显式入口。
 - 新增 `Git Log: Show Diagnostics` 命令，将扩展/VS Code/Git 版本、能力集与仓库状态写入输出通道，凭据自动脱敏。
 
@@ -264,7 +264,7 @@ npm run package
 - 顶部 `Stashes` 用于创建、查看、Apply、Pop 或 Drop 暂存工作。
 - merge、rebase、cherry-pick、revert 进行中时，Commit 列表上方会显示状态条；Continue/Abort 等动作集中在状态条中，冲突未解决时 Continue 不可用。
 - 使用命令面板的 `Apply Patch…` 或工具栏右键菜单中的同名项应用 `.patch` / `.diff`：先预览文件与增删行，再确认写入工作区；`--check` 失败时可选择 3-way 合并，并在 Source Control 中解决冲突。
-- Commit Comparison 右上角的 `Export Patch…` 会把全部文本文件导出为 `.patch`；二进制文件会被排除并在提示中说明数量。
+- Commit Comparison 右上角的 `Copy Paths` 会按排序复制全部变更文件路径（含二进制）；`Export Patch…` 则把全部文本文件导出为 `.patch`，二进制文件会被排除并在提示中说明数量。
 - Pull 默认策略由 `gitLogWorkbench.pull.strategy` 控制（`default` / `ff-only` / `merge` / `rebase`）；工具栏右键菜单和命令面板提供三种显式策略入口。
 - 排查环境问题时运行 `Git Log: Show Diagnostics`，报告会写入 Git Log 输出通道，包含 Git 版本、能力集与仓库状态。
 

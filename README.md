@@ -113,7 +113,7 @@ The current version covers Milestones 0–6 and the editor history work from Mil
 - Complete keyboard navigation, two-stage `Escape` handling in search, `Ctrl/Cmd+C` commit hash copying, and light, dark, and high-contrast theme support.
 - The current branch tip supports Amend HEAD with commit-message editing and staged-change inclusion.
 - Git errors now append an actionable next step (index locks, non-fast-forward pushes, dirty checkout, missing remotes, and more). Merge, rebase, cherry-pick, and revert share one interrupted-state bar with context actions, including a confirmed merge abort.
-- `Apply Patch…` previews a `.patch` or `.diff`, runs `git apply --check`, and applies it to the working tree; a failed check offers a 3-way fallback with a conflict warning. Commit comparisons offer `Export Patch…`, which excludes binary files and reports how many were omitted.
+- `Apply Patch…` previews a `.patch` or `.diff`, runs `git apply --check`, and applies it to the working tree; a failed check offers a 3-way fallback with a conflict warning. Commit comparisons offer `Copy Paths` for the full changed-file list and `Export Patch…`, which excludes binary files and reports how many were omitted.
 - Pull honors `gitLogWorkbench.pull.strategy` and also exposes explicit fast-forward-only, merge, and rebase actions from the toolbar menu and command palette.
 - `Git Log: Show Diagnostics` writes the extension, VS Code, and detected Git versions, capabilities, and repository state to the Git Log output channel with credentials redacted.
 
@@ -160,7 +160,7 @@ npm run package
 - Use `Stashes` to create, inspect, apply, pop, or drop saved work.
 - While a merge, rebase, cherry-pick, or revert is in progress, the bar above the commit list shows its state and actions; Continue stays disabled until conflicts are resolved.
 - Run `Apply Patch…` from the command palette or the toolbar context menu to preview a patch, validate it with `git apply --check`, and apply it to the working tree. If the check fails, choose the 3-way fallback and resolve conflicts in Source Control.
-- Use `Export Patch…` in a commit comparison to save all text changes as a `.patch`; binary files are omitted and their count is reported.
+- Use `Copy Paths` in a commit comparison to copy every changed path (including binary files) in sorted order, or `Export Patch…` to save all text changes as a `.patch`; binary files are omitted from the patch and their count is reported.
 - Configure the default Pull behavior with `gitLogWorkbench.pull.strategy`, or pick fast-forward-only, merge, or rebase explicitly from the toolbar menu or command palette.
 - Run `Git Log: Show Diagnostics` when reporting an environment issue; it writes Git/extension/repository facts to the Git Log output channel without credentials.
 
