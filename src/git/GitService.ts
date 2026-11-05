@@ -123,9 +123,8 @@ function resolveWithinRepository(cwd: string, path: string): string {
 }
 
 /**
- * Branch names are passed as their own argv entries, so the only injection risk left is an
- * option-like value; `validateToken` in the operation service guards the same way, and the
- * minimum supported Git (2.27) predates `--end-of-options` on `rev-list`.
+ * Branch names are passed as their own argv entries; reject option-like values and control
+ * characters so a ref name cannot be mistaken for a Git option.
  */
 function isUsableBranchToken(name: string): boolean {
   return Boolean(name) && !name.startsWith('-') && !/[\0\r\n]/u.test(name);
@@ -927,11 +926,9 @@ export class GitService {
             skip: 0,
             format: LOG_FORMAT,
             filters: hashFilters,
+            revision: resolvedHash,
+            noWalk: true,
           });
-          const headIndex = args.lastIndexOf('HEAD');
-          if (headIndex > 0 && args[headIndex - 1] === '--end-of-options') {
-            args.splice(headIndex - 1, 2, '--no-walk', resolvedHash);
-          }
           const result = await this.runner.run(args, {
             cwd,
             ...(query.signal ? { signal: query.signal } : {}),

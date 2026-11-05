@@ -23,12 +23,14 @@ import {
   discoverRepositories,
   ensureSupportedGit,
   inspectRepository,
+  resolveGitCapabilities,
 } from '../repositories/discoverRepositories';
 import type {
   ChangedFile,
   CommitSummary,
   EditorHistoryRequest,
   FolderHistoryRequest,
+  GitCapabilities,
   HistoryEntry,
   RefLabel,
   RepositorySummary,
@@ -166,7 +168,7 @@ export class WorkbenchController {
   private readonly activeOperationGroups = new Map<string, number>();
   private readonly pendingOperationRefreshGroups = new Set<string>();
   private readonly dirtyOperationGroups = new Set<string>();
-  private gitVersionChecked = false;
+  private gitCapabilities: GitCapabilities | undefined;
 
   constructor(private readonly options: WorkbenchControllerOptions) {
     this.layout = options.initialLayout;
@@ -910,10 +912,12 @@ export class WorkbenchController {
     const workspaceRoots = this.workspaceRoots;
     this.options.gitService.invalidateLogCache?.();
     await this.options.postMessage({ type: 'loading', requestId, scope: 'repositories' });
-    if (!this.gitVersionChecked) {
-      await ensureSupportedGit(this.options.gitRunner, workspaceRoots[0] ?? process.cwd());
-      this.gitVersionChecked = true;
-    }
+    const gitCapabilities =
+      this.gitCapabilities ??
+      resolveGitCapabilities(
+        await ensureSupportedGit(this.options.gitRunner, workspaceRoots[0] ?? process.cwd()),
+      );
+    this.gitCapabilities = gitCapabilities;
     const repositories = await discoverRepositories(
       workspaceRoots,
       this.options.gitRunner,
@@ -956,6 +960,7 @@ export class WorkbenchController {
       pageSize: this.options.pageSize,
       maxCachedCommits: this.options.maxCachedCommits ?? 5000,
       layout: this.layout,
+      gitCapabilities,
     });
 
     if (this.selectedRepositoryId) {
@@ -1283,6 +1288,9 @@ export class WorkbenchController {
     this.requireSelectedRepository(message.repositoryId);
     const repository = this.requireRepository(message.repositoryId);
     const operation = message.operation;
+    if (operation.kind === 'createOrphanBranch' && !this.gitCapabilities?.createOrphanBranch) {
+      throw new Error('Creating an orphan branch requires Git 2.23 or newer.');
+    }
     if (operation.kind === 'deleteRemoteBranch') {
       const fullName = `refs/remotes/${operation.remote}/${operation.branch}`;
       const knownRemoteBranch = (this.refs.get(message.repositoryId) ?? []).some(

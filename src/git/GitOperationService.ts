@@ -555,6 +555,20 @@ export class GitOperationService {
     }
   }
 
+  /** Reads the checked-out branch; detached HEAD resolves to an empty string. */
+  private async readCurrentBranch(cwd: string): Promise<string> {
+    try {
+      const result = await this.runner.run(['symbolic-ref', '--quiet', '--short', 'HEAD'], {
+        cwd,
+        timeoutMs: 30_000,
+      });
+      return result.stdout.toString('utf8').trim();
+    } catch (error) {
+      if (error instanceof GitCommandError && !error.cancelled && error.exitCode === 1) return '';
+      throw error;
+    }
+  }
+
   /** Reads a multi-valued Git config key; an unset key resolves to an empty list. */
   private async readAllConfig(cwd: string, key: string): Promise<string[]> {
     try {
@@ -1105,11 +1119,7 @@ export class GitOperationService {
     requestedHashes: readonly string[],
   ): Promise<CommitRangeRewritePlan> {
     const cwd = fileURLToPath(repository.rootUri);
-    const branchResult = await this.runner.run(['branch', '--show-current'], {
-      cwd,
-      timeoutMs: 30_000,
-    });
-    const branch = branchResult.stdout.toString('utf8').trim();
+    const branch = await this.readCurrentBranch(cwd);
     if (!branch) throw new Error('Commit history rewriting is unavailable while HEAD is detached.');
     const hashes = requestedHashes.map(validateHash);
     if (hashes.length < 2 || hashes.length > 100 || new Set(hashes).size !== hashes.length) {
@@ -1165,15 +1175,14 @@ export class GitOperationService {
   }
 
   private async assertRewritePlanStillCurrent(plan: CommitRangeRewritePlan): Promise<void> {
-    const [branchResult, headResult, statusResult] = await Promise.all([
-      this.runner.run(['branch', '--show-current'], { cwd: plan.cwd, timeoutMs: 30_000 }),
+    const [branch, headResult, statusResult] = await Promise.all([
+      this.readCurrentBranch(plan.cwd),
       this.runner.run(['rev-parse', '--verify', 'HEAD'], { cwd: plan.cwd, timeoutMs: 30_000 }),
       this.runner.run(['status', '--porcelain=v1', '-z'], {
         cwd: plan.cwd,
         timeoutMs: 30_000,
       }),
     ]);
-    const branch = branchResult.stdout.toString('utf8').trim();
     const head = headResult.stdout.toString('utf8').trim();
     if (branch !== plan.branch || head !== plan.expectedHead) {
       throw new Error('The current branch or HEAD changed during confirmation; select the commits again.');
@@ -1243,11 +1252,7 @@ export class GitOperationService {
     operation: GitOperationRequest,
   ): Promise<CommitPatchPlan> {
     const cwd = fileURLToPath(repository.rootUri);
-    const branchResult = await this.runner.run(['branch', '--show-current'], {
-      cwd,
-      timeoutMs: 30_000,
-    });
-    const branch = branchResult.stdout.toString('utf8').trim();
+    const branch = await this.readCurrentBranch(cwd);
     if (!branch) throw new Error('Commit history rewriting is unavailable while HEAD is detached.');
     if (operation.kind !== 'editCommitMessages' && operation.kind !== 'rewriteAuthorIdentity') {
       throw new Error('Invalid commit history rewrite operation.');
@@ -1390,8 +1395,8 @@ export class GitOperationService {
   }
 
   private async assertCommitPatchStillCurrent(plan: CommitPatchPlan): Promise<void> {
-    const [branchResult, headResult, shallowResult, conflictsResult] = await Promise.all([
-      this.runner.run(['branch', '--show-current'], { cwd: plan.cwd, timeoutMs: 30_000 }),
+    const [branch, headResult, shallowResult, conflictsResult] = await Promise.all([
+      this.readCurrentBranch(plan.cwd),
       this.runner.run(['rev-parse', '--verify', 'HEAD'], { cwd: plan.cwd, timeoutMs: 30_000 }),
       this.runner.run(['rev-parse', '--is-shallow-repository'], {
         cwd: plan.cwd,
@@ -1400,7 +1405,6 @@ export class GitOperationService {
       }),
       this.runner.run(['ls-files', '--unmerged'], { cwd: plan.cwd, timeoutMs: 30_000 }),
     ]);
-    const branch = branchResult.stdout.toString('utf8').trim();
     const head = headResult.stdout.toString('utf8').trim();
     if (branch !== plan.branch || head !== plan.expectedHead) {
       throw new Error('The current branch or HEAD changed during confirmation; select the commits again.');

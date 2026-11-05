@@ -21,7 +21,8 @@
 | **unshallow** | `git fetch --unshallow`，把浅克隆补全为完整历史；深度已越根提交时再调会报错（见 ADR-0010） |
 | **deepen** | `git fetch --deepen=N`，在当前深度上再增加 N 条历史，可反复调用逐步加深；越过根提交后 git 自动清除 shallow 边界（见 ADR-0010） |
 | **补丁导出** | 把对比结果写成 `.patch` 文件，二进制文件被排除（见 ADR-0011） |
-| **孤儿分支** | 通过 `git switch --orphan` 创建、无父提交且与既有历史无共同祖先的分支；首个提交前不存在对应 ref（见 ADR-0012） |
+| **孤儿分支** | 通过 `git switch --orphan` 创建、无父提交且与既有历史无共同祖先的分支；首个提交前不存在对应 ref；要求 Git 2.23+，2.20–2.22 隐藏入口（见 ADR-0012、ADR-0024） |
+| **Git 能力集** | 按检测到的 Git 版本推导出的功能开关集合（当前含 `version`、`createOrphanBranch`），随初始化下发前端，用于隐藏旧版不支持的功能入口（见 ADR-0024） |
 | **未出生分支** | HEAD 已指向某分支但该分支尚无提交、因而无 ref 的状态（见 ADR-0012） |
 | **引用快照** | 扩展侧每次刷新时经 `for-each-ref` 实时取得的完整 ref 列表，随 `repositoryData` 整体下发、前端不缓存 |
 | **远程跟踪引用** | `refs/remotes/<remote>/<branch>`，由远程的 fetch refspec 物化；`git push --set-upstream` 只写入上游配置，**仅当 refspec 覆盖该分支时**才创建它（见 ADR-0013） |

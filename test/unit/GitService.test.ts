@@ -173,7 +173,7 @@ describe('GitService', () => {
     expect(page[0]).toMatchObject({ authorName: '测试作者', authorEmail: 'author@example.com' });
   });
 
-  it('resolves exact hash searches with Git 2.27-compatible arguments', async () => {
+  it('resolves exact hash searches with Git 2.20-compatible arguments', async () => {
     const hash = 'a'.repeat(40);
     const run = vi
       .fn()
@@ -203,6 +203,12 @@ describe('GitService', () => {
       ['rev-parse', '--verify', `${hash}^{commit}`],
       expect.objectContaining({ cwd: '/workspace/project' }),
     );
+    expect(run).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining(['--no-walk', hash]),
+      expect.objectContaining({ cwd: '/workspace/project' }),
+    );
+    expect(run.mock.calls[1]?.[0]).not.toContain('--end-of-options');
   });
 
   it('loads a complete commit message with a bounded Git output', async () => {

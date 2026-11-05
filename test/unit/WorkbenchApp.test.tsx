@@ -3100,6 +3100,7 @@ describe('WorkbenchApp', () => {
     fireEvent.contextMenu(screen.getByTitle(head));
     const menu = screen.getByRole('menu', { name: 'head actions' });
     expect(within(menu).getByRole('menuitem', { name: 'Create Branch…' })).toBeEnabled();
+    expect(within(menu).queryByRole('menuitem', { name: 'Create Orphan Branch…' })).not.toBeInTheDocument();
     expect(within(menu).queryByRole('menuitem', { name: /Reset Current Branch/u })).not.toBeInTheDocument();
     fireEvent.contextMenu(screen.getByText('Detached commit').closest('[role="row"]') as Element);
     const commitMenu = screen.getByRole('menu', { name: 'commit actions' });
@@ -4812,6 +4813,7 @@ describe('WorkbenchApp', () => {
               detailsHeight: 156,
               filesViewMode: 'tree',
             },
+            gitCapabilities: { version: '2.56.0', createOrphanBranch: true },
           },
         }),
       );

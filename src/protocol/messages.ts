@@ -5,6 +5,7 @@ import type {
   CommitSummary,
   Contributor,
   EditorHistoryKind,
+  GitCapabilities,
   HistoryEntry,
   RefLabel,
   RepositorySummary,
@@ -217,6 +218,8 @@ export type ExtensionToWebviewMessage =
       pageSize: number;
       maxCachedCommits: number;
       layout: WorkbenchLayout;
+      /** Absent means the host did not report capabilities; treat every feature as unsupported. */
+      gitCapabilities?: GitCapabilities;
     }
   | {
       type: 'repositoryData';

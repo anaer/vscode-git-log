@@ -3,7 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GitCommandError, type GitRunner } from '../git/GitRunner';
-import type { GitOperationState, RepositorySummary } from '../shared/models';
+import type { GitCapabilities, GitOperationState, RepositorySummary } from '../shared/models';
 
 export interface RepositoryDiscoveryOptions {
   scanDepth: number;
@@ -132,10 +132,20 @@ export async function ensureSupportedGit(runner: GitRunner, cwd: string): Promis
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const patch = Number(match[3] ?? 0);
-  if (major < 2 || (major === 2 && minor < 27)) {
-    throw new Error(`Git 2.27 or newer is required; found ${major}.${minor}.${patch}.`);
+  if (major < 2 || (major === 2 && minor < 20)) {
+    throw new Error(`Git 2.20 or newer is required; found ${major}.${minor}.${patch}.`);
   }
   return `${major}.${minor}.${patch}`;
+}
+
+export function resolveGitCapabilities(version: string): GitCapabilities {
+  const match = /^(\d+)\.(\d+)/u.exec(version);
+  const major = Number(match?.[1] ?? 0);
+  const minor = Number(match?.[2] ?? 0);
+  return {
+    version,
+    createOrphanBranch: major > 2 || (major === 2 && minor >= 23),
+  };
 }
 
 async function runOptional(

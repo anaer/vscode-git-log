@@ -138,6 +138,7 @@ export function createMessageProcessor(
           ...current,
           repositories: message.repositories,
           selectedRepositoryId: message.selectedRepositoryId,
+          gitCapabilities: message.gitCapabilities,
           pageSize: message.pageSize,
           maxCachedCommits: message.maxCachedCommits ?? 5000,
           nextLogOffset: 0,

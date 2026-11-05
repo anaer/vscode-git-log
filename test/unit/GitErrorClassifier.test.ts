@@ -56,7 +56,7 @@ describe('classifyGitError', () => {
 
     const classified = classifier.classifyGitError(unavailable);
     expect(classified).toMatchObject({ category: 'repository' });
-    expect(classified.message).toContain('Git 2.27 or newer');
+    expect(classified.message).toContain('Git 2.20 or newer');
     expect(classified.message).toContain('gitLogWorkbench.git.path');
   });
 

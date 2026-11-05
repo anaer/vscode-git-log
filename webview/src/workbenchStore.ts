@@ -17,6 +17,7 @@ import type {
   CommitDetails,
   CommitSummary,
   Contributor,
+  GitCapabilities,
   HistoryEntry,
   RefLabel,
   RepositorySummary,
@@ -57,6 +58,7 @@ export const EMPTY_GRAPH_LAYOUT_CACHE: GraphLayoutCache = {
 export interface WorkbenchState {
   repositories: RepositorySummary[];
   selectedRepositoryId: string | undefined;
+  gitCapabilities: GitCapabilities | undefined;
   refs: RefLabel[];
   commits: CommitSummary[];
   contributors: Contributor[];
@@ -106,6 +108,7 @@ export interface WorkbenchState {
 export const initialWorkbenchState: WorkbenchState = {
   repositories: [],
   selectedRepositoryId: undefined,
+  gitCapabilities: undefined,
   refs: [],
   commits: [],
   contributors: [],

@@ -5,6 +5,13 @@ export type RefKind = 'head' | 'local' | 'remote' | 'tag';
 export type SignatureStatus = 'good' | 'bad' | 'unknown' | 'expired' | 'revoked' | 'error' | 'none';
 export type GitOperationState = 'merge' | 'rebase' | 'cherry-pick' | 'revert';
 
+/** Git features available on the host, derived from the detected executable version. */
+export interface GitCapabilities {
+  version: string;
+  /** `git switch --orphan` is available (Git 2.23+). */
+  createOrphanBranch: boolean;
+}
+
 export interface StashEntry {
   ref: string;
   hash: CommitHash;

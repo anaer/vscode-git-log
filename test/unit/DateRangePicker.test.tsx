@@ -136,8 +136,10 @@ describe('date picker survives the outside-click dismissal guard', () => {
   });
 
   it('disables in-calendar days outside the minDate bound', () => {
-    renderField({ minDate: '2026-09-07' });
-    // The popover opens on the current month, which is before the bound.
+    const now = new Date();
+    const minDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-15`;
+    renderField({ minDate });
+    // The popover opens on the current month; days before the 15th are out of bounds.
     expect(document.querySelectorAll('.flatpickr-day.flatpickr-disabled').length).toBeGreaterThan(
       0,
     );

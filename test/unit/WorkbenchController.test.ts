@@ -1257,6 +1257,62 @@ describe('WorkbenchController', () => {
     expect(messages.at(-1)).toMatchObject({ type: 'error', requestId: 'forged-delete-remote' });
   });
 
+  it('reports capabilities and rejects orphan branch creation on Git 2.22', async () => {
+    const repository = await createRepository();
+    const messages: ExtensionToWebviewMessage[] = [];
+    const runOperation = vi.fn();
+    const realRunner = new GitRunner();
+    const runner = {
+      run: (args: readonly string[], options: Parameters<GitRunner['run']>[1]) =>
+        args.length === 1 && args[0] === '--version'
+          ? Promise.resolve({
+              stdout: Buffer.from('git version 2.22.0\n'),
+              stderr: Buffer.alloc(0),
+              exitCode: 0,
+              durationMs: 1,
+            })
+          : realRunner.run(args, options),
+    } as unknown as GitRunner;
+    const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+      workspaceRoots: [repository],
+      gitService: new GitService(realRunner),
+      gitRunner: runner,
+      scanDepth: 0,
+      initialPageSize: 200,
+      pageSize: 500,
+      initialLayout: { refsWidth: 220, filesWidth: 320, detailsHeight: 156, filesViewMode: 'tree' },
+      postMessage: (message) => {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      persistLayout: () => Promise.resolve(),
+      operationService: { run: runOperation },
+    });
+
+    await controller.handleMessage({ type: 'ready', requestId: 'ready-old-git' });
+    const initialized = messages.find((message) => message.type === 'initialize');
+    expect(initialized?.type).toBe('initialize');
+    if (initialized?.type !== 'initialize') return;
+    expect(initialized.gitCapabilities).toEqual({
+      version: '2.22.0',
+      createOrphanBranch: false,
+    });
+
+    await controller.handleMessage({
+      type: 'runOperation',
+      requestId: 'orphan-on-old-git',
+      repositoryId: initialized.selectedRepositoryId as string,
+      operation: { kind: 'createOrphanBranch', name: 'gh-pages' },
+    });
+
+    expect(runOperation).not.toHaveBeenCalled();
+    expect(messages.at(-1)).toMatchObject({
+      type: 'error',
+      requestId: 'orphan-on-old-git',
+      message: 'Creating an orphan branch requires Git 2.23 or newer.',
+    });
+  });
+
   it('ignores an older workspace initialization that finishes after a newer one', async () => {
     const firstRepository = await createRepository();
     const secondRepository = await createRepository();

@@ -2,6 +2,22 @@
 
 All notable changes to Git Log are documented in this file.
 
+## 26.1105.1127
+
+### Added
+
+- **Push tags**: local tags can be pushed to a configured remote directly from the Branches panel.
+- **Git 2.20 support**: the minimum supported Git is now 2.20, and actions that require a newer Git are hidden automatically.
+
+### Changed
+
+- **Tag tree**: tags appear as a flat list with remote grouping, local and pushed tags are distinguished, and tag directories start collapsed.
+- **Faster tag loading**: remote tag probes are cached so repeated views avoid extra network requests.
+
+### Fixed
+
+- **Deleted pushed tags**: a fetch no longer restores a tag that was deleted from its remote.
+
 ## 26.928.1103
 
 ### Changed

@@ -395,6 +395,22 @@ describe('GitOperationService', () => {
     expect(await git(fixture.path, 'branch', '--show-current')).toBe('main');
   });
 
+  it('refuses to rewrite history while HEAD is detached', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-detached-rewrite-');
+    const head = await git(fixture.path, 'rev-parse', 'HEAD');
+    await git(fixture.path, 'checkout', '--detach');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(
+        fixture.summary,
+        { kind: 'editCommitMessages', edits: [{ hash: head, message: 'edited' }] },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow(/HEAD is detached/u);
+  });
+
   it('rejects edits that target commits unreachable from the current branch', async () => {
     const { GitOperationService } = await import('../../src/git/GitOperationService');
     const fixture = await createFixtureRepository('git-operation-edit-unreachable-');

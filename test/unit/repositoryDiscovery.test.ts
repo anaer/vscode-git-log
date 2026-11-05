@@ -128,7 +128,9 @@ describe('discoverRepositories', () => {
   });
 
   it('reports missing and unsupported Git versions before repository scanning', async () => {
-    const { ensureSupportedGit } = await import('../../src/repositories/discoverRepositories');
+    const { ensureSupportedGit, resolveGitCapabilities } = await import(
+      '../../src/repositories/discoverRepositories'
+    );
     const result = (version: string) => ({
       stdout: Buffer.from(`${version}\n`),
       stderr: Buffer.alloc(0),
@@ -137,16 +139,25 @@ describe('discoverRepositories', () => {
     });
     await expect(
       ensureSupportedGit(
-        { run: () => Promise.resolve(result('git version 2.26.9')) } as never,
+        { run: () => Promise.resolve(result('git version 2.19.9')) } as never,
         process.cwd(),
       ),
-    ).rejects.toThrow('Git 2.27 or newer');
+    ).rejects.toThrow('Git 2.20 or newer');
     await expect(
       ensureSupportedGit(
-        { run: () => Promise.resolve(result('git version 2.27.0')) } as never,
+        { run: () => Promise.resolve(result('git version 2.20.0')) } as never,
         process.cwd(),
       ),
-    ).resolves.toBe('2.27.0');
+    ).resolves.toBe('2.20.0');
+    expect(resolveGitCapabilities('2.22.9')).toEqual({
+      version: '2.22.9',
+      createOrphanBranch: false,
+    });
+    expect(resolveGitCapabilities('2.23.0')).toEqual({
+      version: '2.23.0',
+      createOrphanBranch: true,
+    });
+    expect(resolveGitCapabilities('3.0.0').createOrphanBranch).toBe(true);
     await expect(
       ensureSupportedGit(
         { run: () => Promise.resolve(result('git version 2.44.0.windows.1')) } as never,

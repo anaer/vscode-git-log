@@ -13,6 +13,10 @@ export interface BuildLogArgumentsOptions {
   format: string;
   filters: LogFilters;
   textMode?: 'none' | 'message' | 'author';
+  /** Revision to walk when no branch filter is selected; defaults to HEAD. */
+  revision?: string;
+  /** Restrict the walk to the given revision instead of traversing its history. */
+  noWalk?: boolean;
 }
 
 function escapeExtendedRegexp(value: string): string {
@@ -61,8 +65,12 @@ export function buildLogArguments(options: BuildLogArgumentsOptions): string[] {
     args.push(`--until=@${String(Math.trunc(options.filters.dateTo))}`);
   }
 
-  if (options.filters.branches.length) args.push('--end-of-options', ...options.filters.branches);
-  else args.push('--end-of-options', 'HEAD');
+  // Branch filters are full refnames validated against the repository's ref snapshot,
+  // so they start with `refs/` and cannot be parsed as options on Git versions that
+  // predate `--end-of-options` (2.24).
+  if (options.noWalk) args.push('--no-walk');
+  if (options.filters.branches.length) args.push(...options.filters.branches);
+  else args.push(options.revision ?? 'HEAD');
 
   if (options.filters.paths.length) args.push('--', ...options.filters.paths);
   return args;

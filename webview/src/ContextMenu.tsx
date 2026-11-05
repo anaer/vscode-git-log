@@ -16,6 +16,7 @@ interface ContextMenuProps {
   menuRef: RefObject<HTMLDivElement | null>;
   measuredContextMenuPosition: CSSProperties | undefined;
   selectedRepository: RepositorySummary | undefined;
+  canCreateOrphanBranch: boolean;
   hasContiguousCommitRange: boolean;
   selectedOperationInFlight: boolean;
   currentBranchHasUpstream: boolean;
@@ -48,6 +49,7 @@ export function ContextMenu(props: ContextMenuProps) {
     menuRef,
     measuredContextMenuPosition,
     selectedRepository,
+    canCreateOrphanBranch,
     hasContiguousCommitRange,
     selectedOperationInFlight,
     currentBranchHasUpstream,
@@ -917,19 +919,21 @@ export function ContextMenu(props: ContextMenuProps) {
                 }}
               >
                 Create Branch…              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setNamedOperation({
-                    kind: 'createOrphanBranch',
-                    repositoryId: contextMenu.repositoryId,
-                    value: '',
-                  });
-                  setContextMenu(undefined);
-                }}
-              >
-                Create Orphan Branch…              </button>
+              {canCreateOrphanBranch ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setNamedOperation({
+                      kind: 'createOrphanBranch',
+                      repositoryId: contextMenu.repositoryId,
+                      value: '',
+                    });
+                    setContextMenu(undefined);
+                  }}
+                >
+                  Create Orphan Branch…                </button>
+              ) : null}
               <button
                 type="button"
                 role="menuitem"

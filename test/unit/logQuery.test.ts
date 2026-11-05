@@ -36,7 +36,6 @@ describe('buildLogArguments', () => {
       '--author=张三',
       '--since=@1700000000',
       '--until=@1700100000',
-      '--end-of-options',
       'refs/heads/main',
       'refs/remotes/origin/release',
       '--',
@@ -52,6 +51,18 @@ describe('buildLogArguments', () => {
     });
     expect(currentBranchArgs).toContain('HEAD');
     expect(currentBranchArgs).not.toContain('--all');
+    expect(currentBranchArgs).not.toContain('--end-of-options');
+
+    const hash = 'a'.repeat(40);
+    const hashArgs = queryModule.buildLogArguments({
+      limit: 1,
+      skip: 0,
+      format: 'FORMAT',
+      filters: queryModule.EMPTY_LOG_FILTERS,
+      revision: hash,
+      noWalk: true,
+    });
+    expect(hashArgs.slice(-2)).toEqual(['--no-walk', hash]);
   });
 
   it('treats selected author names as literal text instead of Git regular expressions', async () => {
