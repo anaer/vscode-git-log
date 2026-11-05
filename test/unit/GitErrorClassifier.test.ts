@@ -49,6 +49,10 @@ describe('classifyGitError', () => {
       ['fatal: Not possible to fast-forward, aborting.', /Merge or Rebase strategy/u],
       ['error: Your local changes would be overwritten by checkout', /Commit or discard/u],
       ['fatal: The current branch has no remote.', /Add a remote/u],
+      [
+        'fatal: The current branch feature has no upstream branch.',
+        /Use Publish Branch/u,
+      ],
       ["error: pathspec 'feature/x' did not match any file(s) known to git", /Fetch to refresh/u],
       ['CONFLICT (content): Merge conflict in app.ts', /Resolve the conflicts/u],
     ];

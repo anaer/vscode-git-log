@@ -951,6 +951,23 @@ export class GitOperationService {
         if (operation.kind === 'mergeAbort' && freshRepository.operationState !== 'merge') {
           throw new Error('No Git merge is in progress.');
         }
+        if (operation.kind === 'push' && !operation.forceWithLease) {
+          const branch = freshRepository.currentBranch;
+          if (!branch) throw new Error('Push is unavailable while HEAD is detached.');
+          const upstream = await this.runner.run(
+            ['for-each-ref', '--format=%(upstream)', `refs/heads/${branch}`],
+            {
+              cwd: fileURLToPath(freshRepository.rootUri),
+              timeoutMs: 30_000,
+              maxStdoutBytes: 4096,
+            },
+          );
+          if (!upstream.stdout.toString('utf8').trim()) {
+            throw new Error(
+              'This branch has no upstream. Use Publish Branch to push it and set its upstream.',
+            );
+          }
+        }
         if (operation.kind === 'rebaseContinue' && freshRepository.hasUnresolvedConflicts) {
           throw new Error('Resolve all conflicts before continuing the rebase.');
         }

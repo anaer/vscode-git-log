@@ -41,9 +41,9 @@ function filtersEqual(left: LogFilters, right: LogFilters): boolean {
 }
 
 // Incrementally compute the commit-graph layout. The `previous` cache is the
-// layout already in WorkbenchState; when the new commits merely append to the
-// previously laid-out prefix we lay out only the tail and splice the rows, which
-// is O(appended) instead of O(commits). Any other change (replace, evict, history
+// layout already in WorkbenchState; when new commits only append to that cached
+// prefix, only the tail is laid out and the rows are spliced, which is
+// O(appended) instead of O(commits). Any other change (replace, evict, history
 // view) falls back to a from-scratch layout, so the output is always identical to
 // `layoutCommitGraph(commits, graphContinuation)` for the commit list, or to a
 // layout of the history entries when `history` is set.

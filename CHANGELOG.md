@@ -8,6 +8,10 @@ All notable changes to Git Log are documented in this file.
 
 - **Copy changed file paths**: commit comparisons can copy every changed path, including binary files, to the clipboard in sorted order.
 
+### Fixed
+
+- **No-upstream push guard**: plain Push now refuses branches without an upstream and points to Publish Branch.
+
 ## 26.1105.1412
 
 ### Added

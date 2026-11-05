@@ -29,12 +29,12 @@ ADR-0021 让 Tags 组在根下平铺全部 tag，并额外按 remote 归入目�
 
 `webview/src/webviewUtils.ts`（`reconcileCollapsedFolders`：按存活键、默认折叠键、用户已操作键三者在每次 refs 变化时收敛折叠集合）、`webview/src/buildRefTree.ts`（`collectRefFolderKeys`：从树中提取目录键，键格式与面板一致）、`webview/src/App.tsx`（`liveRefFolderKeys` 派生 + 对账 `useEffect`、`touchedRefFolders` ref 记录用户操作）、`webview/src/RefsPane.tsx`（`collapsedFolders.has(folderKey)` 决定折叠，键格式 `<repositoryId>:<kind>:<directoryId>`）。
 
-## 下一步
-
-无需后续动作。
-
 ## 关联文档
 
 - [ADR-0021: Tags 平铺展示与远程分组](ADR-0021-Tags平铺展示与远程分组.md) — 决定 Tags 组的树结构与展示顺序，本 ADR 规定其目录节点的初始折叠态。
 - [ADR-0022: 远程 tag 探测缓存](ADR-0022-远程tag探测缓存.md) — `pushedTo` 的缓存策略影响 remote 目录的出现时序。
 - [ADR-0019: Tag 本地与远程区分标识](ADR-0019-Tag本地与远程区分标识.md) — `pushedTo` 决定哪些 tag 会出现在 remote 目录下，从而决定默认折叠的目录数量。
+
+## 下一步
+
+无需后续动作。

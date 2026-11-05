@@ -157,6 +157,7 @@ npm run package
 - Drag pane and commit-column separators with the mouse, or focus a separator and adjust it with the arrow keys. Toolbar actions can collapse Refs and Changed Files; Commit, Author, Date, and Refs remain available.
 - The User filter pins `Me (current Git user)` to the top using the repository's `git config user.name/user.email`, preferring email matching. Toolbar buttons include hover descriptions.
 - Refresh reads local repository state only. Fetch, Pull, and Push access the configured remote and reuse the system credential helper or SSH Agent.
+- Plain Push requires an upstream branch; use Publish Branch for a branch that has never been pushed. This avoids `push.default=matching` silently reporting success without pushing.
 - Use `Stashes` to create, inspect, apply, pop, or drop saved work.
 - While a merge, rebase, cherry-pick, or revert is in progress, the bar above the commit list shows its state and actions; Continue stays disabled until conflicts are resolved.
 - Run `Apply Patch…` from the command palette or the toolbar context menu to preview a patch, validate it with `git apply --check`, and apply it to the working tree. If the check fails, choose the 3-way fallback and resolve conflicts in Source Control.

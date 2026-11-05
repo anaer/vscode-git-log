@@ -32,11 +32,11 @@ ADR-0019 让远程 tag 状态由 `getPushedTags` 异步补齐，但每次 ref �
 
 `src/webview/WorkbenchController.ts`（`pushedTagsCache` 字段、`PUSHED_TAGS_CACHE_MS`、`PUSHED_TAGS_INVALIDATING_OPERATIONS`、`enrichRefsWithPushedTags`、操作完成处的失效）。
 
-## 下一步
-
-无需后续动作。
-
 ## 关联文档
 
 - [ADR-0019: Tag 本地与远程区分标识](ADR-0019-Tag本地与远程区分标识.md) — 本 ADR 修订其 `getPushedTags` 的调用策略（加缓存）。
 - [ADR-0023: Tag 目录默认折叠](ADR-0023-Tag目录默认折叠.md) — 缓存的 `pushedTo` 决定 remote 目录数量，进而决定默认折叠的目录集合。
+
+## 下一步
+
+无需后续动作。

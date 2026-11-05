@@ -40,3 +40,7 @@
 - [ADR-0021: Tags 平铺展示与远程分组](ADR-0021-Tags平铺展示与远程分组.md) — 取代本 ADR 的"远程名后缀"展示决策。
 - [ADR-0022: 远程 tag 探测缓存](ADR-0022-远程tag探测缓存.md) — 修订本 ADR 的 `getPushedTags` 调用策略（加缓存）。
 - [ADR-0023: Tag 目录默认折叠](ADR-0023-Tag目录默认折叠.md) — 规定由本 ADR 的 `pushedTo` 推导出的 remote 目录的初始折叠态。
+
+## 下一步
+
+无需后续动作。

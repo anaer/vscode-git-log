@@ -27,6 +27,10 @@ const NEXT_STEPS: ReadonlyArray<readonly [RegExp, string]> = [
     'Add a remote first, then retry.',
   ],
   [
+    /has no upstream branch/u,
+    'Use Publish Branch to push it and set the upstream.',
+  ],
+  [
     /did not match any file\(s\) known to git|unknown revision|bad revision/u,
     'Fetch to refresh remote refs, then retry.',
   ],

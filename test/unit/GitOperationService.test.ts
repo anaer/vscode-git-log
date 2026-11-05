@@ -765,6 +765,38 @@ describe('GitOperationService', () => {
     ]);
   });
 
+  it('rejects plain pushes without an upstream and keeps Publish Branch available', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-no-upstream-');
+    const remote = await createBareRemote('git-operation-no-upstream-remote-');
+    await git(fixture.path, 'remote', 'add', 'origin', remote);
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const service = new GitOperationService(new RealGitRunner());
+
+    for (const pushDefault of ['matching', 'current', 'simple']) {
+      await git(fixture.path, 'config', 'push.default', pushDefault);
+      await expect(
+        service.run(fixture.summary, { kind: 'push' }, { confirm: () => Promise.resolve(true) }),
+      ).rejects.toThrow('This branch has no upstream');
+    }
+    expect(await git(remote, 'for-each-ref', '--format=%(refname)', 'refs/heads')).toBe('');
+
+    await service.run(
+      fixture.summary,
+      { kind: 'publishBranch' },
+      { confirm: () => Promise.resolve(true) },
+    );
+    expect(await git(remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature')).toBe(
+      'refs/heads/feature',
+    );
+    await service.run(fixture.summary, { kind: 'push' }, { confirm: () => Promise.resolve(true) });
+
+    await git(fixture.path, 'checkout', '--detach');
+    await expect(
+      service.run(fixture.summary, { kind: 'push' }, { confirm: () => Promise.resolve(true) }),
+    ).rejects.toThrow('HEAD is detached');
+  });
+
   it('aborts an in-progress merge and rejects when no merge is active', async () => {
     const { GitOperationService } = await import('../../src/git/GitOperationService');
     const fixture = await createFixtureRepository('git-operation-merge-abort-');

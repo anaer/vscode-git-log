@@ -29,11 +29,11 @@ ADR-0019 为区分 tag 的本地/远程归属，在 tag 名后追加远程名后
 
 `webview/src/buildRefTree.ts`（`buildRefTree` 的 tag 分支：先按 remote 插入目录节点、再在根下平铺全部 tag；另导出 `collectRefFolderKeys` 供目录键推导）、`webview/src/RefsPane.tsx`（tag 行尾 `*` 标记）、`webview/src/styles.css`（`.tag-local` 靠右，取代 `.tag-remote`）。
 
-## 下一步
-
-无需后续动作。
-
 ## 关联文档
 
 - [ADR-0019: Tag 本地与远程区分标识](ADR-0019-Tag本地与远程区分标识.md) — `pushedTo` 数据来源；其"远程名后缀"展示决策由本 ADR 取代。
 - [ADR-0023: Tag 目录默认折叠](ADR-0023-Tag目录默认折叠.md) — tag 目录节点的初始折叠状态。
+
+## 下一步
+
+无需后续动作。
