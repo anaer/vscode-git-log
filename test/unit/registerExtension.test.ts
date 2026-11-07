@@ -11,6 +11,7 @@ describe('registerExtension', () => {
     const compareFileWithRef = vi.fn();
     const applyPatch = vi.fn();
     const showDiagnostics = vi.fn();
+    const configureGitSettings = vi.fn();
     const pull = vi.fn();
     const registeredCommands = new Map<string, (...args: unknown[]) => void>();
 
@@ -27,10 +28,11 @@ describe('registerExtension', () => {
       compareFileWithRef,
       applyPatch,
       showDiagnostics,
+      configureGitSettings,
       pull,
     });
 
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(12);
     const fileResource = { scheme: 'file', fsPath: '/repo/src/app.ts' };
     const folderResource = { scheme: 'file', fsPath: '/repo/src' };
     registeredCommands.get('gitLogWorkbench.openLog')?.();
@@ -41,6 +43,7 @@ describe('registerExtension', () => {
     registeredCommands.get('gitLogWorkbench.editor.compareFileWithRef')?.();
     registeredCommands.get('gitLogWorkbench.applyPatch')?.();
     registeredCommands.get('gitLogWorkbench.showDiagnostics')?.();
+    registeredCommands.get('gitLogWorkbench.config.multiRepo')?.();
     registeredCommands.get('gitLogWorkbench.pull.ffOnly')?.();
     registeredCommands.get('gitLogWorkbench.pull.merge')?.();
     registeredCommands.get('gitLogWorkbench.pull.rebase')?.();
@@ -52,6 +55,7 @@ describe('registerExtension', () => {
     expect(compareFileWithRef).toHaveBeenCalledOnce();
     expect(applyPatch).toHaveBeenCalledOnce();
     expect(showDiagnostics).toHaveBeenCalledOnce();
+    expect(configureGitSettings).toHaveBeenCalledOnce();
     expect(pull.mock.calls).toEqual([['ff-only'], ['merge'], ['rebase']]);
   });
 });

@@ -39,6 +39,7 @@
     "onCommand:gitLogWorkbench.editor.compareFileWithRef",
     "onCommand:gitLogWorkbench.applyPatch",
     "onCommand:gitLogWorkbench.showDiagnostics",
+    "onCommand:gitLogWorkbench.config.multiRepo",
     "onCommand:gitLogWorkbench.pull.ffOnly",
     "onCommand:gitLogWorkbench.pull.merge",
     "onCommand:gitLogWorkbench.pull.rebase",
@@ -85,6 +86,11 @@
       {
         "command": "gitLogWorkbench.showDiagnostics",
         "title": "Show Diagnostics",
+        "category": "Git Log"
+      },
+      {
+        "command": "gitLogWorkbench.config.multiRepo",
+        "title": "Configure Multi-Repository Git Settings…",
         "category": "Git Log"
       },
       {

@@ -12,6 +12,7 @@ export interface ExtensionRegistrationHost {
   compareFileWithRef(): void;
   applyPatch(): Promise<void>;
   showDiagnostics(): Promise<void>;
+  configureGitSettings(): Promise<void>;
   pull(strategy: 'ff-only' | 'merge' | 'rebase'): Promise<void>;
 }
 
@@ -45,6 +46,10 @@ export function registerExtension(host: ExtensionRegistrationHost): DisposableLi
   const showDiagnosticsCommand = host.registerCommand('gitLogWorkbench.showDiagnostics', () =>
     host.showDiagnostics(),
   );
+  const configureGitSettingsCommand = host.registerCommand(
+    'gitLogWorkbench.config.multiRepo',
+    () => host.configureGitSettings(),
+  );
   const pullFastForwardOnlyCommand = host.registerCommand('gitLogWorkbench.pull.ffOnly', () =>
     host.pull('ff-only'),
   );
@@ -64,6 +69,7 @@ export function registerExtension(host: ExtensionRegistrationHost): DisposableLi
     compareFileWithRefCommand,
     applyPatchCommand,
     showDiagnosticsCommand,
+    configureGitSettingsCommand,
     pullFastForwardOnlyCommand,
     pullMergeCommand,
     pullRebaseCommand,

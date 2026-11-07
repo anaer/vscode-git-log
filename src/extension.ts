@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ApplyPatchCommand } from './commands/ApplyPatchCommand';
+import { GitConfigSettingsCommand } from './commands/GitConfigSettingsCommand';
 import { PullCommand } from './commands/PullCommand';
 import { DiffManager } from './diff/DiffManager';
 import { releaseNativeDiffResourcesIfUnused } from './diff/NativeDiffResources';
@@ -31,6 +32,7 @@ import { ShikiHistoryCodeTokenizer } from './editor/ShikiHistoryCodeTokenizer';
 import { EditorGitContextService } from './editor/EditorGitContextService';
 import { EditorHistoryCommands } from './editor/EditorHistoryCommands';
 import { FileHistoryService } from './git/FileHistoryService';
+import { GitConfigService } from './git/GitConfigService';
 import { buildGitDiagnosticsReport } from './git/gitDiagnostics';
 import { GitRunner } from './git/GitRunner';
 import { GitService } from './git/GitService';
@@ -333,6 +335,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const patchService = new PatchService(runner);
   const pullCommand = new PullCommand(runner, operationService, output);
   const applyPatchCommand = new ApplyPatchCommand(runner, patchService, output);
+  const gitConfigSettingsCommand = new GitConfigSettingsCommand(
+    new GitConfigService({ runner }),
+    runner,
+  );
   const repositories = new RepositoryRegistry();
   const maximumDiffFileBytes = configuration.get<number>(
     'performance.maxDiffFileBytes',
@@ -543,6 +549,7 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     applyPatch: () => applyPatchCommand.run(),
     showDiagnostics: showGitDiagnostics,
+    configureGitSettings: () => gitConfigSettingsCommand.run(),
     pull: (strategy) => pullCommand.run(strategy),
   });
 
