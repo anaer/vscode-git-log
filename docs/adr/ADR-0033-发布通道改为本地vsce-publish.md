@@ -14,7 +14,7 @@
 ## 决策
 
 1. **发布入口**：只发布到 VS Code Marketplace，命令为 `npx vsce publish --no-dependencies --allow-missing-repository`，凭据取本机 `VSCE_PAT` 环境变量；token 不写入仓库、不进对话。
-2. **发布前动作**：按日期串 `YY.MDD.HHmm` 递增 `package.json` 版本，把 `CHANGELOG.md` 的 `Unreleased` 段落改挂到新版本号下，并同步 `extensionContributions.test.ts` 中的版本字面量；三处必须同批完成，漏一处即单测失败。
+2. **发布前动作**：按日期串 `YY.MDD.HHmm` 递增 `package.json` 版本，把 `CHANGELOG.md` 的 `Unreleased` 段落改挂到新版本号下，并同步 `extensionContributions.test.ts` 中的版本字面量；三处必须同批完成，漏一处即单测失败。第三段是 semver 的 patch 位，**不得带前导零**——上午发布时 `0938` 这类取值会被 `vsce` 直接拒（`Invalid extension version`），须去掉前导零写成 `938`。
 3. **质量闸门**：发布前在本机跑 `npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run build`；VS Code 1.85.2 兼容由 `npm run test:integration` 本地执行，不再有 workflow 承载。
 4. **用例处置**：删除断言 `release.yml` 内容的用例，保留断言 `scripts/run-integration.mjs` 默认测试版本的用例；不为已删除的工作流保留占位断言。
 5. **不做什么**：不恢复任何工作流、不打 tag 触发发布、不经 GitHub Release 或 Open VSX 通道、不把 `VSCE_PAT` 落到仓库文件或 CI 密钥之外的位置。
@@ -33,8 +33,9 @@
 
 ## 验证
 
-- 本机 Windows + Git 2.56 删除该用例后 `npm run test:unit` 无失败项；`npm run typecheck`、`npm run lint`、`npm run build` 通过。
+- 本机 Windows + Git 2.56 删除该用例后 `npm run test:unit` 65 文件全通过（698 通过 / 5 跳过）；`npm run typecheck`、`npm run lint`、`npm run build` 通过。
 - `npx vsce publish --help` 确认 `--no-dependencies`、`--allow-missing-repository` 与 `VSCE_PAT` 口径可用。
+- 版本号前导零：`npx vsce package` 对 `26.1109.0938` 报 `ERROR Invalid extension "version"`，改为 `26.1109.946` 后打包通过。
 
 ## 关联文档
 
