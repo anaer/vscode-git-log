@@ -2,10 +2,11 @@
 
 All notable changes to Git Log are documented in this file.
 
-## Unreleased
+## 26.1109.0938
 
 ### Added
 
+- **Multi-repository Git profiles**: bind an identity, signing, SSH command, or pull behavior to a directory through `includeIf` entries in the global Git config, with a preview, a timestamped backup, and a post-write verification.
 - **Copy changed file paths**: commit comparisons can copy every changed path, including binary files, to the clipboard in sorted order.
 - **Mailmap identity suggestions**: the identity rewrite dialog can fill the name and email from `.mailmap` mappings for the selected commits.
 

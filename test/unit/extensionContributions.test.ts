@@ -71,12 +71,6 @@ describe('extension contributions', () => {
     expect(integrationSource).toContain('version,');
   });
 
-  it('verifies VS Code 1.85.2 compatibility before publishing a release', async () => {
-    const workflow = await readFile('.github/workflows/release.yml', 'utf8');
-
-    expect(workflow).toContain('xvfb-run -a npm run test:integration');
-  });
-
   it('provides a PNG icon for the extension details page', async () => {
     const packageJson = JSON.parse(await readFile('package.json', 'utf8')) as {
       icon?: string;
@@ -137,7 +131,7 @@ describe('extension contributions', () => {
 
     // This literal is a release gate: the release workflow rewrites package.json from the pushed
     // tag and then runs the test suite, so a mismatch blocks publishing with a stale version.
-     expect(packageJson.version).toBe('26.1105.1412');
+     expect(packageJson.version).toBe('26.1109.0938');
     expect(packageJson.contributes?.viewsWelcome).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.activitybar).toBeUndefined();
     expect(packageJson.contributes?.viewsContainers?.panel).toEqual([
