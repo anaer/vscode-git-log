@@ -220,7 +220,7 @@ export class GitConfigService {
         '-z',
       ]);
       const origin = parseOrigin(listed.stdout);
-      if (origin) return origin;
+      if (origin) return this.platform === 'win32' ? win32.normalize(origin) : origin;
     } catch {
       // An unreadable or absent global file falls through to the platform defaults.
     }
@@ -323,6 +323,15 @@ export class GitConfigService {
     const warnings = await this.checkConflicts(label, condition, directory, previous);
     const conditionChanged =
       !this.sameCondition(previous.condition, condition) || includePath !== previous.includePath;
+    const previousFileUsers =
+      includePath === previous.includePath
+        ? 0
+        : await this.countOtherReferences(previous.includePath, previous.condition);
+    if (previousFileUsers) {
+      warnings.push(
+        `${previousFileUsers} other condition(s) include ${previous.includePath}; the file is kept.`,
+      );
+    }
     const backupPaths = [globalConfigPath, previous.includePath];
     const summary = [`Update profile "${previous.label}" to "${label}".`];
     if (!this.sameCondition(previous.condition, condition)) {
@@ -339,7 +348,8 @@ export class GitConfigService {
       warnings,
       backupPaths,
       writes: [{ path: includePath, content: serializeProfile(fields) }],
-      removeFiles: includePath === previous.includePath ? [] : [previous.includePath],
+      removeFiles:
+        includePath === previous.includePath || previousFileUsers ? [] : [previous.includePath],
       addEntries: conditionChanged ? [{ condition, includePath }] : [],
       removeEntries: conditionChanged
         ? [{ condition: previous.condition, includePath: previous.includePath }]
@@ -351,18 +361,26 @@ export class GitConfigService {
   async planDelete(profile: GitConfigProfile): Promise<GitConfigChangePlan> {
     this.assertManaged(profile);
     const globalConfigPath = await this.resolveGlobalConfigPath();
+    const otherReferences = await this.countOtherReferences(
+      profile.includePath,
+      profile.condition,
+    );
     return {
       action: 'delete',
       globalConfigPath,
       summary: [
         `Delete profile "${profile.label}".`,
         `Remove: ${profile.condition}`,
-        `File: ${profile.includePath}`,
+        otherReferences
+          ? `File kept: ${profile.includePath} (still used by ${otherReferences} other condition(s))`
+          : `File: ${profile.includePath}`,
       ],
-      warnings: [],
+      warnings: otherReferences
+        ? [`${otherReferences} other condition(s) include the same file; it is left in place.`]
+        : [],
       backupPaths: [globalConfigPath, profile.includePath],
       writes: [],
-      removeFiles: [profile.includePath],
+      removeFiles: otherReferences ? [] : [profile.includePath],
       addEntries: [],
       removeEntries: [{ condition: profile.condition, includePath: profile.includePath }],
       profile,
@@ -556,17 +574,62 @@ export class GitConfigService {
     return warnings;
   }
 
+  /** Include entries other than `removedCondition` that point at the same file. */
+  private async countOtherReferences(
+    includePath: string,
+    removedCondition: string,
+  ): Promise<number> {
+    const { profiles, external } = await this.list();
+    const entries = [
+      ...profiles.map((profile) => ({
+        condition: profile.condition,
+        includePath: profile.includePath,
+      })),
+      ...external,
+    ];
+    return entries.filter(
+      (entry) =>
+        this.sameFilePath(entry.includePath, includePath) &&
+        !this.sameCondition(entry.condition, removedCondition),
+    ).length;
+  }
+
+  private sameFilePath(left: string, right: string): boolean {
+    const key = (value: string): string => {
+      const text = toPosix(value);
+      return this.platform === 'win32' ? text.toLocaleLowerCase() : text;
+    };
+    return key(left) === key(right);
+  }
+
   private sameCondition(left: string, right: string): boolean {
-    return this.platform === 'win32'
-      ? left.toLocaleLowerCase() === right.toLocaleLowerCase()
-      : left === right;
+    const keyLeft = this.conditionDirectoryKey(left);
+    const keyRight = this.conditionDirectoryKey(right);
+    if (keyLeft === undefined || keyRight === undefined) {
+      return this.platform === 'win32'
+        ? left.toLocaleLowerCase() === right.toLocaleLowerCase()
+        : left === right;
+    }
+    return keyLeft === keyRight;
+  }
+
+  /**
+   * Directory a condition matches, with the `gitdir` / `gitdir/i` prefix treated as a
+   * matching-mode detail rather than part of the target directory.
+   */
+  private conditionDirectoryKey(condition: string): string | undefined {
+    const parsed = parseGitDirCondition(condition);
+    return parsed ? this.directoryKey(parsed.directory) : undefined;
+  }
+
+  private directoryKey(gitDir: string): string {
+    const directory = toPosix(this.expandConditionDirectory(gitDir));
+    return this.platform === 'win32' ? directory.toLocaleLowerCase() : directory;
   }
 
   private overlappingDirectories(left: string, right: string): boolean {
-    const normalize = (value: string): string =>
-      this.platform === 'win32' ? value.toLocaleLowerCase() : value;
-    const first = normalize(left);
-    const second = normalize(right);
+    const first = this.directoryKey(left);
+    const second = this.directoryKey(right);
     return first.startsWith(second) || second.startsWith(first);
   }
 

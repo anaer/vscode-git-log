@@ -18,6 +18,9 @@ interface Fixture {
 
 const temporaryDirectories: string[] = [];
 
+/** The prefix the service writes on this platform: `gitdir/i` is used for case-insensitive paths. */
+const conditionPrefix = process.platform === 'win32' ? 'gitdir/i' : 'gitdir';
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
@@ -79,14 +82,17 @@ describe('GitConfigService', () => {
       '[user]\n\tname = "Work User"\n\temail = "work@example.com"\n[pull]\n\trebase = true\n',
     );
     const globalConfig = await readFile(join(homeDir, '.gitconfig'), 'utf8');
-    expect(globalConfig).toContain('[includeIf "gitdir:~/repos/work/"]');
-    expect(globalConfig).toContain(join(homeDir, '.git-log', 'identities', 'work.inc'));
+    expect(globalConfig).toContain(`[includeIf "${conditionPrefix}:~/repos/work/"]`);
+    // Git escapes backslashes inside quoted values, so compare against the unescaped text.
+    expect(globalConfig.replaceAll('\\\\', '\\')).toContain(
+      join(homeDir, '.git-log', 'identities', 'work.inc'),
+    );
 
     const listed = await service.list();
     expect(listed.profiles).toHaveLength(1);
     expect(listed.profiles[0]).toMatchObject({
       label: 'work',
-      condition: 'gitdir:~/repos/work/',
+      condition: `${conditionPrefix}:~/repos/work/`,
       gitDir: '~/repos/work/',
       fields: { name: 'Work User', email: 'work@example.com', pullRebase: 'true' },
     });
@@ -327,6 +333,110 @@ describe('GitConfigService', () => {
     await expect(
       service.planCreate({ label: 'work', directory: repoDir, fields: { name: 'Other User' } }),
     ).rejects.toThrow('already exists');
+  });
+
+  it('treats gitdir and gitdir/i conditions for the same directory as one match', async () => {
+    const { homeDir, otherRepoDir, service, runner, env } = await createFixture();
+    await initRepositoryAt(otherRepoDir);
+    await service.apply(
+      await service.planCreate({
+        label: 'team',
+        directory: otherRepoDir,
+        fields: { name: 'Team User' },
+      }),
+    );
+    const includePath = join(homeDir, '.git-log', 'identities', 'team.inc');
+    // Rewrite the only entry for that directory into the other matching mode, so the
+    // duplicate is detectable solely by the directory the condition addresses.
+    const otherPrefix = conditionPrefix === 'gitdir' ? 'gitdir/i' : 'gitdir';
+    await runner.run(
+      ['config', '--global', '--unset-all', `includeIf.${conditionPrefix}:~/repos/personal/.path`],
+      { cwd: homeDir, env },
+    );
+    await runner.run(
+      ['config', '--global', '--add', `includeIf.${otherPrefix}:~/repos/personal/.path`, includePath],
+      { cwd: homeDir, env },
+    );
+
+    const listed = await service.list();
+    expect(listed.profiles.map((profile) => profile.condition)).toEqual([
+      `${otherPrefix}:~/repos/personal/`,
+    ]);
+    await expect(
+      service.planCreate({ label: 'work', directory: otherRepoDir, fields: { name: 'Work User' } }),
+    ).rejects.toThrow('already matches');
+    await expect(
+      service.planCreate({ label: 'work', directory: join(homeDir, 'repos'), fields: { name: 'Work User' } }),
+    ).resolves.toMatchObject({ warnings: [expect.stringContaining('overlapping')] });
+  });
+
+  it('keeps an included file while another condition still uses it', async () => {
+    const { homeDir, repoDir, otherRepoDir, service, runner, env } = await createFixture();
+    await initRepositoryAt(repoDir);
+    await initRepositoryAt(otherRepoDir);
+    await service.apply(
+      await service.planCreate({
+        label: 'work',
+        directory: repoDir,
+        fields: { name: 'Work User' },
+      }),
+    );
+    const includePath = join(homeDir, '.git-log', 'identities', 'work.inc');
+    await runner.run(
+      ['config', '--global', '--add', `includeIf.${conditionPrefix}:~/repos/personal/.path`, includePath],
+      { cwd: homeDir, env },
+    );
+
+    const profiles = (await service.list()).profiles;
+    expect(profiles).toHaveLength(2);
+    const target = profiles.find((profile) => profile.gitDir.includes('work'))!;
+
+    const plan = await service.planDelete(target);
+    expect(plan.removeFiles).toEqual([]);
+    expect(plan.warnings.join(' ')).toContain('the same file');
+    await service.apply(plan);
+
+    expect(await exists(includePath)).toBe(true);
+    const surviving = await service.list();
+    expect(surviving.profiles).toHaveLength(1);
+    const inOtherRepo = await runner.run(['config', '--get', 'user.name'], {
+      cwd: otherRepoDir,
+      env,
+    });
+    expect(inOtherRepo.stdout.toString('utf8').trim()).toBe('Work User');
+
+    await service.apply(await service.planDelete(surviving.profiles[0]!));
+    expect(await exists(includePath)).toBe(false);
+  });
+
+  it('keeps a renamed profile file when another condition includes it', async () => {
+    const { homeDir, repoDir, otherRepoDir, service, runner, env } = await createFixture();
+    await initRepositoryAt(repoDir);
+    await initRepositoryAt(otherRepoDir);
+    await service.apply(
+      await service.planCreate({
+        label: 'work',
+        directory: repoDir,
+        fields: { name: 'Work User' },
+      }),
+    );
+    const includePath = join(homeDir, '.git-log', 'identities', 'work.inc');
+    await runner.run(
+      ['config', '--global', '--add', `includeIf.${conditionPrefix}:~/repos/personal/.path`, includePath],
+      { cwd: homeDir, env },
+    );
+
+    const profiles = (await service.list()).profiles;
+    const target = profiles.find((profile) => profile.gitDir.includes('work'))!;
+    const plan = await service.planUpdate(target, {
+      label: 'office',
+      directory: otherRepoDir,
+      fields: { name: 'Office User' },
+    });
+
+    expect(plan.removeFiles).toEqual([]);
+    await service.apply(plan);
+    expect(await exists(join(homeDir, '.git-log', 'identities', 'work.inc'))).toBe(true);
   });
 
   it('uses gitdir/i and forward slashes for Windows profiles', async () => {
