@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import type { CommitDetails } from '../../src/shared/models';
 import { formatCommitDate } from './formatCommitDate';
+import { t } from './i18n';
 
 export interface DetailsPaneProps {
   details: CommitDetails | undefined;
@@ -23,8 +24,8 @@ function DetailsPlacementButton({
   onClick,
 }: { detailsInChanges: boolean; onClick(): void }) {
   const label = detailsInChanges
-    ? 'Move commit details to bottom'
-    : 'Move commit details below changed files';
+    ? t('webview.details.placementBottom')
+    : t('webview.details.placementBelow');
   return (
     <button
       type="button"
@@ -59,7 +60,7 @@ function CommitDetailsResizer({
       className="pane-resizer horizontal details-resizer"
       style={detailsInChanges ? { gridRow: 5 } : undefined}
       role="separator"
-      aria-label="Resize commit details pane"
+      aria-label={t('webview.details.resize')}
       aria-orientation="horizontal"
       aria-valuemin={100}
       aria-valuenow={detailsHeight}
@@ -107,18 +108,18 @@ function CommitDetailsPane({
       className="details-pane pane"
       style={detailsInChanges ? { gridRow: 6 } : undefined}
       role="region"
-      aria-label="Commit details"
+      aria-label={t('webview.details.region')}
       tabIndex={-1}
     >
       {details ? (
         <div className="details-content">
           <div className="details-heading-row">
             <div className="details-message">{details.subject}</div>
-            <div className="details-actions" role="toolbar" aria-label="Commit actions">
+            <div className="details-actions" role="toolbar" aria-label={t('webview.details.actions')}>
               {detailsPlacementButton}
               <button
                 type="button"
-                aria-label="Cherry-pick selected commit"
+                aria-label={t('webview.details.cherryPickAria')}
                 disabled={
                   selectedRepository?.isBare ||
                   Boolean(selectedRepository?.operationState) ||
@@ -131,11 +132,11 @@ function CommitDetailsPane({
                   )
                 }
               >
-                Cherry-pick
+                {t('webview.details.cherryPick')}
               </button>
               <button
                 type="button"
-                aria-label="Revert selected commit"
+                aria-label={t('webview.details.revertAria')}
                 disabled={
                   selectedRepository?.isBare ||
                   Boolean(selectedRepository?.operationState) ||
@@ -148,49 +149,49 @@ function CommitDetailsPane({
                   )
                 }
               >
-                Revert
+                {t('webview.details.revert')}
               </button>
             </div>
           </div>
           <div className="details-meta">
             <span>
-              <span className="details-meta-label">Author: </span>
+              <span className="details-meta-label">{t('webview.details.author')}</span>
               {details.authorName} &lt;{details.authorEmail}&gt;
             </span>
             <span>
-              <span className="details-meta-label">Authored: </span>
+              <span className="details-meta-label">{t('webview.details.authored')}</span>
               {formatCommitDate(details.authorTime)}
             </span>
             <span>
-              <span className="details-meta-label">Committer: </span>
+              <span className="details-meta-label">{t('webview.details.committer')}</span>
               {details.committerName} &lt;{details.committerEmail}&gt;
             </span>
             <span>
-              <span className="details-meta-label">Committed: </span>
+              <span className="details-meta-label">{t('webview.details.committed')}</span>
               {formatCommitDate(details.commitTime)}
             </span>
             <span className="details-hash">
               <code>{details.hash}</code>
               <button
                 type="button"
-                aria-label="Copy full commit hash"
+                aria-label={t('webview.details.copyHashAria')}
                 disabled={detailsHashCopyState === 'copying'}
                 onClick={onCopyHash}
               >
                 {detailsHashCopyState === 'copying'
-                  ? 'Copying…'
+                  ? t('webview.details.copying')
                   : detailsHashCopyState === 'copied'
-                    ? 'Copied'
-                    : 'Copy'}
+                    ? t('webview.details.copied')
+                    : t('webview.details.copy')}
               </button>
             </span>
             {details.parents.length ? (
               <span className="details-parents">
-                <span className="details-meta-label">Parents: </span>
+                <span className="details-meta-label">{t('webview.details.parents')}</span>
                 {details.parents.map((parent) => (
                   <button
                     type="button"
-                    aria-label={`Parent ${parent}`}
+                    aria-label={t('webview.details.parentAria', { parent })}
                     title={parent}
                     key={parent}
                     onClick={() => onSelectHash(parent, 'parent')}
@@ -201,18 +202,18 @@ function CommitDetailsPane({
               </span>
             ) : (
               <span>
-                <span className="details-meta-label">Parents: </span>
-                root commit
+                <span className="details-meta-label">{t('webview.details.parents')}</span>
+                {t('webview.details.rootCommit')}
               </span>
             )}
             {details.refs.length ? (
               <span className="details-refs">
-                <span className="details-meta-label">Refs: </span>
+                <span className="details-meta-label">{t('webview.details.refs')}</span>
                 {details.refs.map((ref) => <span key={ref.fullName}>{ref.shortName}</span>)}
               </span>
             ) : null}
             <span>
-              <span className="details-meta-label">Signature: </span>
+              <span className="details-meta-label">{t('webview.details.signature')}</span>
               {details.signature}
             </span>
           </div>
@@ -221,12 +222,12 @@ function CommitDetailsPane({
       ) : (
         <div>
           <div className="details-heading-row">
-            <div className="details-message">Commit Details</div>
-            <div className="details-actions" role="toolbar" aria-label="Commit actions">
+            <div className="details-message">{t('webview.details.headingEmpty')}</div>
+            <div className="details-actions" role="toolbar" aria-label={t('webview.details.actions')}>
               {detailsPlacementButton}
             </div>
           </div>
-          <div className="details-placeholder">Select a commit to view its message and metadata.</div>
+          <div className="details-placeholder">{t('webview.details.placeholder')}</div>
         </div>
       )}
     </section>

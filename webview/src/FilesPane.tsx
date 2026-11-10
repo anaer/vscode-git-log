@@ -9,18 +9,19 @@ import type { WorkbenchLayout } from '../../src/protocol/messages';
 import { fileIconKind } from '../../src/shared/fileIconKind';
 import { buildFileTree, type FileTreeNode } from './buildFileTree';
 import { ChevronDown, ChevronRight } from './icons';
+import { t } from './i18n';
 import { toggleSetMember } from './webviewUtils';
 
 function changedFileStatusLabel(status: ChangedFile['status']): string {
   return (
     {
-      A: 'Added',
-      M: 'Modified',
-      D: 'Deleted',
-      R: 'Renamed',
-      C: 'Copied',
-      T: 'Type changed',
-      U: 'Unmerged',
+      A: 'webview.files.status.added',
+      M: 'webview.files.status.modified',
+      D: 'webview.files.status.deleted',
+      R: 'webview.files.status.renamed',
+      C: 'webview.files.status.copied',
+      T: 'webview.files.status.typeChanged',
+      U: 'webview.files.status.unmerged',
     } as const
   )[status];
 }
@@ -43,7 +44,13 @@ function ChangedFileRow({
       type="button"
       className="file-row"
       style={{ paddingLeft: 10 + depth * 14 }}
-      title={file.binary ? `${file.path} is binary` : file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+      title={
+        file.binary
+          ? t('webview.files.isBinary', { path: file.path })
+          : file.oldPath
+            ? t('webview.files.rename', { old: file.oldPath, new: file.path })
+            : file.path
+      }
       onClick={() => onSelect(file)}
       onDoubleClick={() => onOpen(file)}
       onContextMenu={(event) => {
@@ -102,6 +109,7 @@ function FileTreeNodes({
           type="button"
           className="file-folder-row"
           style={{ paddingLeft: 8 + depth * 14 }}
+          title={node.path}
           aria-expanded={!collapsedDirectories.has(node.path)}
           onClick={() => onToggleDirectory(node.path)}
         >
@@ -187,7 +195,7 @@ export function FilesPane({
       <div
         className="pane-resizer vertical files-resizer"
         role="separator"
-        aria-label="Resize changed files pane"
+        aria-label={t('webview.files.resize')}
         aria-orientation="vertical"
         aria-valuemin={220}
         aria-valuenow={filesWidth}
@@ -202,7 +210,7 @@ export function FilesPane({
       <section
         className={`files-pane pane${detailsInChanges ? ' with-details' : ''}`}
         role="region"
-        aria-label="Changed files"
+        aria-label={t('webview.files.region')}
         hidden={hidden}
         style={
           detailsInChanges
@@ -214,37 +222,37 @@ export function FilesPane({
       >
         <div className="global-toolbar-spacer" aria-hidden="true" />
         <div className="pane-heading files-heading">
-          <span>Changed Files</span>
+          <span>{t('webview.files.heading')}</span>
           {details && details.parents.length > 1 ? (
             <select
               className="parent-selector"
-              aria-label="Diff parent"
+              aria-label={t('webview.files.diffParent')}
               value={selectedParent ?? ''}
               onChange={(event) => onSelectParent(event.target.value, details.hash)}
             >
               {details.parents.map((parent, index) => (
                 <option value={parent} key={parent}>
-                  Parent {String(index + 1)} · {parent.slice(0, 8)}
+                  {t('webview.files.parent', { index: index + 1, hash: parent.slice(0, 8) })}
                 </option>
               ))}
             </select>
           ) : null}
-          <span className="segmented-control" aria-label="Changed files display mode">
+          <span className="segmented-control" aria-label={t('webview.files.displayMode')}>
             <button
               type="button"
               aria-pressed={filesViewMode === 'tree'}
-              title="Tree view"
+              title={t('webview.files.tree')}
               onClick={() => onUpdateFilesViewMode('tree')}
             >
-              Tree
+              {t('webview.files.treeShort')}
             </button>
             <button
               type="button"
               aria-pressed={filesViewMode === 'list'}
-              title="List view"
+              title={t('webview.files.list')}
               onClick={() => onUpdateFilesViewMode('list')}
             >
-              List
+              {t('webview.files.listShort')}
             </button>
           </span>
         </div>
@@ -276,13 +284,15 @@ export function FilesPane({
           </div>
         ) : (
           <div className="empty-pane">
-            {loading === 'selection' ? 'Loading changed files…' : 'Select a commit to inspect its files.'}
+            {loading === 'selection'
+              ? t('webview.files.loading')
+              : t('webview.files.selectCommit')}
           </div>
         )}
         {selectedFile ? (
-          <div className="file-preview" role="status" aria-label="Changed file preview">
+          <div className="file-preview" role="status" aria-label={t('webview.files.preview')}>
             <span>{selectedFile.path}</span>
-            <span> · {changedFileStatusLabel(selectedFile.status)}</span>
+            <span> · {t(changedFileStatusLabel(selectedFile.status))}</span>
             {selectedFile.additions !== undefined ? (
               <span className="file-stat-additions">
                 {' '}· +{String(selectedFile.additions)}

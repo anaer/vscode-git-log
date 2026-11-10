@@ -46,6 +46,10 @@
 - 权衡：重写会改变全链 commit oid 并剥离 GPG/merge 签名（st-pad），破坏性需确认；备份分支 `commit-rewrite-backup/{stamp}`、reflog 消息沿用 commit-rewriter 约定。
 - 已验证：`GitRunner` 已支持 `input`（stdin）通道用于 `hash-object --stdin`；新增集成与协议校验测试全绿，typecheck 无新增错误。
 
+## 关联文档
+
+- [ADR-0037: 历史改写的安全护栏与增量动作](ADR-0037-历史改写的安全护栏与增量动作.md) — 该篇的受保护分支与已推送拦截规则同样约束本篇的批量改写入口，两处校验须同步复核。
+
 ## 下一步
 
 功能与测试已交付，维持现状观察后续使用反馈；无既定紧接任务。

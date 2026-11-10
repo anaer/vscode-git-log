@@ -3,6 +3,7 @@ import type { GraphLayoutResult } from '../../src/shared/layoutCommitGraph';
 import type { CommitSummary, HistoryEntry } from '../../src/shared/models';
 import { CommitGraphCell } from './CommitGraphCell';
 import { formatCommitDate } from './formatCommitDate';
+import { t } from './i18n';
 import { getVirtualRange } from './virtualRange';
 
 interface CommitListProps {
@@ -267,7 +268,7 @@ export function CommitList({
                 {'binary' in commit ? (
                   <span className="history-stats">
                     {(commit as HistoryEntry).binary ? (
-                      <span className="history-stat-binary">Binary</span>
+                      <span className="history-stat-binary">{t('webview.list.binary')}</span>
                     ) : (
                       <>
                         {(commit as HistoryEntry).additions !== undefined ? (

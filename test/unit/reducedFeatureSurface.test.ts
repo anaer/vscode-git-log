@@ -11,6 +11,8 @@ async function readWebviewSources(): Promise<string> {
     'webview/src/FilesPane.tsx',
     'webview/src/DetailsPane.tsx',
     'webview/src/commitSelection.ts',
+    // User-visible English copy lives in the dictionary after localization.
+    'webview/src/i18n/en.ts',
   ];
   const sources = await Promise.all(files.map((file) => readFile(file, 'utf8')));
   return sources.join('\n');

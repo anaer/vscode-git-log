@@ -3,6 +3,7 @@ import flatpickr from 'flatpickr';
 import type { Instance as FlatpickrInstance } from 'flatpickr/dist/types/instance';
 import type { Options as FlatpickrOptions } from 'flatpickr/dist/types/options';
 import { clampMonthYear, formatMonthYear, parseMonthYear } from './monthYearInput';
+import { t } from './i18n';
 
 /**
  * A single date field backed by flatpickr.
@@ -183,7 +184,7 @@ export function DateField({
     const field = instance.monthNav.ownerDocument.createElement('input');
     field.type = 'text';
     field.className = 'flatpickr-month-year-input';
-    field.setAttribute('aria-label', 'Month and year');
+    field.setAttribute('aria-label', t('webview.calendar.monthYear'));
     field.value = formatMonthYear(instance.currentYear, instance.currentMonth);
 
     // Keep the draft mid-edit: only validate once the user leaves the field, so

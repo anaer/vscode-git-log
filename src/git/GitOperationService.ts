@@ -7,6 +7,16 @@ import type { RepositorySummary } from '../shared/models';
 import { inspectRepository } from '../repositories/discoverRepositories';
 import { GitCommandError, type GitRunner } from './GitRunner';
 import { classifyGitError, redactGitDiagnostic } from './classifyGitError';
+import {
+  assessHistoryGuard,
+  DEFAULT_PROTECTED_BRANCHES,
+  isGuardedOperation,
+  isHistoryRewriteOperation,
+  operationTargetHashes,
+  pushedRewriteWarning,
+  type GuardAssessment,
+  type PushedRewriteInfo,
+} from './historyGuard';
 
 export interface GitOperationResult {
   message: string;
@@ -21,6 +31,7 @@ export interface GitOperationRunOptions {
 
 export interface GitOperationServiceOptions {
   inspectRepository?(repository: RepositorySummary): Promise<RepositorySummary | undefined>;
+  protectedBranches?: readonly string[];
 }
 
 export interface OperationConfirmation {
@@ -264,7 +275,7 @@ export function buildOperationArguments(
   }
 }
 
-export function getOperationConfirmation(
+function buildOperationConfirmation(
   repository: RepositorySummary,
   operation: GitOperationRequest,
 ): OperationConfirmation | undefined {
@@ -487,6 +498,26 @@ export function getOperationConfirmation(
   return undefined;
 }
 
+export function getOperationConfirmation(
+  repository: RepositorySummary,
+  operation: GitOperationRequest,
+  pushedRewrite?: PushedRewriteInfo,
+): OperationConfirmation | undefined {
+  const confirmation = buildOperationConfirmation(repository, operation);
+  if (
+    !confirmation ||
+    !isHistoryRewriteOperation(operation) ||
+    !pushedRewrite ||
+    pushedRewrite.count === 0
+  ) {
+    return confirmation;
+  }
+  return {
+    ...confirmation,
+    detail: `${confirmation.detail} ${pushedRewriteWarning(pushedRewrite)}`,
+  };
+}
+
 interface CommitRangeRewritePlan {
   cwd: string;
   branch: string;
@@ -544,6 +575,7 @@ function rewriteIdentityLine(line: Buffer, identity: AuthorIdentity): Buffer {
 
 export class GitOperationService {
   private readonly queues = new Map<string, Promise<void>>();
+  private protectedBranches: readonly string[];
   private readonly inspect: (
     repository: RepositorySummary,
   ) => Promise<RepositorySummary | undefined>;
@@ -552,9 +584,15 @@ export class GitOperationService {
     private readonly runner: GitRunner,
     options: GitOperationServiceOptions = {},
   ) {
+    this.protectedBranches = options.protectedBranches ?? DEFAULT_PROTECTED_BRANCHES;
     this.inspect =
       options.inspectRepository ??
       ((repository) => inspectRepository(fileURLToPath(repository.rootUri), this.runner));
+  }
+
+  /** Applies a setting change without reloading the window. */
+  setProtectedBranches(branches: readonly string[]): void {
+    this.protectedBranches = branches;
   }
 
   async resolvePushTarget(
@@ -974,6 +1012,8 @@ export class GitOperationService {
         if (operation.kind === 'deleteRemoteBranch') {
           await this.validateRemoteBranchDeletion(freshRepository, operation.remote, operation.branch);
         }
+        const guard = await this.assessGuard(freshRepository, operation);
+        if (guard.blocked) throw new Error(guard.blocked);
         let rewritePlan: CommitRangeRewritePlan | undefined;
         if (operation.kind === 'dropCommits' || operation.kind === 'squashCommits') {
           rewritePlan = await this.planCommitRangeRewrite(freshRepository, operation.hashes);
@@ -1023,7 +1063,11 @@ export class GitOperationService {
                 // which branches are visible, which is a separate concern the user did not ask for.
                 { ...operation, remote: plan.remote };
         }
-        const confirmation = getOperationConfirmation(freshRepository, preparedOperation);
+        const confirmation = getOperationConfirmation(
+          freshRepository,
+          preparedOperation,
+          guard.pushedRewrite,
+        );
         if (confirmation) {
           if (!options.confirm) {
             throw new Error('This destructive Git operation requires confirmation.');
@@ -1155,6 +1199,60 @@ export class GitOperationService {
   private getQueueKey(repository: RepositorySummary): string {
     const path = normalize(fileURLToPath(repository.commonGitDirUri ?? repository.gitDirUri));
     return process.platform === 'win32' ? path.toLowerCase() : path;
+  }
+
+  /** One bounded query per operation; any failure falls back to "all targets are pushed". */
+  private async inspectPushedRewrite(
+    cwd: string,
+    hashes: readonly string[],
+  ): Promise<PushedRewriteInfo | undefined> {
+    if (hashes.length === 0) return undefined;
+    try {
+      const expanded = await this.runner.run(['rev-parse', ...hashes.map(validateHash)], {
+        cwd,
+        timeoutMs: 30_000,
+        maxStdoutBytes: 64 * 1024,
+      });
+      const fullHashes = expanded.stdout.toString('utf8').trim().split(/\r?\n/u).filter(Boolean);
+      const revList = await this.runner.run(['rev-list', ...fullHashes, '--not', '--remotes'], {
+        cwd,
+        timeoutMs: 30_000,
+        maxStdoutBytes: 1024 * 1024,
+      });
+      const unpushed = new Set(revList.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean));
+      const pushed = fullHashes.filter((hash) => !unpushed.has(hash));
+      const firstPushed = pushed[0];
+      if (!firstPushed) return { count: 0, branches: [], uncertain: false };
+      const branchesResult = await this.runner.run(
+        ['branch', '-r', '--contains', firstPushed, '--format=%(refname:short)'],
+        { cwd, timeoutMs: 30_000, maxStdoutBytes: 16 * 1024 },
+      );
+      const branches = branchesResult.stdout
+        .toString('utf8')
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      return { count: pushed.length, branches, uncertain: false };
+    } catch {
+      return { count: hashes.length, branches: [], uncertain: true };
+    }
+  }
+
+  private async assessGuard(
+    repository: RepositorySummary,
+    operation: GitOperationRequest,
+  ): Promise<GuardAssessment> {
+    if (!isGuardedOperation(operation)) return {};
+    const pushedRewrite = await this.inspectPushedRewrite(
+      fileURLToPath(repository.rootUri),
+      operationTargetHashes(operation),
+    );
+    return assessHistoryGuard(
+      repository.currentBranch,
+      this.protectedBranches,
+      operation,
+      pushedRewrite,
+    );
   }
 
   private async planCommitRangeRewrite(

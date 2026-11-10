@@ -1,0 +1,19 @@
+{
+  "Git query timed out. Try a smaller selection or a narrower history request.": "Git 查询超时。请尝试缩小选择范围或收窄历史请求。",
+  "Git output exceeded the safety limit. Try a smaller selection or history request.": "Git 输出超出安全上限。请尝试缩小选择范围或历史请求。",
+  "Binary files do not support line history.": "二进制文件不支持行历史。",
+  "Git executable is unavailable. Install Git 2.20 or newer, or configure gitLogWorkbench.git.path.": "Git 可执行文件不可用。请安装 Git 2.20 或更高版本，或配置 gitLogWorkbench.git.path。",
+  "Git stopped because of conflicts.": "Git 因冲突而中止。",
+  "Git authentication failed. Check your credential helper or SSH agent.": "Git 认证失败。请检查凭据助手或 SSH agent。",
+  "A Git hook rejected the operation.": "Git 钩子拒绝了该操作。",
+  "Git could not resolve the repository or revision.": "Git 无法解析仓库或修订版本。",
+  "Retry in a moment; another Git process is holding the index.": "请稍后重试；另一个 Git 进程正在占用索引。",
+  "Pull again with the Merge or Rebase strategy.": "请使用合并（Merge）或变基（Rebase）策略重新拉取。",
+  "Pull with merge or rebase before pushing, or use Force Push with lease.": "推送前请先合并或变基拉取，或使用带 lease 的强制推送。",
+  "Commit or discard the listed changes, then try again.": "请提交或丢弃列出的更改，然后重试。",
+  "Add a remote first, then retry.": "请先添加远程仓库，然后重试。",
+  "Use Publish Branch to push it and set the upstream.": "请使用「发布分支」推送并设置上游分支。",
+  "Fetch to refresh remote refs, then retry.": "请先获取以刷新远程引用，然后重试。",
+  "Resolve the conflicts in Source Control, then continue or abort.": "请在源代码管理中解决冲突，然后继续或中止。",
+  "Check your credential helper or SSH agent, then retry.": "请检查凭据助手或 SSH agent，然后重试。"
+}

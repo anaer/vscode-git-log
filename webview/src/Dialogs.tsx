@@ -16,7 +16,32 @@ import type {
 } from "./workbenchEffects";
 import type { FolderDeleteState, NamedOperationState } from "./App";
 import { formatCommitDate } from "./formatCommitDate";
+import { t } from "./i18n";
 import { requestId } from "./webviewUtils";
+
+const namedOperationDialogKeys: Record<NamedOperationState["kind"], string> = {
+  createBranch: "webview.namedOperation.dialog.createBranch",
+  createOrphanBranch: "webview.namedOperation.dialog.createOrphanBranch",
+  createTag: "webview.namedOperation.dialog.createTag",
+  checkoutRemote: "webview.namedOperation.dialog.checkoutRemote",
+  renameBranch: "webview.namedOperation.dialog.renameBranch",
+};
+
+const namedOperationLabelKeys: Record<NamedOperationState["kind"], string> = {
+  createBranch: "webview.namedOperation.label.branch",
+  createOrphanBranch: "webview.namedOperation.label.branch",
+  createTag: "webview.namedOperation.label.tag",
+  checkoutRemote: "webview.namedOperation.label.localBranch",
+  renameBranch: "webview.namedOperation.label.newBranch",
+};
+
+const namedOperationSubmitKeys: Record<NamedOperationState["kind"], string> = {
+  createBranch: "webview.namedOperation.submit.createBranch",
+  createOrphanBranch: "webview.namedOperation.submit.createOrphanBranch",
+  createTag: "webview.namedOperation.submit.createTag",
+  checkoutRemote: "webview.namedOperation.submit.checkoutRemote",
+  renameBranch: "webview.namedOperation.submit.renameBranch",
+};
 
 interface DialogsProps {
   stashDialog: StashDialogState | undefined;
@@ -99,13 +124,13 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog stash-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Stash management"
+            aria-label={t("webview.stash.dialog")}
           >
             <button
               className="stash-dialog-close"
               type="button"
-              aria-label="Close stash manager"
-              title="Close"
+              aria-label={t("webview.stash.closeAria")}
+              title={t("webview.common.close")}
               onClick={() => {
                 stashDialogRepositoryRef.current = undefined;
                 setStashDialog(undefined);
@@ -113,13 +138,13 @@ export function Dialogs(props: DialogsProps) {
             >
               <span aria-hidden="true">×</span>
             </button>
-            <strong>Stashes</strong>
+            <strong>{t("webview.stash.heading")}</strong>
             <section className="stash-tool-section">
-              <span>Stash changes</span>
+              <span>{t("webview.stash.section")}</span>
               <input
                 className="stash-message-input"
-                aria-label="Stash message"
-                placeholder="Optional stash message"
+                aria-label={t("webview.stash.messageAria")}
+                placeholder={t("webview.stash.messagePlaceholder")}
                 value={stashDialog.stashMessage}
                 disabled={Boolean(selectedRepository?.operationState)}
                 onChange={(event) =>
@@ -147,7 +172,7 @@ export function Dialogs(props: DialogsProps) {
                       )
                     }
                   />
-                  <span>Include untracked files</span>
+                  <span>{t("webview.stash.includeUntracked")}</span>
                 </label>
                 <button
                   className="stash-submit-button"
@@ -167,16 +192,20 @@ export function Dialogs(props: DialogsProps) {
                     )
                   }
                 >
-                  Stash
+                  {t("webview.stash.create")}
                 </button>
               </div>
-              {stashDialog.loading ? <span>Loading…</span> : null}
+              {stashDialog.loading ? (
+                <span>{t("webview.stash.loading")}</span>
+              ) : null}
               {stashDialog.stashes.map((stash) => (
                 <div className="stash-tool-row" key={stash.ref}>
                   <span>{stash.subject}</span>
                   <button
                     type="button"
-                    aria-label={`Show changes for ${stash.ref}`}
+                    aria-label={t("webview.stash.showChangesAria", {
+                      ref: stash.ref,
+                    })}
                     onClick={() =>
                       send({
                         type: "openStashComparison",
@@ -186,7 +215,7 @@ export function Dialogs(props: DialogsProps) {
                       })
                     }
                   >
-                    Show Changes
+                    {t("webview.stash.showChanges")}
                   </button>
                   <button
                     type="button"
@@ -201,7 +230,7 @@ export function Dialogs(props: DialogsProps) {
                       )
                     }
                   >
-                    Apply
+                    {t("webview.stash.apply")}
                   </button>
                   <button
                     type="button"
@@ -216,7 +245,7 @@ export function Dialogs(props: DialogsProps) {
                       )
                     }
                   >
-                    Pop
+                    {t("webview.stash.pop")}
                   </button>
                   <button
                     type="button"
@@ -231,7 +260,7 @@ export function Dialogs(props: DialogsProps) {
                       )
                     }
                   >
-                    Drop…
+                    {t("webview.stash.drop")}
                   </button>
                 </div>
               ))}
@@ -246,14 +275,12 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Amend HEAD"
+            aria-label={t("webview.amend.dialog")}
           >
-            <strong>Amend HEAD</strong>
-            <span>
-              Currently staged changes will be included in the amended commit.
-            </span>
+            <strong>{t("webview.amend.heading")}</strong>
+            <span>{t("webview.amend.description")}</span>
             <textarea
-              aria-label="Amend commit message"
+              aria-label={t("webview.amend.messageAria")}
               value={amendDialog.message}
               onChange={(event) =>
                 setAmendDialog((current) =>
@@ -265,11 +292,11 @@ export function Dialogs(props: DialogsProps) {
             />
             <div className="operation-dialog-actions">
               <button type="button" onClick={() => setAmendDialog(undefined)}>
-                Cancel
+                {t("webview.common.cancel")}
               </button>
               <button
                 type="button"
-                aria-label="Amend Commit"
+                aria-label={t("webview.amend.submitAria")}
                 disabled={!amendDialog.message.trim()}
                 onClick={() => {
                   runOperation(
@@ -279,7 +306,7 @@ export function Dialogs(props: DialogsProps) {
                   setAmendDialog(undefined);
                 }}
               >
-                Amend
+                {t("webview.amend.submit")}
               </button>
             </div>
           </div>
@@ -292,15 +319,17 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Select history parent"
+            aria-label={t("webview.historyParent.dialog")}
           >
-            <strong>Select a parent for this merge commit</strong>
+            <strong>{t("webview.historyParent.heading")}</strong>
             <span>{historyParentPicker.commit.subject}</span>
             <div className="history-parent-options">
               {historyParentPicker.commit.parents.map((parent, index) => (
                 <button
                   type="button"
-                  aria-label={`Compare with parent ${parent.slice(0, 8)}`}
+                  aria-label={t("webview.historyParent.compareAria", {
+                    hash: parent.slice(0, 8),
+                  })}
                   title={parent}
                   key={parent}
                   onClick={() => {
@@ -318,7 +347,10 @@ export function Dialogs(props: DialogsProps) {
                     setHistoryParentPicker(undefined);
                   }}
                 >
-                  Parent {String(index + 1)} · {parent.slice(0, 8)}
+                  {t("webview.historyParent.option", {
+                    index: index + 1,
+                    hash: parent.slice(0, 8),
+                  })}
                 </button>
               ))}
             </div>
@@ -327,7 +359,7 @@ export function Dialogs(props: DialogsProps) {
                 type="button"
                 onClick={() => setHistoryParentPicker(undefined)}
               >
-                Cancel
+                {t("webview.common.cancel")}
               </button>
             </div>
           </div>
@@ -340,7 +372,7 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog squash-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Squash Commits"
+            aria-label={t("webview.squash.dialog")}
             onSubmit={(event) => {
               event.preventDefault();
               if (squashOperation.loading || !squashOperation.message.trim())
@@ -357,10 +389,10 @@ export function Dialogs(props: DialogsProps) {
             }}
           >
             <label>
-              <span>Commit message</span>
+              <span>{t("webview.squash.messageLabel")}</span>
               <textarea
                 autoFocus
-                aria-label="Squash commit message"
+                aria-label={t("webview.squash.messageAria")}
                 disabled={squashOperation.loading}
                 value={squashOperation.message}
                 onChange={(event) =>
@@ -380,7 +412,7 @@ export function Dialogs(props: DialogsProps) {
                   setSquashOperation(undefined);
                 }}
               >
-                Cancel
+                {t("webview.common.cancel")}
               </button>
               <button
                 type="submit"
@@ -388,7 +420,7 @@ export function Dialogs(props: DialogsProps) {
                   squashOperation.loading || !squashOperation.message.trim()
                 }
               >
-                Squash Commits
+                {t("webview.squash.submit")}
               </button>
             </div>
           </form>
@@ -401,7 +433,7 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog edit-commit-messages-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Edit Commit Messages"
+            aria-label={t("webview.editMessages.dialog")}
             onSubmit={(event) => {
               event.preventDefault();
               if (editCommitMessages.loading) return;
@@ -416,11 +448,8 @@ export function Dialogs(props: DialogsProps) {
               setEditCommitMessages(undefined);
             }}
           >
-            <strong>Edit Commit Messages</strong>
-            <span>
-              Rewrites the selected commit messages and every affected
-              descendant on the current branch, amending their hashes.
-            </span>
+            <strong>{t("webview.editMessages.heading")}</strong>
+            <span>{t("webview.editMessages.description")}</span>
             <EditCommitMessagesEditor
               key={editCommitMessages.requestId}
               edits={editCommitMessages.edits}
@@ -448,7 +477,7 @@ export function Dialogs(props: DialogsProps) {
                   setEditCommitMessages(undefined);
                 }}
               >
-                Cancel
+                {t("webview.common.cancel")}
               </button>
               <button
                 type="submit"
@@ -459,7 +488,7 @@ export function Dialogs(props: DialogsProps) {
                   )
                 }
               >
-                Rewrite Commit Messages
+                {t("webview.editMessages.submit")}
               </button>
             </div>
           </form>
@@ -472,7 +501,7 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Rewrite Author Identity"
+            aria-label={t("webview.rewriteAuthor.dialog")}
             onSubmit={(event) => {
               event.preventDefault();
               if (
@@ -492,19 +521,20 @@ export function Dialogs(props: DialogsProps) {
               setRewriteAuthorIdentity(undefined);
             }}
           >
-            <strong>Rewrite Author Identity</strong>
+            <strong>{t("webview.rewriteAuthor.heading")}</strong>
             <span>
-              Replaces the author and committer of the{" "}
-              {String(rewriteAuthorIdentity.hashes.length)} selected commit
-              {rewriteAuthorIdentity.hashes.length === 1 ? "" : "s"} and
-              rewrites every affected descendant on the current branch, amending
-              their hashes.
+              {t(
+                rewriteAuthorIdentity.hashes.length === 1
+                  ? "webview.rewriteAuthor.descriptionOne"
+                  : "webview.rewriteAuthor.descriptionMany",
+                { count: rewriteAuthorIdentity.hashes.length },
+              )}
             </span>
             <label>
-              <span>Author name</span>
+              <span>{t("webview.rewriteAuthor.name")}</span>
               <input
                 autoFocus
-                aria-label="Author name"
+                aria-label={t("webview.rewriteAuthor.name")}
                 value={rewriteAuthorIdentity.name}
                 onChange={(event) =>
                   setRewriteAuthorIdentity((current) =>
@@ -516,9 +546,9 @@ export function Dialogs(props: DialogsProps) {
               />
             </label>
             <label>
-              <span>Author email</span>
+              <span>{t("webview.rewriteAuthor.email")}</span>
               <input
-                aria-label="Author email"
+                aria-label={t("webview.rewriteAuthor.email")}
                 value={rewriteAuthorIdentity.email}
                 onChange={(event) =>
                   setRewriteAuthorIdentity((current) =>
@@ -532,7 +562,7 @@ export function Dialogs(props: DialogsProps) {
             <button
               type="button"
               className="identity-suggestion-button"
-              title="Fill the identity from a .mailmap mapping for the selected commits"
+              title={t("webview.rewriteAuthor.mailmapTitle")}
               onClick={() =>
                 send({
                   type: "requestIdentityMappingCandidates",
@@ -542,14 +572,14 @@ export function Dialogs(props: DialogsProps) {
                 })
               }
             >
-              Use .mailmap…
+              {t("webview.rewriteAuthor.mailmap")}
             </button>
             <div className="operation-dialog-actions">
               <button
                 type="button"
                 onClick={() => setRewriteAuthorIdentity(undefined)}
               >
-                Cancel
+                {t("webview.common.cancel")}
               </button>
               <button
                 type="submit"
@@ -558,7 +588,7 @@ export function Dialogs(props: DialogsProps) {
                   !rewriteAuthorIdentity.email.trim()
                 }
               >
-                Rewrite Author Identity
+                {t("webview.rewriteAuthor.submit")}
               </button>
             </div>
           </form>
@@ -571,45 +601,17 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label={
-              namedOperation.kind === "createBranch"
-                ? "Create Branch"
-                : namedOperation.kind === "createOrphanBranch"
-                  ? "Create Orphan Branch"
-                  : namedOperation.kind === "createTag"
-                    ? "Create Tag"
-                    : namedOperation.kind === "checkoutRemote"
-                      ? "Checkout Remote Branch"
-                      : "Rename Branch"
-            }
+            aria-label={t(namedOperationDialogKeys[namedOperation.kind])}
             onSubmit={(event) => {
               event.preventDefault();
               submitNamedOperation();
             }}
           >
             <label>
-              <span>
-                {namedOperation.kind === "createBranch" ||
-                namedOperation.kind === "createOrphanBranch"
-                  ? "Branch name"
-                  : namedOperation.kind === "createTag"
-                    ? "Tag name"
-                    : namedOperation.kind === "checkoutRemote"
-                      ? "Local branch name"
-                      : "New branch name"}
-              </span>
+              <span>{t(namedOperationLabelKeys[namedOperation.kind])}</span>
               <input
                 autoFocus
-                aria-label={
-                  namedOperation.kind === "createBranch" ||
-                  namedOperation.kind === "createOrphanBranch"
-                    ? "Branch name"
-                    : namedOperation.kind === "createTag"
-                      ? "Tag name"
-                      : namedOperation.kind === "checkoutRemote"
-                        ? "Local branch name"
-                        : "New branch name"
-                }
+                aria-label={t(namedOperationLabelKeys[namedOperation.kind])}
                 value={namedOperation.value}
                 onChange={(event) =>
                   setNamedOperation((current) =>
@@ -622,10 +624,7 @@ export function Dialogs(props: DialogsProps) {
             </label>
             {namedOperation.kind === "createOrphanBranch" ? (
               <p className="named-operation-note">
-                Creates a branch with no parent commit. All tracked files are
-                removed from the working tree (untracked and ignored files are
-                kept), and the branch appears in the ref tree only after its
-                first commit.
+                {t("webview.namedOperation.orphanNote")}
               </p>
             ) : null}
             <div className="operation-dialog-actions">
@@ -633,18 +632,10 @@ export function Dialogs(props: DialogsProps) {
                 type="button"
                 onClick={() => setNamedOperation(undefined)}
               >
-                Cancel
+                {t("webview.common.cancel")}
               </button>
               <button type="submit" disabled={!namedOperation.value.trim()}>
-                {namedOperation.kind === "createBranch"
-                  ? "Create Branch"
-                  : namedOperation.kind === "createOrphanBranch"
-                    ? "Create Orphan Branch"
-                    : namedOperation.kind === "createTag"
-                      ? "Create Tag"
-                      : namedOperation.kind === "checkoutRemote"
-                        ? "Checkout"
-                        : "Rename Branch"}
+                {t(namedOperationSubmitKeys[namedOperation.kind])}
               </button>
             </div>
           </form>
@@ -657,15 +648,16 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog branch-cleanup-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="Clean up branches"
+            aria-label={t("webview.cleanup.dialog")}
           >
-            <strong>Clean Up Branches</strong>
+            <strong>{t("webview.cleanup.heading")}</strong>
             {branchCleanup.loading ? (
-              <p className="branch-cleanup-empty">Loading branches…</p>
+              <p className="branch-cleanup-empty">
+                {t("webview.cleanup.loading")}
+              </p>
             ) : branchCleanup.candidates.length === 0 ? (
               <p className="branch-cleanup-empty">
-                No branch is either merged into the current branch or missing
-                its upstream.
+                {t("webview.cleanup.empty")}
               </p>
             ) : (
               <ul className="branch-cleanup-list">
@@ -673,7 +665,7 @@ export function Dialogs(props: DialogsProps) {
                   <div className="branch-cleanup-row branch-cleanup-head">
                     <input
                       type="checkbox"
-                      aria-label="Select all branches"
+                      aria-label={t("webview.cleanup.selectAllAria")}
                       checked={
                         branchCleanup.selected.size ===
                         branchCleanup.candidates.length
@@ -699,10 +691,14 @@ export function Dialogs(props: DialogsProps) {
                         })
                       }
                     />
-                    <span className="branch-cleanup-colhead">Branch</span>
-                    <span className="branch-cleanup-colhead end">Status</span>
+                    <span className="branch-cleanup-colhead">
+                      {t("webview.cleanup.column.branch")}
+                    </span>
                     <span className="branch-cleanup-colhead end">
-                      Last commit
+                      {t("webview.cleanup.column.status")}
+                    </span>
+                    <span className="branch-cleanup-colhead end">
+                      {t("webview.cleanup.column.lastCommit")}
                     </span>
                   </div>
                 </li>
@@ -711,7 +707,9 @@ export function Dialogs(props: DialogsProps) {
                     <label className="branch-cleanup-row">
                       <input
                         type="checkbox"
-                        aria-label={`Delete ${candidate.name}`}
+                        aria-label={t("webview.cleanup.deleteAria", {
+                          name: candidate.name,
+                        })}
                         checked={branchCleanup.selected.has(candidate.name)}
                         onChange={(event) =>
                           setBranchCleanup((current) => {
@@ -733,17 +731,19 @@ export function Dialogs(props: DialogsProps) {
                         </span>
                         {candidate.gone ? (
                           <span className="branch-cleanup-badge gone">
-                            upstream gone
+                            {t("webview.cleanup.upstreamGone")}
                           </span>
                         ) : null}
                       </span>
                       {candidate.merged ? (
                         <span className="branch-cleanup-badge merged">
-                          merged
+                          {t("webview.cleanup.merged")}
                         </span>
                       ) : (
                         <span className="branch-cleanup-badge unmerged">
-                          {String(candidate.aheadCount)} unmerged
+                          {t("webview.cleanup.unmerged", {
+                            count: candidate.aheadCount,
+                          })}
                         </span>
                       )}
                       <span className="branch-cleanup-date">
@@ -755,16 +755,17 @@ export function Dialogs(props: DialogsProps) {
               </ul>
             )}
             <p className="branch-cleanup-note">
-              {selectedRepository?.currentBranch
-                ? `“merged” means reachable from “${selectedRepository.currentBranch}”. `
-                : "No branch is checked out, so the merged category is unavailable. "}
-              Branches whose upstream is gone are selected by default; unmerged
-              branches never are. Deleting an unmerged branch makes its commits
-              unreachable.
+              {t(
+                selectedRepository?.currentBranch
+                  ? "webview.cleanup.noteMerged"
+                  : "webview.cleanup.noteNoBranch",
+                { branch: selectedRepository?.currentBranch ?? "" },
+              )}
+              {t("webview.cleanup.noteTail")}
             </p>
             <div className="operation-dialog-actions">
               <button type="button" onClick={() => setBranchCleanup(undefined)}>
-                Cancel
+                {t("webview.common.cancel")}
               </button>
               <button
                 type="button"
@@ -774,8 +775,10 @@ export function Dialogs(props: DialogsProps) {
                 onClick={submitBranchCleanup}
               >
                 {branchCleanup.selected.size === 1
-                  ? "Delete 1 Branch"
-                  : `Delete ${String(branchCleanup.selected.size)} Branches`}
+                  ? t("webview.cleanup.deleteOne")
+                  : t("webview.cleanup.deleteMany", {
+                      count: branchCleanup.selected.size,
+                    })}
               </button>
             </div>
           </div>
@@ -788,15 +791,19 @@ export function Dialogs(props: DialogsProps) {
             className="operation-dialog branch-cleanup-dialog folder-delete-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label={`Delete references in ${folderDelete.path}`}
+            aria-label={t("webview.folderDelete.dialog", {
+              path: folderDelete.path,
+            })}
           >
-            <strong>Delete references in “{folderDelete.path}/”</strong>
+            <strong>
+              {t("webview.folderDelete.heading", { path: folderDelete.path })}
+            </strong>
             <ul className="branch-cleanup-list">
               <li className="branch-cleanup-head-row">
                 <div className="branch-cleanup-row branch-cleanup-head">
                   <input
                     type="checkbox"
-                    aria-label="Select all references"
+                    aria-label={t("webview.folderDelete.selectAllAria")}
                     checked={
                       folderDelete.refs.length > 0 &&
                       folderDelete.selected.size === folderDelete.refs.length
@@ -817,9 +824,15 @@ export function Dialogs(props: DialogsProps) {
                       })
                     }
                   />
-                  <span className="branch-cleanup-colhead">Reference</span>
-                  <span className="branch-cleanup-colhead end">Type</span>
-                  <span className="branch-cleanup-colhead end">Status</span>
+                  <span className="branch-cleanup-colhead">
+                    {t("webview.folderDelete.column.reference")}
+                  </span>
+                  <span className="branch-cleanup-colhead end">
+                    {t("webview.folderDelete.column.type")}
+                  </span>
+                  <span className="branch-cleanup-colhead end">
+                    {t("webview.folderDelete.column.status")}
+                  </span>
                 </div>
               </li>
               {folderDelete.refs.map((ref) => (
@@ -827,7 +840,9 @@ export function Dialogs(props: DialogsProps) {
                   <label className="branch-cleanup-row">
                     <input
                       type="checkbox"
-                      aria-label={`Delete ${ref.shortName}`}
+                      aria-label={t("webview.folderDelete.deleteAria", {
+                        name: ref.shortName,
+                      })}
                       checked={folderDelete.selected.has(ref.fullName)}
                       onChange={(event) =>
                         setFolderDelete((current) => {
@@ -847,7 +862,7 @@ export function Dialogs(props: DialogsProps) {
                     </span>
                     {ref.gone ? (
                       <span className="branch-cleanup-badge gone">
-                        upstream gone
+                        {t("webview.cleanup.upstreamGone")}
                       </span>
                     ) : null}
                   </label>
@@ -855,21 +870,24 @@ export function Dialogs(props: DialogsProps) {
               ))}
             </ul>
             <p className="branch-cleanup-note">
-              Nothing is selected by default. Selecting a remote entry deletes
-              that branch on the shared remote; unmerged local branches are
-              refused, not force-deleted.
+              {t("webview.folderDelete.note")}
             </p>
             <div className="operation-dialog-actions">
               <button type="button" onClick={() => setFolderDelete(undefined)}>
-                Cancel
+                {t("webview.common.cancel")}
               </button>
               <button
                 type="button"
                 disabled={folderDelete.selected.size === 0}
                 onClick={submitFolderDelete}
               >
-                Delete {String(folderDelete.selected.size)} item
-                {folderDelete.selected.size === 1 ? "" : "s"}
+                {folderDelete.selected.size === 1
+                  ? t("webview.folderDelete.deleteOne", {
+                      count: folderDelete.selected.size,
+                    })
+                  : t("webview.folderDelete.deleteMany", {
+                      count: folderDelete.selected.size,
+                    })}
               </button>
             </div>
           </div>
@@ -942,7 +960,7 @@ export function EditCommitMessagesEditor({
     <section className="edit-commit-messages-editor">
       {loading ? (
         <div className="edit-commit-messages-loading">
-          Loading commit messages…
+          {t("webview.editMessages.loading")}
         </div>
       ) : null}
       {entry ? (
@@ -950,8 +968,8 @@ export function EditCommitMessagesEditor({
           <div className="edit-commit-messages-nav">
             <button
               type="button"
-              aria-label="Previous commit"
-              title="Previous commit"
+              aria-label={t("webview.editMessages.previous")}
+              title={t("webview.editMessages.previous")}
               disabled={current <= 0}
               onClick={() => setIndex((value) => Math.max(value - 1, 0))}
             >
@@ -963,8 +981,8 @@ export function EditCommitMessagesEditor({
             </span>
             <button
               type="button"
-              aria-label="Next commit"
-              title="Next commit"
+              aria-label={t("webview.editMessages.next")}
+              title={t("webview.editMessages.next")}
               disabled={current >= total - 1}
               onClick={() =>
                 setIndex((value) => Math.min(value + 1, total - 1))
@@ -974,7 +992,9 @@ export function EditCommitMessagesEditor({
             </button>
           </div>
           <AutoGrowTextarea
-            ariaLabel={`Commit message ${entry.hash.slice(0, 12)}`}
+            ariaLabel={t("webview.editMessages.messageAria", {
+              hash: entry.hash.slice(0, 12),
+            })}
             disabled={loading}
             value={entry.message}
             onValueChange={(value) => onEditMessageChange(current, value)}

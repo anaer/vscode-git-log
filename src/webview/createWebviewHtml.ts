@@ -5,6 +5,8 @@ export interface WebviewHtmlOptions {
   scriptUri: string;
   styleUri: string;
   nonce: string;
+  /** VS Code display language (e.g. `zh-cn`); the webview reads it to pick a locale. */
+  locale?: string;
 }
 
 function escapeAttribute(value: string): string {
@@ -20,11 +22,13 @@ export function createWebviewHtml(options: WebviewHtmlOptions): string {
   const scriptUri = escapeAttribute(options.scriptUri);
   const styleUri = escapeAttribute(options.styleUri);
   const nonce = escapeAttribute(options.nonce);
+  const locale = escapeAttribute(options.locale?.trim() || 'en');
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${locale}">
   <head>
     <meta charset="UTF-8" />
+    <meta name="vscode-locale" content="${locale}" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; img-src ${cspSource} data:; style-src ${cspSource}; font-src ${cspSource}; script-src 'nonce-${nonce}';"

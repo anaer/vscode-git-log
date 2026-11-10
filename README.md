@@ -116,6 +116,7 @@ The current version covers Milestones 0–6 and the editor history work from Mil
 - `Apply Patch…` previews a `.patch` or `.diff`, runs `git apply --check`, and applies it to the working tree; a failed check offers a 3-way fallback with a conflict warning. Commit comparisons offer `Copy Paths` for the full changed-file list and `Export Patch…`, which excludes binary files and reports how many were omitted.
 - Pull honors `gitLogWorkbench.pull.strategy` and also exposes explicit fast-forward-only, merge, and rebase actions from the toolbar menu and command palette.
 - `Git Log: Show Diagnostics` writes the extension, VS Code, and detected Git versions, capabilities, and repository state to the Git Log output channel with credentials redacted.
+- `Git Log: Show Git Console` writes the recent Git command trail (subcommand, argument count, duration, exit code, and a redacted stderr excerpt) to a separate output channel. Full arguments are retained only when `gitLogWorkbench.debug.consoleVerbose` is enabled.
 - `Git Log: Configure Multi-Repository Git Settings…` creates directory-scoped Git profiles for work and personal identities. Each profile is stored in `~/.git-log/identities/<name>.inc` and referenced from the global Git config through `includeIf "gitdir:<path>"`; supported fields are `user.name`, `user.email`, `user.signingkey`, `commit.gpgsign`, `core.sshCommand`, and `pull.rebase`. Writes show a structured preview, keep a timestamped backup under `~/.git-log/backups`, and only modify include entries created by Git Log.
 
 ## Local development
@@ -166,13 +167,14 @@ npm run package
 - Use `Copy Paths` in a commit comparison to copy every changed path (including binary files) in sorted order, or `Export Patch…` to save all text changes as a `.patch`; binary files are omitted from the patch and their count is reported.
 - Configure the default Pull behavior with `gitLogWorkbench.pull.strategy`, or pick fast-forward-only, merge, or rebase explicitly from the toolbar menu or command palette.
 - Run `Git Log: Show Diagnostics` when reporting an environment issue; it writes Git/extension/repository facts to the Git Log output channel without credentials.
+- Run `Git Log: Show Git Console` to see which Git commands just ran and how long they took. It holds the most recent 500 commands in memory by default (`gitLogWorkbench.debug.consoleEntries`, `0` disables recording); enable `gitLogWorkbench.debug.consoleVerbose` for full arguments, which are redacted. Changes take effect immediately, and the trail is cleared when the extension host restarts.
 - Run `Configure Multi-Repository Git Settings…` to bind an identity to a directory. The wizard can start from the active repository, previews the global-config change, and verifies the effective `user.name`/`user.email` inside the selected repository after writing.
 
 ## Security and privacy
 
 - Every Git command uses a `spawn` argument array without a shell.
 - The extension never stores passwords, tokens, or SSH private keys. Remote authentication is delegated to Git.
-- The Output Channel redacts URL user information and does not log file contents or complete environment variables.
+- The Output Channel redacts URL user information and does not log file contents or complete environment variables. The Git Console keeps only a bounded in-memory trail and does not retain argument values unless verbose recording is explicitly enabled.
 - Hard Reset, Force Push with Lease, Branch Delete, Force Delete, and other destructive operations show the repository and exact target before confirmation.
 - Force-push target resolution, confirmation, and execution occur under the same common Git directory queue lock, pin the source object ID, and reject implicit or incomplete target refspecs.
 - A text-history scan is limited to 64 MiB of stdout, the rolling match cache is bounded, and the Webview commit window respects `maxCachedCommits`.

@@ -17,6 +17,8 @@ describe('production build artifacts', () => {
 
     expect(source).not.toContain('react.development.js');
     expect(source).not.toContain('react-dom-client.development.js');
-    expect(metadata.size).toBeLessThan(400 * 1024);
+    // The budget grew from 400 KB to 420 KB for the first localization batch and to
+    // 430 KB for the second (dialogs and context menus).
+    expect(metadata.size).toBeLessThan(430 * 1024);
   });
 });

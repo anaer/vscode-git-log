@@ -14,7 +14,17 @@ import type {
   SquashOperationState,
 } from './workbenchEffects';
 import type { ContextMenuState, FolderDeleteState, NamedOperationState } from './App';
+import { t } from './i18n';
 import { contextMenuPosition, requestId } from './webviewUtils';
+
+const menuAriaKeys: Record<ContextMenuState['kind'], string> = {
+  toolbar: 'webview.menu.aria.toolbar',
+  commit: 'webview.menu.aria.commit',
+  file: 'webview.menu.aria.file',
+  refFolder: 'webview.menu.aria.refFolder',
+  ref: 'webview.menu.aria.ref',
+  head: 'webview.menu.aria.head',
+};
 
 interface ContextMenuProps {
   contextMenu: ContextMenuState;
@@ -95,7 +105,7 @@ export function ContextMenu(props: ContextMenuProps) {
       ref={menuRef}
       className="context-menu"
       role="menu"
-      aria-label={`${contextMenu.kind} actions`}
+      aria-label={t(menuAriaKeys[contextMenu.kind])}
       style={measuredContextMenuPosition ?? contextMenuPosition(contextMenu.x, contextMenu.y)}
       onClick={(event) => {
         const target = event.target;
@@ -109,10 +119,12 @@ export function ContextMenu(props: ContextMenuProps) {
       {contextMenu.kind === 'toolbar' ? (
         selectedRepository?.operationState ? (
           <span className="menu-note">
-            Git {selectedRepository.operationState} is in progress. Finish or abort it first.
+            {t('webview.menu.operationInProgress', {
+              operation: selectedRepository.operationState,
+            })}
           </span>
         ) : selectedRepository?.isBare ? (
-          <span className="menu-note">Bare repositories are read-only.</span>
+          <span className="menu-note">{t('webview.menu.bareReadOnly')}</span>
         ) : (
           <>
             {contextMenu.actions.map((action) => {
@@ -128,7 +140,11 @@ export function ContextMenu(props: ContextMenuProps) {
                       setContextMenu(undefined);
                     }}
                   >
-                    {refsCollapsed ? 'Expand' : 'Collapse'} References Pane
+                    {t('webview.menu.toggleRefs', {
+                      state: refsCollapsed
+                        ? t('webview.action.expand')
+                        : t('webview.action.collapse'),
+                    })}
                   </button>
                 );
               case 'toggleFiles':
@@ -142,7 +158,11 @@ export function ContextMenu(props: ContextMenuProps) {
                       setContextMenu(undefined);
                     }}
                   >
-                    {filesCollapsed ? 'Expand' : 'Collapse'} Files Pane
+                    {t('webview.menu.toggleFiles', {
+                      state: filesCollapsed
+                        ? t('webview.action.expand')
+                        : t('webview.action.collapse'),
+                    })}
                   </button>
                 );
               case 'pull':
@@ -154,7 +174,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       disabled={pullDisabled}
                       onClick={() => runOperation({ kind: 'pull' }, contextMenu.repositoryId)}
                     >
-                      Pull
+                      {t('webview.menu.pull')}
                     </button>
                     <button
                       type="button"
@@ -167,7 +187,7 @@ export function ContextMenu(props: ContextMenuProps) {
                         )
                       }
                     >
-                      Pull (Fast-forward only)
+                      {t('webview.menu.pullFfOnly')}
                     </button>
                     <button
                       type="button"
@@ -180,7 +200,7 @@ export function ContextMenu(props: ContextMenuProps) {
                         )
                       }
                     >
-                      Pull (Merge)
+                      {t('webview.menu.pullMerge')}
                     </button>
                     <button
                       type="button"
@@ -193,7 +213,7 @@ export function ContextMenu(props: ContextMenuProps) {
                         )
                       }
                     >
-                      Pull (Rebase)
+                      {t('webview.menu.pullRebase')}
                     </button>
                   </Fragment>
                 );
@@ -206,8 +226,8 @@ export function ContextMenu(props: ContextMenuProps) {
                     disabled={!selectedRepository?.currentBranch || selectedOperationInFlight}
                     title={
                       toolbarPublishesBranch
-                        ? 'Push this branch and set its upstream'
-                        : 'Push the current branch'
+                        ? t('webview.menu.pushTitlePublish')
+                        : t('webview.menu.pushTitle')
                     }
                     onClick={() =>
                       runOperation(
@@ -216,7 +236,9 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    {toolbarPublishesBranch ? 'Publish Branch' : 'Push'}
+                    {toolbarPublishesBranch
+                      ? t('webview.menu.publishBranch')
+                      : t('webview.menu.push')}
                   </button>
                 );
               case 'forcePush':
@@ -233,7 +255,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Force Push with Lease…
+                    {t('webview.menu.forcePush')}
                   </button>
                 );
                 default:
@@ -252,7 +274,7 @@ export function ContextMenu(props: ContextMenuProps) {
                 })
               }
             >
-              Apply Patch…
+              {t('webview.menu.applyPatch')}
             </button>
           </>
         )
@@ -273,7 +295,7 @@ export function ContextMenu(props: ContextMenuProps) {
                 }
                 title={
                   contextMenu.commits.length > 100
-                    ? 'Select no more than 100 commits'
+                    ? t('webview.menu.maxCommitsTitle')
                     : undefined
                 }
                 onClick={() =>
@@ -286,7 +308,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   )
                 }
               >
-                Drop Commits…              </button>
+                {t('webview.menu.dropCommits')}              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -297,7 +319,7 @@ export function ContextMenu(props: ContextMenuProps) {
                 }
                 title={
                   contextMenu.commits.length > 100
-                    ? 'Select no more than 100 commits'
+                    ? t('webview.menu.maxCommitsTitle')
                     : undefined
                 }
                 onClick={() => {
@@ -320,7 +342,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Squash Commits…              </button>
+                {t('webview.menu.squashCommits')}              </button>
             </>
           ) : null}
           {contextMenu.commits.length >= 1 &&
@@ -337,7 +359,7 @@ export function ContextMenu(props: ContextMenuProps) {
                 }
                 title={
                   contextMenu.commits.length > 100
-                    ? 'Select no more than 100 commits'
+                    ? t('webview.menu.maxCommitsTitle')
                     : undefined
                 }
                 onClick={() => {
@@ -359,7 +381,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Edit Commit Messages…
+                {t('webview.menu.editCommitMessages')}
               </button>
               <button
                 type="button"
@@ -371,7 +393,7 @@ export function ContextMenu(props: ContextMenuProps) {
                 }
                 title={
                   contextMenu.commits.length > 100
-                    ? 'Select no more than 100 commits'
+                    ? t('webview.menu.maxCommitsTitle')
                     : undefined
                 }
                 onClick={() => {
@@ -384,7 +406,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Rewrite Author Identity…
+                {t('webview.menu.rewriteAuthorIdentity')}
               </button>
             </>
           ) : null}
@@ -394,8 +416,8 @@ export function ContextMenu(props: ContextMenuProps) {
             disabled={!contextMenu.commit.parents[0]}
             title={
               contextMenu.commit.parents[0]
-                ? 'Open all changed text files'
-                : 'Root commit has no parent'
+                ? t('webview.menu.compareWithParentTitle')
+                : t('webview.menu.compareWithParentRootTitle')
             }
             onClick={() =>
               openCommitComparison(
@@ -405,7 +427,7 @@ export function ContextMenu(props: ContextMenuProps) {
               )
             }
           >
-            Compare with Parent
+            {t('webview.menu.compareWithParent')}
           </button>
           <button
             type="button"
@@ -413,10 +435,10 @@ export function ContextMenu(props: ContextMenuProps) {
             disabled={
               !selectedRepository?.head || selectedRepository.head === contextMenu.commit.hash
             }
-            title="Compare this commit with the current HEAD"
+            title={t('webview.menu.compareWithCurrentTitle')}
             onClick={() => openCommitComparison(contextMenu.commit.hash, 'current')}
           >
-            Compare with Current
+            {t('webview.menu.compareWithCurrent')}
           </button>
           {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
             <>
@@ -426,7 +448,7 @@ export function ContextMenu(props: ContextMenuProps) {
                     type="button"
                     role="menuitem"
                     disabled={selectedOperationInFlight}
-                    title="Check out this commit in detached HEAD state"
+                    title={t('webview.menu.checkoutRevisionTitle')}
                     onClick={() =>
                       runOperation(
                         { kind: 'checkout', ref: contextMenu.commit.hash },
@@ -434,7 +456,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Checkout Revision
+                    {t('webview.menu.checkoutRevision')}
                   </button>
                   {selectedRepository?.head === contextMenu.commit.hash &&
                   selectedRepository.currentBranch ? (
@@ -450,7 +472,7 @@ export function ContextMenu(props: ContextMenuProps) {
                         setContextMenu(undefined);
                       }}
                     >
-                      Amend HEAD…                    </button>
+                      {t('webview.menu.amendHead')}                    </button>
                   ) : null}
                 </>
               ) : null}
@@ -467,7 +489,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Create Branch…              </button>
+                {t('webview.menu.createBranch')}              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -481,7 +503,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Create Tag…              </button>
+                {t('webview.menu.createTag')}              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -492,7 +514,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   )
                 }
               >
-                Cherry-pick
+                {t('webview.menu.cherryPick')}
               </button>
               <button
                 type="button"
@@ -504,7 +526,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   )
                 }
               >
-                Revert
+                {t('webview.menu.revert')}
               </button>
               <button
                 type="button"
@@ -520,7 +542,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   )
                 }
               >
-                Merge into Current
+                {t('webview.menu.mergeIntoCurrent')}
               </button>
               <button
                 type="button"
@@ -536,7 +558,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   )
                 }
               >
-                Rebase Current onto This
+                {t('webview.menu.rebaseOntoThis')}
               </button>
               {selectedRepository?.currentBranch ? (
                 <>
@@ -550,7 +572,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Reset Current Branch (soft)
+                    {t('webview.menu.resetSoft')}
                   </button>
                   <button
                     type="button"
@@ -562,7 +584,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Reset Current Branch (mixed)
+                    {t('webview.menu.resetMixed')}
                   </button>
                   <button
                     type="button"
@@ -574,7 +596,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Reset Current Branch (hard)…                  </button>
+                    {t('webview.menu.resetHard')}                  </button>
                 </>
               ) : null}
             </>
@@ -590,7 +612,7 @@ export function ContextMenu(props: ContextMenuProps) {
               })
             }
           >
-            Copy Hash
+            {t('webview.menu.copyHash')}
           </button>
           <button
             type="button"
@@ -603,7 +625,7 @@ export function ContextMenu(props: ContextMenuProps) {
               })
             }
           >
-            Copy Subject
+            {t('webview.menu.copySubject')}
           </button>
           <button
             type="button"
@@ -611,8 +633,8 @@ export function ContextMenu(props: ContextMenuProps) {
             disabled={detailsHash !== contextMenu.commit.hash}
             title={
               detailsHash === contextMenu.commit.hash
-                ? 'Copy the complete commit message'
-                : 'Select the commit first to load the full message'
+                ? t('webview.menu.copyFullMessageTitle')
+                : t('webview.menu.copyFullMessageDisabledTitle')
             }
             onClick={() =>
               send({
@@ -622,7 +644,7 @@ export function ContextMenu(props: ContextMenuProps) {
               })
             }
           >
-            Copy Full Message
+            {t('webview.menu.copyFullMessage')}
           </button>
         </>
       ) : null}
@@ -634,7 +656,7 @@ export function ContextMenu(props: ContextMenuProps) {
             disabled={contextMenu.file.binary}
             title={
               contextMenu.file.binary
-                ? 'Binary files cannot be opened in the text diff editor'
+                ? t('webview.menu.binaryDiffTitle')
                 : undefined
             }
             onClick={() => {
@@ -642,7 +664,7 @@ export function ContextMenu(props: ContextMenuProps) {
               setContextMenu(undefined);
             }}
           >
-            Show Diff
+            {t('webview.menu.showDiff')}
           </button>
           <button
             type="button"
@@ -650,21 +672,21 @@ export function ContextMenu(props: ContextMenuProps) {
             disabled={contextMenu.file.binary || (contextMenu.file.status === 'D' && !selectedParent)}
             title={
               contextMenu.file.binary
-                ? 'Binary files cannot be opened in the text editor'
+                ? t('webview.menu.binaryEditorTitle')
                 : contextMenu.file.status === 'D' && !selectedParent
-                  ? 'The deleted file has no available parent revision'
+                  ? t('webview.menu.deletedNoParentTitle')
                   : undefined
             }
             onClick={() => openFile(contextMenu.file, 'revision')}
           >
-            Open File at Revision
+            {t('webview.menu.openFileAtRevision')}
           </button>
           <button
             type="button"
             role="menuitem"
             onClick={() => openFile(contextMenu.file, 'current')}
           >
-            Open Current File
+            {t('webview.menu.openCurrentFile')}
           </button>
           <button
             type="button"
@@ -678,18 +700,18 @@ export function ContextMenu(props: ContextMenuProps) {
               setContextMenu(undefined);
             }}
           >
-            Copy Path
+            {t('webview.menu.copyPath')}
           </button>
           <button
             type="button"
             role="menuitem"
-            title="Filter the commit log by this path"
+            title={t('webview.menu.filterByPathTitle')}
             onClick={() => {
               onFilterByPath(contextMenu.file.path);
               setContextMenu(undefined);
             }}
           >
-            Filter by Path
+            {t('webview.menu.filterByPath')}
           </button>
         </>
       ) : null}
@@ -704,10 +726,12 @@ export function ContextMenu(props: ContextMenuProps) {
           }
           title={
             selectedRepository?.isBare
-              ? 'Read-only in a bare repository'
+              ? t('webview.menu.bareReadOnlyTitle')
               : selectedRepository?.operationState
-                ? 'Finish or abort the running operation first'
-                : `Delete all references under ${contextMenu.path}/`
+                ? t('webview.menu.finishOperationTitle')
+                : t('webview.menu.deleteFolderRefsTitle', {
+                    path: contextMenu.path,
+                  })
           }
           onClick={() => {
             setFolderDelete({
@@ -718,8 +742,15 @@ export function ContextMenu(props: ContextMenuProps) {
             });
           }}
         >
-          Delete {String(contextMenu.refs.length)} item
-          {contextMenu.refs.length === 1 ? '' : 's'} in {contextMenu.path}/…
+          {contextMenu.refs.length === 1
+            ? t('webview.menu.deleteFolderRefsOne', {
+                count: contextMenu.refs.length,
+                path: contextMenu.path,
+              })
+            : t('webview.menu.deleteFolderRefsMany', {
+                count: contextMenu.refs.length,
+                path: contextMenu.path,
+              })}
         </button>
       ) : null}
       {contextMenu.kind === 'ref' ? (
@@ -732,7 +763,7 @@ export function ContextMenu(props: ContextMenuProps) {
             }
             onClick={() => openCommitComparison(contextMenu.ref.target, 'current')}
           >
-            Compare with Current
+            {t('webview.menu.compareWithCurrent')}
           </button>
           <button
             type="button"
@@ -745,7 +776,7 @@ export function ContextMenu(props: ContextMenuProps) {
               })
             }
           >
-            Copy Name
+            {t('webview.menu.copyName')}
           </button>
           {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
             <>
@@ -761,7 +792,7 @@ export function ContextMenu(props: ContextMenuProps) {
                     )
                   }
                 >
-                  Checkout
+                  {t('webview.menu.checkout')}
                 </button>
               ) : null}
               {contextMenu.ref.kind === 'remote' &&
@@ -784,7 +815,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       setContextMenu(undefined);
                     }}
                   >
-                    Checkout as New Local…                  </button>
+                    {t('webview.menu.checkoutAsLocal')}                  </button>
                   <button
                     type="button"
                     role="menuitem"
@@ -794,7 +825,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       runOperation({ kind: 'fetch', remote }, contextMenu.repositoryId);
                     }}
                   >
-                    Fetch
+                    {t('webview.menu.fetch')}
                   </button>
                   <button
                     type="button"
@@ -809,7 +840,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       );
                     }}
                   >
-                    Delete Remote Branch…                  </button>
+                    {t('webview.menu.deleteRemoteBranch')}                  </button>
                 </>
               ) : null}
               {contextMenu.ref.kind === 'tag' ? (
@@ -824,7 +855,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Checkout
+                    {t('webview.menu.checkout')}
                   </button>
                   <button
                     type="button"
@@ -836,7 +867,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Push Tag
+                    {t('webview.menu.pushTag')}
                   </button>
                   <button
                     type="button"
@@ -848,7 +879,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Delete Local Tag…                  </button>
+                    {t('webview.menu.deleteLocalTag')}                  </button>
                 </>
               ) : null}
               <button
@@ -864,7 +895,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Create Branch from…              </button>
+                {t('webview.menu.createBranchFrom')}              </button>
               {contextMenu.ref.kind === 'local' ? (
                 <>
                   <button
@@ -878,7 +909,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Merge into Current
+                    {t('webview.menu.mergeIntoCurrent')}
                   </button>
                   <button
                     type="button"
@@ -891,7 +922,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Rebase Current onto This
+                    {t('webview.menu.rebaseOntoThis')}
                   </button>
                 </>
               ) : null}
@@ -903,10 +934,10 @@ export function ContextMenu(props: ContextMenuProps) {
                     disabled={!contextMenu.ref.isCurrent}
                     title={
                       !contextMenu.ref.isCurrent
-                        ? 'Checkout this branch before pushing it'
+                        ? t('webview.menu.pushTitleCheckoutFirst')
                         : refPublishesBranch
-                          ? 'Push this branch and set its upstream'
-                          : 'Push the current branch'
+                          ? t('webview.menu.pushTitlePublish')
+                          : t('webview.menu.pushTitle')
                     }
                     onClick={() =>
                       runOperation(
@@ -915,7 +946,9 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    {refPublishesBranch ? 'Publish Branch' : 'Push'}
+                    {refPublishesBranch
+                      ? t('webview.menu.publishBranch')
+                      : t('webview.menu.push')}
                   </button>
                   <button
                     type="button"
@@ -930,7 +963,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       setContextMenu(undefined);
                     }}
                   >
-                    Rename…                  </button>
+                    {t('webview.menu.rename')}                  </button>
                   <button
                     type="button"
                     role="menuitem"
@@ -942,7 +975,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Delete…
+                    {t('webview.menu.delete')}
                   </button>
                 </>
               ) : null}
@@ -964,7 +997,7 @@ export function ContextMenu(props: ContextMenuProps) {
               setContextMenu(undefined);
             }}
           >
-            Copy Hash
+            {t('webview.menu.copyHash')}
           </button>
           {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
             <>
@@ -981,7 +1014,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Create Branch…              </button>
+                {t('webview.menu.createBranch')}              </button>
               {canCreateOrphanBranch ? (
                 <button
                   type="button"
@@ -995,7 +1028,7 @@ export function ContextMenu(props: ContextMenuProps) {
                     setContextMenu(undefined);
                   }}
                 >
-                  Create Orphan Branch…                </button>
+                  {t('webview.menu.createOrphanBranch')}                </button>
               ) : null}
               <button
                 type="button"
@@ -1010,7 +1043,7 @@ export function ContextMenu(props: ContextMenuProps) {
                   setContextMenu(undefined);
                 }}
               >
-                Create Tag…              </button>
+                {t('webview.menu.createTag')}              </button>
               {selectedRepository?.currentBranch ? (
                 <>
                   <button
@@ -1023,7 +1056,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Reset Current Branch (soft)
+                    {t('webview.menu.resetSoft')}
                   </button>
                   <button
                     type="button"
@@ -1035,7 +1068,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Reset Current Branch (mixed)
+                    {t('webview.menu.resetMixed')}
                   </button>
                   <button
                     type="button"
@@ -1047,7 +1080,7 @@ export function ContextMenu(props: ContextMenuProps) {
                       )
                     }
                   >
-                    Reset Current Branch (hard)…                  </button>
+                    {t('webview.menu.resetHard')}                  </button>
                 </>
               ) : null}
             </>

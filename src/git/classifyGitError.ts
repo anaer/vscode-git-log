@@ -1,3 +1,4 @@
+import { l10n } from 'vscode';
 import { GitCommandError } from './GitRunner';
 
 export interface ClassifiedGitError {
@@ -45,7 +46,8 @@ const NEXT_STEPS: ReadonlyArray<readonly [RegExp, string]> = [
 ];
 
 function nextStepFor(lower: string): string | undefined {
-  return NEXT_STEPS.find(([pattern]) => pattern.test(lower))?.[1];
+  const message = NEXT_STEPS.find(([pattern]) => pattern.test(lower))?.[1];
+  return message ? l10n.t(message) : undefined;
 }
 
 export function classifyGitError(error: GitCommandError): ClassifiedGitError {
@@ -75,7 +77,9 @@ function classifyGitErrorBase(
   if (error.timedOut) {
     return {
       category: 'unknown',
-      message: 'Git query timed out. Try a smaller selection or a narrower history request.',
+      message: l10n.t(
+        'Git query timed out. Try a smaller selection or a narrower history request.',
+      ),
       detail,
     };
   }
@@ -83,7 +87,9 @@ function classifyGitErrorBase(
   if (/stdout exceeded \d+ bytes/u.test(lower)) {
     return {
       category: 'unknown',
-      message: 'Git output exceeded the safety limit. Try a smaller selection or history request.',
+      message: l10n.t(
+        'Git output exceeded the safety limit. Try a smaller selection or history request.',
+      ),
       detail,
     };
   }
@@ -91,7 +97,7 @@ function classifyGitErrorBase(
   if (/\b(?:file .* is binary|binary file)\b/u.test(lower)) {
     return {
       category: 'unknown',
-      message: 'Binary files do not support line history.',
+      message: l10n.t('Binary files do not support line history.'),
       detail,
     };
   }
@@ -99,27 +105,36 @@ function classifyGitErrorBase(
   if (error.exitCode === null || /unable to start|enoent|not found/u.test(lower)) {
     return {
       category: 'repository',
-      message:
+      message: l10n.t(
         'Git executable is unavailable. Install Git 2.20 or newer, or configure gitLogWorkbench.git.path.',
+      ),
       detail,
     };
   }
 
   if (/\bconflict\b|could not apply|automatic merge failed/u.test(lower)) {
-    return { category: 'conflict', message: 'Git stopped because of conflicts.', detail };
+    return {
+      category: 'conflict',
+      message: l10n.t('Git stopped because of conflicts.'),
+      detail,
+    };
   }
   if (/authentication failed|permission denied|could not read username|publickey/u.test(lower)) {
     return {
       category: 'authentication',
-      message: 'Git authentication failed. Check your credential helper or SSH agent.',
+      message: l10n.t('Git authentication failed. Check your credential helper or SSH agent.'),
       detail,
     };
   }
   if (/\bhook\b.*(?:declined|failed)|(?:pre|post)-(?:commit|push|merge|rebase)/u.test(lower)) {
-    return { category: 'hook', message: 'A Git hook rejected the operation.', detail };
+    return { category: 'hook', message: l10n.t('A Git hook rejected the operation.'), detail };
   }
   if (/not a git repository|unknown revision|bad revision|invalid object name/u.test(lower)) {
-    return { category: 'repository', message: 'Git could not resolve the repository or revision.', detail };
+    return {
+      category: 'repository',
+      message: l10n.t('Git could not resolve the repository or revision.'),
+      detail,
+    };
   }
   return { category: 'unknown', message: detail.split(/\r?\n/u)[0] || error.message, detail };
 }

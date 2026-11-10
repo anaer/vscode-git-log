@@ -1230,6 +1230,8 @@ describe('GitOperationService', () => {
       },
     } as unknown as GitRunner;
     const service = new GitOperationService(runner, {
+      // This case verifies push-target resolution, not branch protection; guards have their own suite.
+      protectedBranches: [],
       inspectRepository: (candidate) =>
         Promise.resolve({ ...candidate, currentBranch: 'main', head: 'a'.repeat(40) }),
     });

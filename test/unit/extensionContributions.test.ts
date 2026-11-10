@@ -144,11 +144,11 @@ describe('extension contributions', () => {
     expect(packageJson.activationEvents).not.toContain('onView:gitLogWorkbench.launcher');
     expect(packageJson.contributes?.submenus).toContainEqual({
       id: 'gitLogWorkbench.editorContext',
-      label: 'Git Log',
+      label: '%submenu.gitLog.label%',
     });
     expect(packageJson.contributes?.submenus).toContainEqual({
       id: 'gitLogWorkbench.explorerContext',
-      label: 'Git Log',
+      label: '%submenu.gitLog.label%',
     });
     expect(packageJson.contributes?.menus?.['editor/context']).toContainEqual(
       expect.objectContaining({
@@ -315,5 +315,40 @@ describe('extension contributions', () => {
 
     expect(source).not.toContain('File History is planned for Milestone 7');
     expect(source).not.toContain('Show in File History');
+  });
+
+  it('contributes a separate Git Console with bounded, opt-in verbose recording', async () => {
+    const packageJson = JSON.parse(await readFile('package.json', 'utf8')) as {
+      activationEvents?: string[];
+      contributes?: {
+        commands?: Array<{ command?: string; title?: string }>;
+        configuration?: { properties?: Record<string, unknown> };
+      };
+    };
+    const source = await readFile('src/extension.ts', 'utf8');
+
+    expect(packageJson.activationEvents).toContain('onCommand:gitLogWorkbench.showGitConsole');
+    expect(packageJson.contributes?.commands).toContainEqual(
+      expect.objectContaining({
+        command: 'gitLogWorkbench.showGitConsole',
+        title: '%command.showGitConsole.title%',
+      }),
+    );
+    expect(packageJson.contributes?.configuration?.properties).toMatchObject({
+      'gitLogWorkbench.debug.consoleEntries': {
+        type: 'number',
+        default: 500,
+        minimum: 0,
+      },
+      'gitLogWorkbench.debug.consoleVerbose': {
+        type: 'boolean',
+        default: false,
+      },
+    });
+    expect(source).toContain("createOutputChannel('Git Log: Git Console')");
+    expect(source).toContain('new GitConsoleRecorder');
+    expect(source).toContain('onCommandRecord:');
+    expect(source).toContain('consoleOutput.replace(formatGitConsoleSnapshot(');
+    expect(source).toContain('consoleRecorder.configure(');
   });
 });

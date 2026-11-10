@@ -34,6 +34,7 @@ import { EditorHistoryCommands } from './editor/EditorHistoryCommands';
 import { FileHistoryService } from './git/FileHistoryService';
 import { GitConfigService } from './git/GitConfigService';
 import { buildGitDiagnosticsReport } from './git/gitDiagnostics';
+import { formatGitConsoleSnapshot, GitConsoleRecorder } from './git/GitConsoleRecorder';
 import { GitRunner } from './git/GitRunner';
 import { GitService } from './git/GitService';
 import { GitOperationService } from './git/GitOperationService';
@@ -321,17 +322,28 @@ function initializeBlameFeature(
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Git Log');
+  const consoleOutput = vscode.window.createOutputChannel('Git Log: Git Console');
   const configuration = vscode.workspace.getConfiguration('gitLogWorkbench');
+  const consoleRecorder = new GitConsoleRecorder({
+    capacity: configuration.get<number>('debug.consoleEntries', 500),
+    verbose: configuration.get<boolean>('debug.consoleVerbose', false),
+  });
   const runner = new GitRunner({
     executable: configuration.get<string>('git.path', 'git'),
     logLevel: configuration.get<'off' | 'error' | 'debug'>('debug.logLevel', 'debug'),
     onDiagnostic: (line) => output.appendLine(line),
+    onCommandRecord: (record) => consoleRecorder.record(record),
   });
   const gitService = new GitService(runner, (line) => output.appendLine(line));
   void gitService.cleanupStaleTemporaryDirectories();
   const lineBlameService = new LineBlameService(runner);
   const fileHistoryService = new FileHistoryService(runner);
-  const operationService = new GitOperationService(runner);
+  const operationService = new GitOperationService(runner, {
+    protectedBranches: configuration.get<string[]>('history.protectedBranches', [
+      'main',
+      'master',
+    ]),
+  });
   const patchService = new PatchService(runner);
   const pullCommand = new PullCommand(runner, operationService, output);
   const applyPatchCommand = new ApplyPatchCommand(runner, patchService, output);
@@ -525,6 +537,10 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     );
   };
+  const showGitConsole = (): void => {
+    consoleOutput.replace(formatGitConsoleSnapshot(consoleRecorder.snapshot()));
+    consoleOutput.show(true);
+  };
   const registrations = registerExtension({
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
     openWorkbench: () => {
@@ -549,12 +565,14 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     applyPatch: () => applyPatchCommand.run(),
     showDiagnostics: showGitDiagnostics,
+    showGitConsole,
     configureGitSettings: () => gitConfigSettingsCommand.run(),
     pull: (strategy) => pullCommand.run(strategy),
   });
 
   context.subscriptions.push(
     output,
+    consoleOutput,
     disposeGitStateSubscriptions,
     new vscode.Disposable(resetLineBlameTimer),
     new vscode.Disposable(resetLineEditTimesTimer),
@@ -642,6 +660,23 @@ export function activate(context: vscode.ExtensionContext): void {
           ensureGitStateSubscriptions();
         }
         scheduleLineBlame(blameRefreshImmediateMs);
+      }
+      if (
+        event.affectsConfiguration('gitLogWorkbench.debug.consoleEntries') ||
+        event.affectsConfiguration('gitLogWorkbench.debug.consoleVerbose')
+      ) {
+        const settings = vscode.workspace.getConfiguration('gitLogWorkbench');
+        consoleRecorder.configure({
+          capacity: settings.get<number>('debug.consoleEntries', 500),
+          verbose: settings.get<boolean>('debug.consoleVerbose', false),
+        });
+      }
+      if (event.affectsConfiguration('gitLogWorkbench.history.protectedBranches')) {
+        operationService.setProtectedBranches(
+          vscode.workspace
+            .getConfiguration('gitLogWorkbench')
+            .get<string[]>('history.protectedBranches', ['main', 'master']),
+        );
       }
     }),
   );

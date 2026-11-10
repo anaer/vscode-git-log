@@ -8,6 +8,7 @@ import {
 import type { GitOperationRequest, LogFilters } from '../../src/protocol/messages';
 import type { RepositorySummary } from '../../src/shared/models';
 import { DateField } from './DateRangePicker';
+import { t } from './i18n';
 import {
   Archive,
   Branch,
@@ -29,15 +30,15 @@ import {
 export type FilterPopupKind = 'branch' | 'user' | 'date' | 'paths';
 
 const dateRangeOptions: readonly {
-  label: string;
+  labelKey: string;
   kind: 'all' | 'today' | 'yesterday' | 'days';
   days?: number;
 }[] = [
-  { label: 'All time', kind: 'all' },
-  { label: 'Today', kind: 'today' },
-  { label: 'Yesterday', kind: 'yesterday' },
-  { label: 'Last 7 days', kind: 'days', days: 7 },
-  { label: 'Last 30 days', kind: 'days', days: 30 },
+  { labelKey: 'webview.filters.range.all', kind: 'all' },
+  { labelKey: 'webview.filters.range.today', kind: 'today' },
+  { labelKey: 'webview.filters.range.yesterday', kind: 'yesterday' },
+  { labelKey: 'webview.filters.range.last7', kind: 'days', days: 7 },
+  { labelKey: 'webview.filters.range.last30', kind: 'days', days: 30 },
 ];
 
 export interface AuthorFilterOption {
@@ -87,8 +88,16 @@ export interface CommitToolbarProps {
   onResetFilters(): void;
 }
 
+const operationStateKeys: Record<string, string> = {
+  rebase: 'webview.operation.rebasing',
+  merge: 'webview.operation.merging',
+  'cherry-pick': 'webview.operation.cherryPicking',
+  revert: 'webview.operation.reverting',
+};
+
 function operationStateLabel(state: string): string {
-  return state === 'rebase' ? 'Rebasing' : state;
+  const key = Object.hasOwn(operationStateKeys, state) ? operationStateKeys[state] : undefined;
+  return key ? t(key) : state;
 }
 
 export function CommitToolbar({
@@ -134,12 +143,15 @@ export function CommitToolbar({
     <header
       className={`filter-bar${history || folderHistory ? ' history-active' : ''}`}
       role="toolbar"
-      aria-label="Git log filters"
+      aria-label={t('webview.filters.label')}
     >
       {history ? (
         <div className="history-toolbar">
           <strong>
-            {history.kind === 'file' ? 'File History' : 'Line History'} · {history.path}
+            {history.kind === 'file'
+              ? t('webview.filters.history.file')
+              : t('webview.filters.history.line')}{' '}
+            · {history.path}
             {history.startLine !== undefined
               ? ` : ${String(history.startLine)}–${String(history.endLine ?? history.startLine)}`
               : ''}
@@ -150,42 +162,44 @@ export function CommitToolbar({
           {history.kind === 'line' ? (
             <button
               type="button"
-              aria-label="Show file history"
-              title="Show complete file history"
+              aria-label={t('webview.filters.history.showFile')}
+              title={t('webview.filters.history.showFileTitle')}
               onClick={onSwitchHistoryToFile}
             >
-              File History
+              {t('webview.filters.history.file')}
             </button>
           ) : null}
           <button
             type="button"
-            aria-label="Back to log"
-            title="Return to the Git log"
+            aria-label={t('webview.filters.history.backAria')}
+            title={t('webview.filters.history.backTitle')}
             onClick={onBackToLog}
           >
-            Back
+            {t('webview.filters.history.back')}
           </button>
           <button
             type="button"
-            aria-label="Close history"
-            title="Close history and return to the Git log"
+            aria-label={t('webview.filters.history.closeAria')}
+            title={t('webview.filters.history.closeTitle')}
             onClick={onCloseHistory}
           >
-            Close
+            {t('webview.filters.history.close')}
           </button>
         </div>
       ) : null}
       {folderHistory ? (
         <div className="history-toolbar history-toolbar--folder">
           <strong>
-            Folder History ·{' '}
-            {folderHistory.path === '.' ? 'Repository Root' : folderHistory.path}
+            {t('webview.filters.history.folder')} ·{' '}
+            {folderHistory.path === '.'
+              ? t('webview.filters.history.root')
+              : folderHistory.path}
           </strong>
           <button
             className="history-toolbar-close"
             type="button"
-            aria-label="Close folder history"
-            title="Restore the previous Git log filters"
+            aria-label={t('webview.filters.history.closeFolder')}
+            title={t('webview.filters.history.closeFolderTitle')}
             onClick={onCloseFolderHistory}
           >
             {Close}
@@ -194,14 +208,14 @@ export function CommitToolbar({
       ) : null}
       {repositories.length > 1 ? (
         <div className="field repository-field">
-          <span className="sr-only">Repository</span>
+          <span className="sr-only">{t('webview.filters.repository')}</span>
           <select
-            aria-label="Repository"
+            aria-label={t('webview.filters.repository')}
             value={selectedRepositoryId ?? ''}
             onChange={(event) => onSelectRepository(event.target.value)}
           >
             <option value="" disabled>
-              Select repository
+              {t('webview.filters.selectRepository')}
             </option>
             {repositories.map((repository) => (
               <option value={repository.id} key={repository.id}>
@@ -216,8 +230,8 @@ export function CommitToolbar({
             <button
               className="operation-badge"
               type="button"
-              aria-label="Open Source Control"
-              title="Open Source Control"
+              aria-label={t('webview.filters.openSourceControl')}
+              title={t('webview.filters.openSourceControl')}
               onClick={onOpenSourceControl}
             >
               {operationStateLabel(selectedRepositoryOperationState)}
@@ -228,8 +242,8 @@ export function CommitToolbar({
         <button
           className="operation-badge"
           type="button"
-          aria-label="Open Source Control"
-          title="Open Source Control"
+          aria-label={t('webview.filters.openSourceControl')}
+          title={t('webview.filters.openSourceControl')}
           onClick={onOpenSourceControl}
         >
           {operationStateLabel(selectedRepositoryOperationState)}
@@ -239,8 +253,8 @@ export function CommitToolbar({
         <input
           ref={searchRef}
           type="search"
-          aria-label="Text or hash"
-          placeholder="Text or hash"
+          aria-label={t('webview.filters.search')}
+          placeholder={t('webview.filters.search')}
           value={filters.text}
           onChange={(event) => onApplyFilters({ ...filters, text: event.target.value }, true)}
           onKeyDown={(event) => {
@@ -258,8 +272,8 @@ export function CommitToolbar({
       <button
         type="button"
         data-popup-trigger="true"
-        aria-label="Filter by branch"
-        title="Filter by branch"
+        aria-label={t('webview.filters.byBranch')}
+        title={t('webview.filters.byBranch')}
         className={filters.branches.length ? 'filter-active' : ''}
         onClick={(event) => toggleFilterPopup('branch', event)}
       >
@@ -273,8 +287,8 @@ export function CommitToolbar({
       <button
         type="button"
         data-popup-trigger="true"
-        aria-label="Filter by author"
-        title="Filter by author"
+        aria-label={t('webview.filters.byAuthor')}
+        title={t('webview.filters.byAuthor')}
         className={filters.authors.length ? 'filter-active' : ''}
         onClick={(event) => toggleFilterPopup('user', event)}
       >
@@ -288,8 +302,8 @@ export function CommitToolbar({
       <button
         type="button"
         data-popup-trigger="true"
-        aria-label="Filter by date range"
-        title="Filter by date range"
+        aria-label={t('webview.filters.byDate')}
+        title={t('webview.filters.byDate')}
         className={filters.dateFrom || filters.dateTo ? 'filter-active' : ''}
         onClick={(event) => toggleFilterPopup('date', event)}
       >
@@ -298,8 +312,8 @@ export function CommitToolbar({
       <button
         type="button"
         data-popup-trigger="true"
-        aria-label="Filter by path"
-        title="Filter by path"
+        aria-label={t('webview.filters.byPath')}
+        title={t('webview.filters.byPath')}
         className={filters.paths.length ? 'filter-active' : ''}
         onClick={(event) => toggleFilterPopup('paths', event)}
       >
@@ -314,12 +328,12 @@ export function CommitToolbar({
         <div
           className={`filter-popover filter-${filterPopup}`}
           role="dialog"
-          aria-label={`${filterPopup} filter`}
+          aria-label={t(`webview.filters.popup.${filterPopup}`)}
           style={filterPopoverPosition}
         >
           {filterPopup === 'branch' ? (
             <>
-              <div className="filter-popover-title">Branches</div>
+              <div className="filter-popover-title">{t('webview.filters.branches')}</div>
               {refs.length ? (
                 refs.map((ref) => (
                   <label className="filter-option" key={ref.fullName}>
@@ -337,13 +351,13 @@ export function CommitToolbar({
                   </label>
                 ))
               ) : (
-                <span className="filter-empty">No refs loaded</span>
+                <span className="filter-empty">{t('webview.filters.noRefs')}</span>
               )}
             </>
           ) : null}
           {filterPopup === 'user' ? (
             <>
-              <div className="filter-popover-title">Authors</div>
+              <div className="filter-popover-title">{t('webview.filters.authors')}</div>
               {authorFilterOptions.map((author) => (
                 <label className="filter-option" key={author.key}>
                   <input
@@ -366,7 +380,7 @@ export function CommitToolbar({
               {dateRangeOptions.map((option) => (
                 <button
                   type="button"
-                  key={option.label}
+                  key={option.labelKey}
                   onClick={() => {
                     const now = new Date();
                     const today =
@@ -382,22 +396,22 @@ export function CommitToolbar({
                     }
                   }}
                 >
-                  {option.label}
+                  {t(option.labelKey)}
                 </button>
               ))}
               <div className="custom-date-range">
                 <DateField
                   id="custom-date-from"
-                  label="From"
-                  ariaLabel="Custom date from"
+                  label={t('webview.filters.from')}
+                  ariaLabel={t('webview.filters.customFrom')}
                   value={customDateFrom}
                   maxDate={customDateTo || undefined}
                   onChange={onCustomDateFromChange}
                 />
                 <DateField
                   id="custom-date-to"
-                  label="To"
-                  ariaLabel="Custom date to"
+                  label={t('webview.filters.to')}
+                  ariaLabel={t('webview.filters.customTo')}
                   value={customDateTo}
                   minDate={customDateFrom || undefined}
                   onChange={onCustomDateToChange}
@@ -422,18 +436,18 @@ export function CommitToolbar({
                     onApplyDateRange(from, to);
                   }}
                 >
-                  Apply custom range
+                  {t('webview.filters.applyCustom')}
                 </button>
               </div>
             </div>
           ) : null}
           {filterPopup === 'paths' ? (
             <label className="path-filter-field">
-              <span>Git path</span>
+              <span>{t('webview.filters.gitPath')}</span>
               <input
-                aria-label="Git path filter"
+                aria-label={t('webview.filters.gitPathAria')}
                 value={filters.paths[0] ?? ''}
-                placeholder="src/ or src/app.ts"
+                placeholder={t('webview.filters.gitPathPlaceholder')}
                 onChange={(event) =>
                   onApplyFilters(
                     {
@@ -454,7 +468,7 @@ export function CommitToolbar({
               onFilterPopupChange(undefined);
             }}
           >
-            Reset filters
+            {t('webview.filters.reset')}
           </button>
         </div>
       ) : null}
@@ -570,8 +584,8 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label="Refresh log"
-            title="Refresh local repository state"
+            aria-label={t('webview.action.refreshAria')}
+            title={t('webview.action.refreshTitle')}
             onClick={onRefresh}
           >
             {Refresh}
@@ -581,8 +595,8 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label="Go to HEAD"
-            title="Locate the current HEAD commit"
+            aria-label={t('webview.action.headAria')}
+            title={t('webview.action.headTitle')}
             disabled={!hasHead}
             onClick={onGoToHead}
           >
@@ -593,8 +607,8 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label="Fetch remotes"
-            title="Fetch from remotes"
+            aria-label={t('webview.action.fetchAria')}
+            title={t('webview.action.fetchTitle')}
             disabled={!canRunOperations || operationInFlight}
             onClick={onFetch}
           >
@@ -605,8 +619,8 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label="Manage stashes"
-            title="Create, inspect, apply, pop, or drop stashes"
+            aria-label={t('webview.action.stashesAria')}
+            title={t('webview.action.stashesTitle')}
             disabled={!canRunOperations}
             onClick={onManageStashes}
           >
@@ -617,8 +631,12 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
-            title={`${refsCollapsed ? 'Expand' : 'Collapse'} references pane`}
+            aria-label={t('webview.action.toggleRefs', {
+              state: t(refsCollapsed ? 'webview.action.expand' : 'webview.action.collapse'),
+            })}
+            title={t('webview.action.toggleRefs', {
+              state: t(refsCollapsed ? 'webview.action.expand' : 'webview.action.collapse'),
+            })}
             onClick={onToggleRefsPane}
           >
             {PanelLeft}
@@ -628,8 +646,12 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
-            title={`${filesCollapsed ? 'Expand' : 'Collapse'} changed files pane`}
+            aria-label={t('webview.action.toggleFiles', {
+              state: t(filesCollapsed ? 'webview.action.expand' : 'webview.action.collapse'),
+            })}
+            title={t('webview.action.toggleFiles', {
+              state: t(filesCollapsed ? 'webview.action.expand' : 'webview.action.collapse'),
+            })}
             onClick={onToggleFilesPane}
           >
             {PanelRight}
@@ -639,8 +661,8 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label="Pull from remote"
-            title="Pull the current branch from its remote"
+            aria-label={t('webview.action.pullAria')}
+            title={t('webview.action.pullTitle')}
             disabled={!canRunOperations || operationInFlight || gitWriteBlocked || !currentBranch}
             onClick={() => onRunOperation({ kind: 'pull' })}
           >
@@ -651,9 +673,15 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label={publishesBranch ? 'Publish branch' : 'Push to remote'}
+            aria-label={
+              publishesBranch
+                ? t('webview.action.publishAria')
+                : t('webview.action.pushAria')
+            }
             title={
-              publishesBranch ? 'Push this branch and set its upstream' : 'Push the current branch'
+              publishesBranch
+                ? t('webview.action.publishTitle')
+                : t('webview.action.pushTitle')
             }
             disabled={!canRunOperations || operationInFlight || gitWriteBlocked || !currentBranch}
             onClick={() => onRunOperation({ kind: publishesBranch ? 'publishBranch' : 'push' })}
@@ -665,8 +693,8 @@ export function GlobalToolbar({
         return (
           <button
             type="button"
-            aria-label="Force push current branch"
-            title="Force push the current branch with lease"
+            aria-label={t('webview.action.forcePushAria')}
+            title={t('webview.action.forcePushTitle')}
             disabled={!canRunOperations || operationInFlight || gitWriteBlocked || !currentBranch}
             onClick={() => onRunOperation({ kind: 'push', forceWithLease: true })}
           >
@@ -679,7 +707,7 @@ export function GlobalToolbar({
   };
 
   return (
-    <header className="global-toolbar" role="toolbar" aria-label="Global Git actions">
+    <header className="global-toolbar" role="toolbar" aria-label={t('webview.toolbar.global')}>
       {visibleActions.map((action) => (
         <Fragment key={action}>{renderAction(action)}</Fragment>
       ))}
@@ -687,8 +715,8 @@ export function GlobalToolbar({
         <button
           type="button"
           data-popup-trigger="true"
-          aria-label="More actions"
-          title="More Git actions"
+          aria-label={t('webview.action.moreAria')}
+          title={t('webview.action.moreTitle')}
           aria-haspopup="menu"
           aria-expanded={moreActionsExpanded}
           onClick={(event) => {

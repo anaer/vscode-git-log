@@ -18,12 +18,25 @@ export interface GitRunResult {
   durationMs: number;
 }
 
+/** One finished command, handed to observers such as the Git console recorder. */
+export interface GitCommandRecord {
+  readonly args: readonly string[];
+  readonly cwd: string;
+  readonly durationMs: number;
+  readonly exitCode: number | null;
+  readonly stderr: Buffer;
+  readonly cancelled: boolean;
+  readonly timedOut: boolean;
+  readonly startFailed: boolean;
+}
+
 export interface GitRunnerOptions {
   executable?: string;
   logLevel?: 'off' | 'error' | 'debug';
   defaultMaxStdoutBytes?: number;
   killGraceMs?: number;
   onDiagnostic?(line: string): void;
+  onCommandRecord?(record: GitCommandRecord): void;
 }
 
 export class GitCommandError extends Error {
@@ -53,6 +66,7 @@ export class GitRunner {
   private readonly defaultMaxStdoutBytes: number;
   private readonly killGraceMs: number;
   private readonly onDiagnostic: ((line: string) => void) | undefined;
+  private readonly onCommandRecord: ((record: GitCommandRecord) => void) | undefined;
 
   constructor(options: GitRunnerOptions = {}) {
     this.executable = options.executable ?? 'git';
@@ -67,6 +81,16 @@ export class GitRunner {
       throw new Error('Git kill grace period must be a positive integer.');
     }
     this.onDiagnostic = options.onDiagnostic;
+    this.onCommandRecord = options.onCommandRecord;
+  }
+
+  private emitCommandRecord(record: GitCommandRecord): void {
+    if (!this.onCommandRecord) return;
+    try {
+      this.onCommandRecord(record);
+    } catch {
+      // Observers must not interfere with Git command execution.
+    }
   }
 
   run(args: readonly string[], options: GitRunOptions): Promise<GitRunResult> {
@@ -183,6 +207,16 @@ export class GitRunner {
           .split(this.executable)
           .join('<git>');
         this.onDiagnostic?.(`[git] command=${command} start-failed=${safeMessage}`);
+        this.emitCommandRecord({
+          args,
+          cwd: options.cwd,
+          durationMs: performance.now() - startedAt,
+          exitCode: null,
+          stderr: Buffer.concat(stderr),
+          cancelled,
+          timedOut,
+          startFailed: true,
+        });
         reject(
           new GitCommandError(
             `Unable to start ${this.executable}: ${safeMessage}`,
@@ -208,6 +242,16 @@ export class GitRunner {
         const stdoutBuffer = Buffer.concat(stdout);
         const stderrBuffer = Buffer.concat(stderr);
         const durationMs = performance.now() - startedAt;
+        this.emitCommandRecord({
+          args,
+          cwd: options.cwd,
+          durationMs,
+          exitCode: code,
+          stderr: stderrBuffer,
+          cancelled,
+          timedOut,
+          startFailed: false,
+        });
         const stderrText = redactGitDiagnostic(stderrBuffer.toString('utf8').trim())
           .split(options.cwd)
           .join('<repository>');

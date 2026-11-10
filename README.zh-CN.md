@@ -104,6 +104,7 @@ code --install-extension ascenx.git-log
 - 支持 `Apply Patch…`：选择 `.patch` / `.diff`，预览文件与增删行，`git apply --check` 通过后应用到工作区；检查失败时可改用 `--3way` 并提示可能留下冲突。Commit 对比窗口提供 `Copy Paths`（复制全部变更路径）与 `Export Patch…`（导出时排除二进制文件）。
 - Pull 支持 `gitLogWorkbench.pull.strategy` 默认策略，并在工具栏菜单与命令面板提供 fast-forward-only、merge、rebase 三种显式入口。
 - 新增 `Git Log: Show Diagnostics` 命令，将扩展/VS Code/Git 版本、能力集与仓库状态写入输出通道，凭据自动脱敏。
+- `Git Log: Show Git Console` 在独立输出通道展示最近的 Git 命令轨迹：子命令、参数个数、耗时、退出码与脱敏后的 stderr 摘要；完整参数仅在 `gitLogWorkbench.debug.consoleVerbose` 开启时留存。
 - 支持 `Git Log: Configure Multi-Repository Git Settings…`：为工作、个人等身份创建按目录生效的 Git 配置档。配置文件保存在 `~/.git-log/identities/<名称>.inc`，通过全局 Git 配置中的 `includeIf "gitdir:<目录>"` 引用；可设置 `user.name`、`user.email`、`user.signingkey`、`commit.gpgsign`、`core.sshCommand` 与 `pull.rebase`。写入前展示结构化预览，备份保存在 `~/.git-log/backups`，且只修改由本扩展创建的 include 条目。
 
 ## 命令与菜单
@@ -122,6 +123,7 @@ code --install-extension ascenx.git-log
 | Apply Patch… | `gitLogWorkbench.applyPatch` | ✅ | 选择补丁文件，预览并校验后应用到工作区。 |
 | Configure Multi-Repository Git Settings… | `gitLogWorkbench.config.multiRepo` | ✅ | 为不同目录创建 Git 身份配置档，写入全局配置的 includeIf 条目。 |
 | Show Diagnostics | `gitLogWorkbench.showDiagnostics` | ✅ | 输出 Git 版本、能力集与仓库状态到 Git Log 输出通道。 |
+| Show Git Console | `gitLogWorkbench.showGitConsole` | ✅ | 在独立输出通道展示最近的 Git 命令轨迹。 |
 | Pull (Fast-forward only) | `gitLogWorkbench.pull.ffOnly` | ✅ | 以 `--ff-only` 拉取当前仓库。 |
 | Pull (Merge) | `gitLogWorkbench.pull.merge` | ✅ | 以合并方式拉取当前仓库。 |
 | Pull (Rebase) | `gitLogWorkbench.pull.rebase` | ✅ | 以变基方式拉取当前仓库。 |
@@ -271,13 +273,14 @@ npm run package
 - Commit Comparison 右上角的 `Copy Paths` 会按排序复制全部变更文件路径（含二进制）；`Export Patch…` 则把全部文本文件导出为 `.patch`，二进制文件会被排除并在提示中说明数量。
 - Pull 默认策略由 `gitLogWorkbench.pull.strategy` 控制（`default` / `ff-only` / `merge` / `rebase`）；工具栏右键菜单和命令面板提供三种显式策略入口。
 - 排查环境问题时运行 `Git Log: Show Diagnostics`，报告会写入 Git Log 输出通道，包含 Git 版本、能力集与仓库状态。
+- 运行 `Git Log: Show Git Console` 可回看刚才执行了哪些 Git 命令及各自耗时。默认在内存中保留最近 500 条（`gitLogWorkbench.debug.consoleEntries`，设为 `0` 关闭记录）；需要看完整参数时开启 `gitLogWorkbench.debug.consoleVerbose`，参数会先脱敏。配置即时生效，扩展宿主重启后轨迹清空。
 - 运行 `Configure Multi-Repository Git Settings…` 可把身份绑定到目录；向导支持从当前仓库开始，写入前预览全局配置变更，写入后校验所选仓库内实际生效的 `user.name` / `user.email`。
 
 ## 安全与隐私
 
 - 所有 Git 命令使用 `spawn` 参数数组且不开 shell。
 - 扩展不保存密码、Token 或 SSH 私钥；remote 认证完全交给 Git。
-- Output Channel 会脱敏 URL userinfo，不记录文件内容或完整环境变量。
+- Output Channel 会脱敏 URL userinfo，不记录文件内容或完整环境变量。Git 控制台只保留有界的内存轨迹，默认不留存参数值，仅在显式开启 verbose 记录时保存脱敏后的参数。
 - Hard Reset、Force Push with Lease、Branch Delete、Force Delete 等危险操作会显示仓库和实际目标并要求确认。
 - Force Push 的目标解析、确认与执行都在同一 common Git dir 队列锁内完成，固定 source object ID，并拒绝隐式或非完整目标 refspec。
 - 文本历史扫描单次 stdout 上限为 64 MiB，rolling match cache 有界，Webview commit window 受 `maxCachedCommits` 限制。

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { GitCommandRecord } from '../../src/git/GitRunner';
 
 const temporaryDirectories: string[] = [];
 
@@ -276,5 +277,100 @@ describe('GitRunner', () => {
     expect(diagnostics[0]).toContain('<repository>');
     expect(diagnostics[0]).not.toContain(cwd);
     expect(diagnostics[0]).not.toContain('secret');
+  });
+
+  it('emits a structured completion record on both success and failure', async () => {
+    const { GitRunner } = await import('../../src/git/GitRunner');
+    const cwd = await mkdtemp(join(tmpdir(), 'git-log-workbench-records-'));
+    temporaryDirectories.push(cwd);
+    const records: GitCommandRecord[] = [];
+    const runner = new GitRunner({
+      executable: process.execPath,
+      onCommandRecord: (record) => records.push(record),
+    });
+
+    await runner.run(['-e', 'process.stdout.write("ok")'], { cwd });
+    await expect(
+      runner.run(['-e', 'process.stderr.write("fatal"); process.exit(7)'], { cwd }),
+    ).rejects.toMatchObject({ exitCode: 7 });
+
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      cwd,
+      exitCode: 0,
+      cancelled: false,
+      timedOut: false,
+      startFailed: false,
+    });
+    expect(records[0]?.args).toEqual(['-e', 'process.stdout.write("ok")']);
+    expect(records[0]?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(records[1]).toMatchObject({ exitCode: 7, startFailed: false });
+    expect(records[1]?.stderr.toString('utf8')).toContain('fatal');
+  });
+
+  it('emits a record when the executable cannot be started', async () => {
+    const { GitRunner } = await import('../../src/git/GitRunner');
+    const cwd = await mkdtemp(join(tmpdir(), 'git-log-workbench-start-failed-'));
+    temporaryDirectories.push(cwd);
+    const records: GitCommandRecord[] = [];
+    const runner = new GitRunner({
+      executable: join(cwd, 'missing-git-executable'),
+      onCommandRecord: (record) => records.push(record),
+    });
+
+    await expect(runner.run(['--version'], { cwd })).rejects.toMatchObject({
+      name: 'GitCommandError',
+      exitCode: null,
+    });
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ startFailed: true, exitCode: null });
+  });
+
+  it('emits records for cancellation and output-limit exits', async () => {
+    const { GitRunner } = await import('../../src/git/GitRunner');
+    const cwd = await mkdtemp(join(tmpdir(), 'git-log-workbench-limit-records-'));
+    temporaryDirectories.push(cwd);
+    const records: GitCommandRecord[] = [];
+    const runner = new GitRunner({
+      executable: process.execPath,
+      onCommandRecord: (record) => records.push(record),
+    });
+    const abortController = new AbortController();
+    const operation = runner.run(['-e', 'setTimeout(() => {}, 10_000)'], {
+      cwd,
+      signal: abortController.signal,
+    });
+    abortController.abort();
+    await expect(operation).rejects.toMatchObject({ cancelled: true });
+    await expect(
+      runner.run(['-e', 'process.stdout.write("x".repeat(4096))'], {
+        cwd,
+        maxStdoutBytes: 64,
+      }),
+    ).rejects.toThrow('stdout exceeded 64 bytes');
+
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({ cancelled: true, startFailed: false });
+    expect(records[1]).toMatchObject({ startFailed: false });
+  });
+
+  it('never lets a throwing record observer change command execution', async () => {
+    const { GitRunner } = await import('../../src/git/GitRunner');
+    const cwd = await mkdtemp(join(tmpdir(), 'git-log-workbench-throwing-observer-'));
+    temporaryDirectories.push(cwd);
+    const runner = new GitRunner({
+      executable: process.execPath,
+      onCommandRecord: () => {
+        throw new Error('console unavailable');
+      },
+    });
+
+    await expect(runner.run(['-e', 'process.stdout.write("ok")'], { cwd })).resolves.toMatchObject(
+      { exitCode: 0 },
+    );
+    await expect(runner.run(['-e', 'process.exit(3)'], { cwd })).rejects.toMatchObject({
+      exitCode: 3,
+    });
   });
 });

@@ -23,7 +23,7 @@ const DEFAULT_LAYOUT: WorkbenchLayout = {
   filesWidth: 320,
   detailsHeight: 100,
   detailsPlacement: 'bottom',
-  filesViewMode: 'tree',
+  filesViewMode: 'list',
   refsColumnWidth: 150,
   authorColumnWidth: 130,
   dateColumnWidth: 125,
@@ -74,6 +74,7 @@ export class WorkbenchViewProvider implements vscode.WebviewViewProvider, vscode
       scriptUri: scriptUri.toString(),
       styleUri: styleUri.toString(),
       nonce: randomBytes(18).toString('base64url'),
+      locale: vscode.env.language,
     });
 
     const configuration = vscode.workspace.getConfiguration('gitLogWorkbench');

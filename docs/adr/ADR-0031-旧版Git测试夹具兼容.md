@@ -1,9 +1,9 @@
 # ADR-0031: 旧版 Git 测试夹具兼容
 
-**状态：** 提议中
+**状态：** 已接受
 **创建时间：** 2026-11-05
 
-> **当前状态 / 核心结论：** 落地并保留的只有测试夹具的 Git 2.20 兼容改造（`git init` + `symbolic-ref`、`symbolic-ref --short HEAD`、`checkout` 替 `switch`、孤儿分支用例按版本跳过）；原计划的「系统 Git + Git 2.20」CI 矩阵随工作流文件删除而不可执行，发布通道改由本机 `vsce publish` 承载（见 ADR-0033）。下一步：旧版 Git 验证继续靠本机便携版冒烟，如需 CI 矩阵须另行立项。
+> **当前状态 / 核心结论：** 测试夹具的 Git 2.20 兼容改造已落地并验证；「系统 Git + Git 2.20」CI 矩阵随工作流删除而排除，发布通道由本机 `vsce publish` 承载（见 ADR-0033），旧版验证靠本机便携版冒烟。下一步：无需后续动作。
 
 ---
 
@@ -15,7 +15,7 @@ ADR-0024 将最低支持版本降至 2.20，但测试夹具大量使用 `git ini
 
 1. **夹具兼容写法**：`git init -b main` 改为 `git init` + `git symbolic-ref HEAD refs/heads/main`；`git branch --show-current` 断言改为 `git symbolic-ref --short HEAD`；`git switch` 改为 `git checkout`；孤儿分支服务端用例在 Git <2.23 时跳过。生产代码不因此改动。
 2. **版本判断入口**：夹具侧统一用 `test/unit/support/gitVersion.ts` 做版本比较，避免各测试文件自行解析 `git --version`。
-3. **CI 矩阵（不可执行，仅登记）**：原设想 `.github/workflows/ci.yml` 以 `git: [system, '2.20']` 两腿跑 lint / typecheck / unit / build，2.20 从源码构建并缓存。工作流文件已删除，且 ADR-0033 决定不恢复任何工作流，该矩阵不再有执行载体。
+3. **CI 矩阵已排除**：`.github/workflows/ci.yml` 的双版本矩阵没有执行载体；ADR-0033 决定不恢复任何工作流，本 ADR 不为 CI 矩阵保留占位，也不另行立项。
 4. **不做什么**：不增加 2.23 / 2.27 矩阵，不使用容器镜像，不在旧版 Git 上运行集成测试，不为本 ADR 保留占位工作流。
 
 ## 后果
@@ -42,4 +42,4 @@ ADR-0024 将最低支持版本降至 2.20，但测试夹具大量使用 `git ini
 
 ## 下一步
 
-旧版 Git 验证由本机便携版冒烟承担；若要以 CI 矩阵替代，须按 ADR-0033 之外另行立项。
+无需后续动作。

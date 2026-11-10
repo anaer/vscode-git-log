@@ -54,7 +54,7 @@ export const defaultLayout: WorkbenchLayout = {
   filesWidth: 320,
   detailsHeight: 100,
   detailsPlacement: 'bottom',
-  filesViewMode: 'tree',
+  filesViewMode: 'list',
   refsColumnWidth: 150,
   authorColumnWidth: 130,
   dateColumnWidth: 125,

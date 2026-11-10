@@ -38,6 +38,15 @@
 | **下一步提示** | 从 Git 错误输出映射出的一句可执行建议，随错误横幅一起展示（见 ADR-0025） |
 | **中断状态条** | merge / rebase / cherry-pick / revert 未完成时，在日志上方常驻显示当前操作与 Continue / Abort 的横幅（见 ADR-0025） |
 | **Pull 策略** | 显式选择 fast-forward-only / merge / rebase 的拉取方式，覆盖全局 git 配置（见 ADR-0027） |
+| **托管商链接模板** | 由 remote URL 与托管商模板拼出的提交 / 文件 / 行链接，识别不出托管商时不生成（见 ADR-0034） |
+| **Git 控制台** | 记录每条 Git 命令的子命令、参数个数、耗时、退出码与 stderr 摘要的有界内存轨迹，完整 argv 默认不留存（见 ADR-0035） |
+| **内容检索（pickaxe）** | 用 `git log -S` / `-G` 按代码内容而非提交消息检索历史（见 ADR-0036） |
+| **受保护分支** | 默认为 `main` / `master`、禁止强推与改写已推送提交的分支集合，可由配置扩展（见 ADR-0037） |
+| **部分摘取 / 部分还原** | 只把某个提交（或其父提交）中选定的文件或目录恢复到工作区，而非整提交操作（见 ADR-0038） |
+| **推送预览** | 推送前展示待推提交、文件统计、目标分支与标签的确认页（见 ADR-0039） |
+| **自动储藏（autostash）** | 把 rebase / merge / pull 前的脏工作区改动临时 stash、操作后自动还原；失败时必须显式恢复（见 ADR-0040） |
+| **交互式变基 todo** | 由 webview 编辑、经 `GIT_SEQUENCE_EDITOR` 一次性写回的 rebase 指令列表（pick/reword/edit/squash/fixup/drop）（见 ADR-0041） |
+| **界面本地化** | 用 VS Code l10n（`package.nls` + `l10n/` bundle）与 webview 集中字典提供中英文文案；webview 从注入的 `vscode.env.language` 选字典，缺 key 回退英文，Git 原始输出不翻译（见 ADR-0043） |
 
 ## 技术术语
 

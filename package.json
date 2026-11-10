@@ -29,6 +29,7 @@
     "history"
   ],
   "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "activationEvents": [
     "onStartupFinished",
     "onCommand:gitLogWorkbench.openLog",
@@ -39,6 +40,7 @@
     "onCommand:gitLogWorkbench.editor.compareFileWithRef",
     "onCommand:gitLogWorkbench.applyPatch",
     "onCommand:gitLogWorkbench.showDiagnostics",
+    "onCommand:gitLogWorkbench.showGitConsole",
     "onCommand:gitLogWorkbench.config.multiRepo",
     "onCommand:gitLogWorkbench.pull.ffOnly",
     "onCommand:gitLogWorkbench.pull.merge",
@@ -49,74 +51,79 @@
     "commands": [
       {
         "command": "gitLogWorkbench.openLog",
-        "title": "Open Log",
+        "title": "%command.openLog.title%",
         "category": "Git Log",
         "icon": "$(git-branch)"
       },
       {
         "command": "gitLogWorkbench.editor.showLineHistory",
-        "title": "Show History for Current Line",
+        "title": "%command.showLineHistory.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.editor.showSelectionHistory",
-        "title": "Show History for Selection",
+        "title": "%command.showSelectionHistory.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.editor.showFileHistory",
-        "title": "Show File History",
+        "title": "%command.showFileHistory.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.explorer.showFolderHistory",
-        "title": "Show Folder History",
+        "title": "%command.showFolderHistory.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.editor.compareFileWithRef",
-        "title": "Compare File with Branch or Tag…",
+        "title": "%command.compareFileWithRef.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.applyPatch",
-        "title": "Apply Patch…",
+        "title": "%command.applyPatch.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.showDiagnostics",
-        "title": "Show Diagnostics",
+        "title": "%command.showDiagnostics.title%",
+        "category": "Git Log"
+      },
+      {
+        "command": "gitLogWorkbench.showGitConsole",
+        "title": "%command.showGitConsole.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.config.multiRepo",
-        "title": "Configure Multi-Repository Git Settings…",
+        "title": "%command.configMultiRepo.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.pull.ffOnly",
-        "title": "Pull (Fast-forward only)",
+        "title": "%command.pullFfOnly.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.pull.merge",
-        "title": "Pull (Merge)",
+        "title": "%command.pullMerge.title%",
         "category": "Git Log"
       },
       {
         "command": "gitLogWorkbench.pull.rebase",
-        "title": "Pull (Rebase)",
+        "title": "%command.pullRebase.title%",
         "category": "Git Log"
       }
     ],
     "submenus": [
       {
         "id": "gitLogWorkbench.editorContext",
-        "label": "Git Log"
+        "label": "%submenu.gitLog.label%"
       },
       {
         "id": "gitLogWorkbench.explorerContext",
-        "label": "Git Log"
+        "label": "%submenu.gitLog.label%"
       }
     ],
     "menus": {
@@ -194,12 +201,12 @@
       ]
     },
     "configuration": {
-      "title": "Git Log",
+      "title": "%configuration.title%",
       "properties": {
         "gitLogWorkbench.git.path": {
           "type": "string",
           "default": "git",
-          "description": "Path to the Git executable."
+          "description": "%config.gitPath.description%"
         },
         "gitLogWorkbench.pull.strategy": {
           "type": "string",
@@ -210,32 +217,32 @@
             "rebase"
           ],
           "enumDescriptions": [
-            "Use the repository's git configuration.",
-            "Fast-forward only; fail when the branches have diverged.",
-            "Merge the upstream branch.",
-            "Rebase the current branch onto the upstream branch."
+            "%config.pullStrategy.enumDefault.description%",
+            "%config.pullStrategy.enumFfOnly.description%",
+            "%config.pullStrategy.enumMerge.description%",
+            "%config.pullStrategy.enumRebase.description%"
           ],
           "default": "default",
-          "description": "Strategy used by the Pull button. Explicit Pull (Fast-forward only / Merge / Rebase) actions always override this setting."
+          "description": "%config.pullStrategy.description%"
         },
         "gitLogWorkbench.currentLineBlame.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show author, relative time, and commit information after the active editor line. Uncommitted edit times are tracked from document changes and retained in workspace state. Automatically suppressed while VS Code's built-in Git blame editor decoration is enabled."
+          "description": "%config.currentLineBlameEnabled.description%"
         },
         "gitLogWorkbench.lineHistory.contextLines": {
           "type": "number",
           "default": 3,
           "minimum": 0,
           "maximum": 20,
-          "description": "Number of unchanged lines shown above and below changes in current-line history. The tracked Git history remains limited to the current line."
+          "description": "%config.lineHistoryContextLines.description%"
         },
         "gitLogWorkbench.repositories.scanDepth": {
           "type": "number",
           "default": 2,
           "minimum": 0,
           "maximum": 8,
-          "description": "Maximum directory depth used when discovering nested repositories."
+          "description": "%config.repositoriesScanDepth.description%"
         },
         "gitLogWorkbench.repositories.exclude": {
           "type": "array",
@@ -246,7 +253,7 @@
             "**/node_modules/**",
             "**/.worktrees/**"
           ],
-          "description": "Glob patterns excluded from repository discovery."
+          "description": "%config.repositoriesExclude.description%"
         },
         "gitLogWorkbench.log.initialPageSize": {
           "type": "number",
@@ -271,7 +278,7 @@
           "default": 5242880,
           "minimum": 1024,
           "maximum": 104857600,
-          "description": "Maximum historical file size opened in the built-in text diff editor."
+          "description": "%config.maxDiffFileBytes.description%"
         },
         "gitLogWorkbench.debug.logLevel": {
           "type": "string",
@@ -281,6 +288,29 @@
             "debug"
           ],
           "default": "debug"
+        },
+        "gitLogWorkbench.debug.consoleEntries": {
+          "type": "number",
+          "default": 500,
+          "minimum": 0,
+          "maximum": 5000,
+          "description": "%config.debugConsoleEntries.description%"
+        },
+        "gitLogWorkbench.debug.consoleVerbose": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.debugConsoleVerbose.description%"
+        },
+        "gitLogWorkbench.history.protectedBranches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "main",
+            "master"
+          ],
+          "description": "%config.protectedBranches.description%"
         }
       }
     }

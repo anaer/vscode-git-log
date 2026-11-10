@@ -47,5 +47,26 @@ export function buildFileTree(files: readonly ChangedFile[]): FileTreeNode[] {
     children.push({ type: 'file', name: fileName, path: file.path, file });
   }
 
-  return root;
+  return root.map(compressNode);
+}
+
+/** Merges single-child directory chains into one row, e.g. `src / main / java / com`. */
+function compressNode(node: FileTreeNode): FileTreeNode {
+  if (node.type !== 'directory') return node;
+  let name = node.name;
+  let path = node.path;
+  let children = node.children;
+  while (children.length === 1) {
+    const only = children[0];
+    if (!only || only.type !== 'directory') break;
+    name = `${name} / ${only.name}`;
+    path = only.path;
+    children = only.children;
+  }
+  return {
+    type: 'directory',
+    name,
+    path,
+    children: children.map(compressNode),
+  };
 }

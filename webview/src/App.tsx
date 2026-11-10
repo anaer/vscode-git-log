@@ -46,6 +46,7 @@ import { Dialogs } from './Dialogs';
 import { RefsPane } from './RefsPane';
 import { FilesPane } from './FilesPane';
 import { DetailsPane } from './DetailsPane';
+import { t } from './i18n';
 import {
   CommitToolbar,
   GLOBAL_TOOLBAR_ACTIONS,
@@ -349,14 +350,14 @@ function Workbench() {
   const operationState = selectedRepository?.operationState;
   const operationLabel =
     operationState === 'merge'
-      ? 'Merging'
+      ? t('webview.operation.merging')
       : operationState === 'rebase'
-        ? 'Rebasing'
+        ? t('webview.operation.rebasing')
         : operationState === 'cherry-pick'
-          ? 'Cherry-picking'
+          ? t('webview.operation.cherryPicking')
           : operationState === 'revert'
-            ? 'Reverting'
-            : 'Git operation';
+            ? t('webview.operation.reverting')
+            : t('webview.operation.generic');
   const shallowNoticeVisible = Boolean(
     selectedRepository?.isShallow && !selectedRepository.isBare,
   );
@@ -1625,8 +1626,10 @@ function Workbench() {
               <button
                 type="button"
                 className="warning-action"
-                aria-label={`Force delete branch ${state.errorRecovery.action.branch}`}
-                title="Delete this branch even though it contains unmerged commits"
+                aria-label={t('webview.app.forceDeleteAria', {
+                  branch: state.errorRecovery.action.branch,
+                })}
+                title={t('webview.app.forceDeleteTitle')}
                 onClick={() =>
                   runOperation(
                     {
@@ -1638,12 +1641,12 @@ function Workbench() {
                   )
                 }
               >
-                Force Delete
+                {t('webview.app.forceDelete')}
               </button>
             ) : null}
             <button
               type="button"
-              aria-label="Retry Git query"
+              aria-label={t('webview.app.retryQuery')}
               onClick={() =>
                 send({
                   type: 'refresh',
@@ -1652,18 +1655,18 @@ function Workbench() {
                 })
               }
             >
-              Retry
+              {t('webview.app.retry')}
             </button>
             <button
               type="button"
-              aria-label="Show Git output"
+              aria-label={t('webview.app.showOutput')}
               onClick={() => send({ type: 'showOutput', requestId: requestId('output') })}
             >
-              Show Output
+              {t('webview.app.showOutputButton')}
             </button>
             <button
               type="button"
-              aria-label="Copy diagnostic"
+              aria-label={t('webview.app.copyDiagnostic')}
               onClick={() =>
                 send({
                   type: 'copyToClipboard',
@@ -1674,7 +1677,7 @@ function Workbench() {
                 })
               }
             >
-              Copy
+              {t('webview.app.copy')}
             </button>
           </span>
         </div>
@@ -1751,7 +1754,7 @@ function Workbench() {
             shallowNoticeVisible ? ' shallow-active' : ''
           }`}
           role="grid"
-          aria-label="Commit log"
+          aria-label={t('webview.app.commitLog')}
           tabIndex={0}
           style={
             {
@@ -1787,13 +1790,13 @@ function Workbench() {
             <div
               className="operation-status-row"
               role="toolbar"
-              aria-label={`${operationLabel} in progress`}
+              aria-label={t('webview.app.operationInProgress', { operation: operationLabel })}
             >
               <button
                 className="operation-badge"
                 type="button"
-                aria-label="Open Source Control"
-                title="Open Source Control"
+                aria-label={t('webview.filters.openSourceControl')}
+                title={t('webview.filters.openSourceControl')}
                 onClick={() =>
                   send({
                     type: 'openSourceControl',
@@ -1805,10 +1808,14 @@ function Workbench() {
               </button>
               {selectedRepository?.hasUnresolvedConflicts ? (
                 <span className="operation-conflicts" role="status">
-                  Conflicts
+                  {t('webview.app.conflicts')}
                 </span>
               ) : null}
-              <div className="operation-actions" role="group" aria-label={`${operationLabel} actions`}>
+              <div
+                className="operation-actions"
+                role="group"
+                aria-label={t('webview.app.operationActions', { operation: operationLabel })}
+              >
                 {operationState === 'rebase' ? (
                   <>
                     <button
@@ -1820,12 +1827,12 @@ function Workbench() {
                       }
                       title={
                         selectedRepository?.hasUnresolvedConflicts
-                          ? 'Resolve all conflicts before continuing the rebase'
-                          : 'Continue rebase'
+                          ? t('webview.app.resolveConflictsFirst')
+                          : t('webview.app.continueRebase')
                       }
                       onClick={() => runOperation({ kind: 'rebaseContinue' })}
                     >
-                      Continue
+                      {t('webview.app.continue')}
                     </button>
                     <button
                       className="operation-action-button"
@@ -1833,7 +1840,7 @@ function Workbench() {
                       disabled={selectedOperationInFlight}
                       onClick={() => runOperation({ kind: 'rebaseSkip' })}
                     >
-                      Skip
+                      {t('webview.app.skip')}
                     </button>
                   </>
                 ) : null}
@@ -1854,7 +1861,7 @@ function Workbench() {
                     })
                   }
                 >
-                  Abort
+                  {t('webview.app.abort')}
                 </button>
               </div>
             </div>
@@ -1862,16 +1869,18 @@ function Workbench() {
           <div className="log-header-viewport">
             <div className="log-header" role="row" ref={logHeaderRef}>
               <span className="column-header" role="columnheader">
-                Commit
+                {t('webview.app.column.commit')}
                 <div
                   className="column-resizer"
                   role="separator"
-                  aria-label="Resize commit column"
+                  aria-label={t('webview.app.resizeCommitColumn')}
                   aria-orientation="vertical"
                   aria-valuemin={160}
                   aria-valuenow={state.layout.commitColumnWidth}
                   aria-valuetext={
-                    state.layout.commitColumnWidth === undefined ? 'Auto width' : undefined
+                    state.layout.commitColumnWidth === undefined
+                      ? t('webview.app.autoWidth')
+                      : undefined
                   }
                   tabIndex={0}
                   onPointerDown={(event) =>
@@ -1894,11 +1903,11 @@ function Workbench() {
                 />
               </span>
               <span className="column-header" role="columnheader">
-                Author
+                {t('webview.app.column.author')}
                 <div
                   className="column-resizer"
                   role="separator"
-                  aria-label="Resize author column"
+                  aria-label={t('webview.app.resizeAuthorColumn')}
                   aria-orientation="vertical"
                   aria-valuenow={state.layout.authorColumnWidth ?? 130}
                   tabIndex={0}
@@ -1910,11 +1919,11 @@ function Workbench() {
                 />
               </span>
               <span className="column-header" role="columnheader">
-                Date
+                {t('webview.app.column.date')}
                 <div
                   className="column-resizer"
                   role="separator"
-                  aria-label="Resize date column"
+                  aria-label={t('webview.app.resizeDateColumn')}
                   aria-orientation="vertical"
                   aria-valuenow={state.layout.dateColumnWidth ?? 150}
                   tabIndex={0}
@@ -1926,11 +1935,11 @@ function Workbench() {
                 />
               </span>
               <span className="column-header" role="columnheader">
-                Refs
+                {t('webview.app.column.refs')}
                 <div
                   className="column-resizer"
                   role="separator"
-                  aria-label="Resize refs column"
+                  aria-label={t('webview.app.resizeRefsColumn')}
                   aria-orientation="vertical"
                   aria-valuenow={state.layout.refsColumnWidth ?? 150}
                   tabIndex={0}
@@ -1998,7 +2007,7 @@ function Workbench() {
               onLoadMore={loadMore}
             />
           ) : state.loading === 'repositories' || state.loading === 'log' ? (
-            <div className="skeleton-list" role="status" aria-label="Loading Git history">
+            <div className="skeleton-list" role="status" aria-label={t('webview.app.loadingHistory')}>
               {Array.from({ length: 10 }, (_, index) => (
                 <div className="commit-skeleton-row" data-testid="commit-skeleton-row" key={index}>
                   <span className="skeleton-graph" />
@@ -2012,42 +2021,50 @@ function Workbench() {
               <div>
                 <strong>
                   {state.history
-                    ? state.history.notice ?? 'No history found'
+                    ? state.history.notice ?? t('webview.app.noHistory')
                     : state.repositories.length
-                      ? 'No commits found'
-                      : 'No repository selected'}
+                      ? t('webview.app.noCommits')
+                      : t('webview.app.noRepository')}
                 </strong>
                 <span>
                   {state.history
-                    ? 'Try another line, selection, or file.'
+                    ? t('webview.app.tryAnother')
                     : state.repositories.length
-                      ? 'This repository has no commits or the current filters returned no results.'
-                      : 'Open a workspace containing a Git repository.'}
+                      ? t('webview.app.noCommitsDetail')
+                      : t('webview.app.openWorkspace')}
                 </span>
               </div>
             </div>
           )}
           {shallowNoticeVisible ? (
-            <div className="shallow-status-row" role="note" aria-label="History is truncated">
-              <span className="shallow-status-text">
-                This is a shallow clone, so the history below is truncated.
-              </span>
-              <div className="shallow-actions" role="group" aria-label="Fetch more history">
+            <div
+              className="shallow-status-row"
+              role="note"
+              aria-label={t('webview.app.historyTruncated')}
+            >
+              <span className="shallow-status-text">{t('webview.app.shallowNotice')}</span>
+              <div
+                className="shallow-actions"
+                role="group"
+                aria-label={t('webview.app.fetchMore')}
+              >
                 <button
                   className="shallow-action-button"
                   type="button"
                   disabled={selectedOperationInFlight}
-                  title={`Fetch ${String(SHALLOW_DEPTH_STEP)} more commits (git fetch --deepen=${String(SHALLOW_DEPTH_STEP)})`}
+                  title={t('webview.app.fetchMoreCommits', {
+                    count: SHALLOW_DEPTH_STEP,
+                  })}
                   onClick={() => runOperation({ kind: 'fetchFullHistory', depth: SHALLOW_DEPTH_STEP })}
                 >
-                  {`Fetch ${String(SHALLOW_DEPTH_STEP)} more`}
+                  {t('webview.app.fetchMoreButton', { count: SHALLOW_DEPTH_STEP })}
                 </button>
                 <button
                   className="shallow-more-button"
                   type="button"
                   data-popup-trigger="true"
-                  aria-label="More history fetch options"
-                  title="More history fetch options"
+                  aria-label={t('webview.app.moreFetchOptions')}
+                  title={t('webview.app.moreFetchOptions')}
                   aria-haspopup="menu"
                   aria-expanded={shallowMenuExpanded}
                   disabled={selectedOperationInFlight}
@@ -2070,7 +2087,7 @@ function Workbench() {
               className="shallow-menu"
               ref={shallowMenuRef}
               role="menu"
-              aria-label="Fetch more history"
+              aria-label={t('webview.app.fetchMore')}
               style={shallowMenuPosition}
             >
               {SHALLOW_DEPTH_CHOICES.map((depth) => (
@@ -2080,13 +2097,17 @@ function Workbench() {
                   role="menuitem"
                   key={depth}
                   disabled={selectedOperationInFlight}
-                  title={`Add ${String(depth)} commits to the current history (git fetch --deepen=${String(depth)})`}
+                  title={t('webview.app.addCommits', {
+                    count: depth.toLocaleString('en-US'),
+                  })}
                   onClick={() => {
                     setShallowMenuExpanded(false);
                     runOperation({ kind: 'fetchFullHistory', depth });
                   }}
                 >
-                  {`+${depth.toLocaleString('en-US')} commits`}
+                  {t('webview.app.addCommitsButton', {
+                    count: depth.toLocaleString('en-US'),
+                  })}
                 </button>
               ))}
               <div className="shallow-menu-separator" role="separator" />
@@ -2095,13 +2116,13 @@ function Workbench() {
                 type="button"
                 role="menuitem"
                 disabled={selectedOperationInFlight}
-                title="Download the complete history (git fetch --unshallow)"
+                title={t('webview.app.fetchFullHistoryTitle')}
                 onClick={() => {
                   setShallowMenuExpanded(false);
                   runOperation({ kind: 'fetchFullHistory' });
                 }}
               >
-                Fetch full history
+                {t('webview.app.fetchFullHistory')}
               </button>
             </div>
           ) : null}
@@ -2140,7 +2161,7 @@ function Workbench() {
 
       {selectedOperationInFlight ? (
         <div className="operation-status" role="status" aria-live="polite">
-          Running Git operation…
+          {t('webview.app.runningOperation')}
         </div>
       ) : null}
 

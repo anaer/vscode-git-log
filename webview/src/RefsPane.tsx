@@ -5,11 +5,12 @@ import type {
 import type { RefKind, RefLabel, RepositorySummary } from '../../src/shared/models';
 import { buildRefTree, type RefTreeNode } from './buildRefTree';
 import { Archive, ChevronDown, ChevronRight } from './icons';
+import { t } from './i18n';
 
-const refGroups: readonly { label: string; kind: RefKind }[] = [
-  { label: 'Local', kind: 'local' },
-  { label: 'Remote', kind: 'remote' },
-  { label: 'Tags', kind: 'tag' },
+const refGroups: readonly { labelKey: string; kind: RefKind }[] = [
+  { labelKey: 'webview.refs.group.local', kind: 'local' },
+  { labelKey: 'webview.refs.group.remote', kind: 'remote' },
+  { labelKey: 'webview.refs.group.tag', kind: 'tag' },
 ];
 
 function collectFolderLeafRefs(nodes: readonly RefTreeNode[]): RefLabel[] {
@@ -53,6 +54,7 @@ function RefTreeNodes({
     if (node.type === 'directory') {
       const folderKey = `${folderKeyPrefix}:${node.id}`;
       const collapsed = !forceExpanded && collapsedFolders.has(folderKey);
+      const groupLabel = t(group.labelKey);
       return (
         <div
           className="ref-tree-directory"
@@ -60,8 +62,8 @@ function RefTreeNodes({
           role="group"
           aria-label={
             group.kind === 'remote' && depth === 0
-              ? `Remote ${node.name}`
-              : `${group.label} folder ${node.path}`
+              ? t('webview.refs.remoteFolder', { name: node.name })
+              : t('webview.refs.folder', { group: groupLabel, path: node.path })
           }
           key={node.id}
         >
@@ -72,8 +74,14 @@ function RefTreeNodes({
             aria-expanded={!collapsed}
             aria-label={
               forceExpanded
-                ? `${group.label} folder ${node.path} (expanded while filtering)`
-                : `${collapsed ? 'Expand' : 'Collapse'} ${group.label} folder ${node.path}`
+                ? t('webview.refs.folderExpanded', { group: groupLabel, path: node.path })
+                : t('webview.refs.toggleFolder', {
+                    state: t(
+                      collapsed ? 'webview.action.expand' : 'webview.action.collapse',
+                    ),
+                    group: groupLabel,
+                    path: node.path,
+                  })
             }
             disabled={forceExpanded}
             onClick={() => onToggleFolder(folderKey)}
@@ -125,7 +133,7 @@ function RefTreeNodes({
         <span className="ref-folder-chevron" aria-hidden="true" />
         <span className="ref-name">{node.name}</span>
         {group.kind === 'tag' && !ref.pushedTo?.length ? (
-          <span className="tag-local" title="Not pushed to any remote">
+          <span className="tag-local" title={t('webview.refs.notPushed')}>
             *
           </span>
         ) : null}
@@ -206,13 +214,13 @@ export function RefsPane({
 
   return (
     <>
-      <nav className="refs-pane pane" aria-label="Git references" hidden={hidden}>
+      <nav className="refs-pane pane" aria-label={t('webview.refs.pane')} hidden={hidden}>
         <div className="refs-toolbar">
           <label className="refs-search-bar field">
             <input
               type="search"
-              aria-label="Filter branches"
-              placeholder="Filter branches"
+              aria-label={t('webview.refs.filterPlaceholder')}
+              placeholder={t('webview.refs.filterPlaceholder')}
               value={refSearch}
               onChange={(event) => onRefSearchChange(event.target.value)}
               onKeyDown={(event) => {
@@ -225,12 +233,12 @@ export function RefsPane({
           </label>
         </div>
         <div className="pane-heading refs-heading">
-          <span>Branches</span>
+          <span>{t('webview.refs.heading')}</span>
           <button
             type="button"
             className="pane-heading-action"
-            title="Clean up branches"
-            aria-label="Clean up branches"
+            title={t('webview.refs.cleanup')}
+            aria-label={t('webview.refs.cleanup')}
             disabled={!selectedRepository || Boolean(selectedRepository.operationState)}
             onClick={onOpenBranchCleanup}
           >
@@ -296,7 +304,7 @@ export function RefsPane({
                   <span className="ref-folder-chevron" aria-hidden="true">
                     {collapsed ? ChevronRight : ChevronDown}
                   </span>
-                  <span>{group.label}</span>
+                  <span>{t(group.labelKey)}</span>
                   <span className="ref-count">{groupRefs.length}</span>
                 </button>
                 {!collapsed ? (
@@ -323,7 +331,7 @@ export function RefsPane({
       <div
         className="pane-resizer vertical refs-resizer"
         role="separator"
-        aria-label="Resize references pane"
+        aria-label={t('webview.refs.resize')}
         aria-orientation="vertical"
         aria-valuemin={160}
         aria-valuenow={refsWidth}

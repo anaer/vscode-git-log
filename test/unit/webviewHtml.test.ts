@@ -21,4 +21,31 @@ describe('createWebviewHtml', () => {
     expect(html).toContain('dist/webview.js');
     expect(html).toContain('dist/webview.css');
   });
+
+  it('defaults to English when no locale is supplied', async () => {
+    const { createWebviewHtml } = await import('../../src/webview/createWebviewHtml');
+    const html = createWebviewHtml({
+      cspSource: 'vscode-webview://test',
+      scriptUri: 'vscode-webview://test/dist/webview.js',
+      styleUri: 'vscode-webview://test/dist/webview.css',
+      nonce: 'fixed-nonce',
+    });
+
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain('<meta name="vscode-locale" content="en" />');
+  });
+
+  it('injects the VS Code display language for the webview dictionary', async () => {
+    const { createWebviewHtml } = await import('../../src/webview/createWebviewHtml');
+    const html = createWebviewHtml({
+      cspSource: 'vscode-webview://test',
+      scriptUri: 'vscode-webview://test/dist/webview.js',
+      styleUri: 'vscode-webview://test/dist/webview.css',
+      nonce: 'fixed-nonce',
+      locale: 'zh-cn',
+    });
+
+    expect(html).toContain('<html lang="zh-cn">');
+    expect(html).toContain('<meta name="vscode-locale" content="zh-cn" />');
+  });
 });

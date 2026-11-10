@@ -271,7 +271,7 @@ describe('workbench styles', () => {
     const dialogs = await readFile('webview/src/Dialogs.tsx', 'utf8');
 
     expect(dialogs).toContain('className="stash-dialog-close"');
-    expect(dialogs).toContain('aria-label="Close stash manager"');
+    expect(dialogs).toContain('aria-label={t("webview.stash.closeAria")}');
     expect(styles).toMatch(
       /\.stash-dialog\s*\{[^}]*position:\s*relative;[^}]*width:\s*min\(920px, calc\(100vw - 32px\)\);[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/su,
     );

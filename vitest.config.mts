@@ -5,6 +5,7 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 30000,
     include: ['test/unit/**/*.test.ts', 'test/unit/**/*.test.tsx', 'test/performance/**/*.test.ts'],
+    setupFiles: ['test/support/vscodeMock.ts'],
     coverage: {
       reporter: ['text', 'html'],
     },
