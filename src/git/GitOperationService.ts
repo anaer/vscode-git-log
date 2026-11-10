@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { normalize, join } from 'node:path';
+import { normalize, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { MAX_FETCH_DEPTH, type GitOperationRequest } from '../protocol/messages';
@@ -23,6 +23,8 @@ export interface GitOperationResult {
   cancelled?: boolean;
   /** Ref names removed by a batch deletion, so callers can drop them from their filters. */
   deletedRefs?: string[];
+  /** Text the caller should place on the clipboard, such as a commit message removed from history. */
+  clipboardText?: string;
 }
 
 export interface GitOperationRunOptions {
@@ -265,6 +267,8 @@ export function buildOperationArguments(
     case 'squashCommits':
     case 'editCommitMessages':
     case 'rewriteAuthorIdentity':
+    case 'undoLastCommit':
+    case 'fixupCommit':
       throw new Error(`${operation.kind} requires a validated history rewrite plan.`);
     case 'abortCherryPick':
       return ['cherry-pick', '--abort'];
@@ -471,6 +475,22 @@ function buildOperationConfirmation(
       destructive: true,
     };
   }
+  if (operation.kind === 'undoLastCommit') {
+    return {
+      title: 'Undo the last commit?',
+      detail: `Repository “${repository.displayName}” will move HEAD back one commit. The commit's changes stay staged, and its message is copied to the clipboard.`,
+      confirmLabel: 'Undo Commit',
+      destructive: true,
+    };
+  }
+  if (operation.kind === 'fixupCommit') {
+    return {
+      title: 'Fix up this commit into its parent?',
+      detail: `Repository “${repository.displayName}” will combine the selected commit with its parent, keep the parent's message, and rewrite every newer commit on the current branch.`,
+      confirmLabel: 'Fix Up Commit',
+      destructive: true,
+    };
+  }
   if (operation.kind === 'amendCommit') {
     return {
       title: 'Amend the current HEAD commit?',
@@ -538,6 +558,16 @@ interface CommitPatchPlan {
   expectedHead: string;
   messageEdits: Map<string, string>;
   identityEdits: Map<string, AuthorIdentity>;
+  fixup?: { child: string; parent: string; tree: string; affected: string[] };
+  confirmedPushed?: PushedRewriteInfo;
+}
+
+interface UndoLastCommitPlan {
+  cwd: string;
+  branch: string;
+  expectedHead: string;
+  parent: string;
+  message: string;
 }
 
 interface BatchDeletionOutcome {
@@ -1012,13 +1042,26 @@ export class GitOperationService {
         if (operation.kind === 'deleteRemoteBranch') {
           await this.validateRemoteBranchDeletion(freshRepository, operation.remote, operation.branch);
         }
-        const guard = await this.assessGuard(freshRepository, operation);
+        let commitPatchPlan = operation.kind === 'fixupCommit'
+          ? await this.planCommitPatch(freshRepository, operation)
+          : undefined;
+        const guard = await this.assessGuard(
+          commitPatchPlan ? { ...freshRepository, currentBranch: commitPatchPlan.branch } : freshRepository,
+          operation,
+          commitPatchPlan?.fixup?.affected,
+        );
         if (guard.blocked) throw new Error(guard.blocked);
+        if (commitPatchPlan) {
+          commitPatchPlan.confirmedPushed = guard.pushedRewrite ?? { count: 0, branches: [], uncertain: false };
+        }
         let rewritePlan: CommitRangeRewritePlan | undefined;
         if (operation.kind === 'dropCommits' || operation.kind === 'squashCommits') {
           rewritePlan = await this.planCommitRangeRewrite(freshRepository, operation.hashes);
         }
-        let commitPatchPlan: CommitPatchPlan | undefined;
+        let undoPlan: UndoLastCommitPlan | undefined;
+        if (operation.kind === 'undoLastCommit') {
+          undoPlan = await this.planUndoLastCommit(freshRepository, operation.hash);
+        }
         if (
           operation.kind === 'editCommitMessages' ||
           operation.kind === 'rewriteAuthorIdentity'
@@ -1075,7 +1118,10 @@ export class GitOperationService {
           if (!(await options.confirm(confirmation))) return { message: '', cancelled: true };
         }
         if (rewritePlan) {
-          if (operation.kind !== 'dropCommits' && operation.kind !== 'squashCommits') {
+          if (
+            operation.kind !== 'dropCommits' &&
+            operation.kind !== 'squashCommits'
+          ) {
             throw new Error('Invalid commit history rewrite operation.');
           }
           await this.assertRewritePlanStillCurrent(rewritePlan);
@@ -1105,7 +1151,10 @@ export class GitOperationService {
               'The current branch or HEAD changed during confirmation; select the commits again.',
             );
           }
-          commitPatchPlan = revalidatedCommitPatchPlan;
+          commitPatchPlan = {
+            ...revalidatedCommitPatchPlan,
+            ...(commitPatchPlan.confirmedPushed ? { confirmedPushed: commitPatchPlan.confirmedPushed } : {}),
+          };
         }
         if (rewritePlan && preparedOperation.kind === 'dropCommits') {
           await this.rebaseCommitRange(rewritePlan, rewritePlan.baseParent);
@@ -1117,6 +1166,12 @@ export class GitOperationService {
           await this.rebaseCommitRange(rewritePlan, squashedHash);
         } else if (commitPatchPlan) {
           await this.applyCommitPatch(commitPatchPlan);
+        } else if (undoPlan) {
+          await this.assertUndoStillCurrent(undoPlan);
+          await this.runner.run(['reset', '--soft', undoPlan.parent, '--'], {
+            cwd: undoPlan.cwd,
+            timeoutMs: 60_000,
+          });
         } else if (preparedOperation.kind === 'deleteBranches') {
           batchDeletion = await this.deleteBranches(
             preparedOperation.branches,
@@ -1183,6 +1238,15 @@ export class GitOperationService {
             message: `Pushed tag ${preparedOperation.name} to ${preparedOperation.remote ?? ''}.`,
           };
         }
+        if (preparedOperation.kind === 'undoLastCommit' && undoPlan) {
+          return {
+            message: `Undid commit ${undoPlan.expectedHead.slice(0, 7)} and kept its changes staged.`,
+            clipboardText: undoPlan.message,
+          };
+        }
+        if (preparedOperation.kind === 'fixupCommit') {
+          return { message: `Fixed up ${preparedOperation.hash.slice(0, 7)} into its parent.` };
+        }
         return { message: `${operation.kind} completed.` };
       });
     const tail = execution.then(
@@ -1201,7 +1265,7 @@ export class GitOperationService {
     return process.platform === 'win32' ? path.toLowerCase() : path;
   }
 
-  /** One bounded query per operation; any failure falls back to "all targets are pushed". */
+  /** Bounded remote-tracking queries; any failure treats all targets as pushed. */
   private async inspectPushedRewrite(
     cwd: string,
     hashes: readonly string[],
@@ -1213,7 +1277,8 @@ export class GitOperationService {
         timeoutMs: 30_000,
         maxStdoutBytes: 64 * 1024,
       });
-      const fullHashes = expanded.stdout.toString('utf8').trim().split(/\r?\n/u).filter(Boolean);
+      const fullHashes = expanded.stdout.toString('utf8').trim().split(/\r?\n/u).filter(Boolean).map(validateHash);
+      if (fullHashes.length !== hashes.length) throw new Error('Incomplete commit resolution.');
       const revList = await this.runner.run(['rev-list', ...fullHashes, '--not', '--remotes'], {
         cwd,
         timeoutMs: 30_000,
@@ -1221,31 +1286,32 @@ export class GitOperationService {
       });
       const unpushed = new Set(revList.stdout.toString('utf8').split(/\r?\n/u).filter(Boolean));
       const pushed = fullHashes.filter((hash) => !unpushed.has(hash));
-      const firstPushed = pushed[0];
-      if (!firstPushed) return { count: 0, branches: [], uncertain: false };
-      const branchesResult = await this.runner.run(
-        ['branch', '-r', '--contains', firstPushed, '--format=%(refname:short)'],
-        { cwd, timeoutMs: 30_000, maxStdoutBytes: 16 * 1024 },
-      );
-      const branches = branchesResult.stdout
-        .toString('utf8')
-        .split(/\r?\n/u)
-        .map((line) => line.trim())
-        .filter(Boolean);
-      return { count: pushed.length, branches, uncertain: false };
+      const commits: { hash: string; branches: string[] }[] = [];
+      for (const hash of pushed) {
+        const branchesResult = await this.runner.run(
+          ['branch', '-r', '--contains', hash, '--format=%(refname:short)'],
+          { cwd, timeoutMs: 30_000, maxStdoutBytes: 16 * 1024 },
+        );
+        const branches = branchesResult.stdout.toString('utf8').split(/\r?\n/u)
+          .map((line) => line.trim()).filter(Boolean);
+        if (branches.length === 0) throw new Error('Remote tracking refs changed during inspection.');
+        commits.push({ hash, branches });
+      }
+      return { count: pushed.length, branches: [...new Set(commits.flatMap((commit) => commit.branches))], uncertain: false, commits };
     } catch {
-      return { count: hashes.length, branches: [], uncertain: true };
+      return { count: hashes.length, branches: [], uncertain: true, commits: hashes.map((hash) => ({ hash, branches: [] })) };
     }
   }
 
   private async assessGuard(
     repository: RepositorySummary,
     operation: GitOperationRequest,
+    targetHashes = operationTargetHashes(operation),
   ): Promise<GuardAssessment> {
     if (!isGuardedOperation(operation)) return {};
     const pushedRewrite = await this.inspectPushedRewrite(
       fileURLToPath(repository.rootUri),
-      operationTargetHashes(operation),
+      targetHashes,
     );
     return assessHistoryGuard(
       repository.currentBranch,
@@ -1253,6 +1319,74 @@ export class GitOperationService {
       operation,
       pushedRewrite,
     );
+  }
+
+  /** Reads a raw commit message, removing only one terminating newline. */
+  private async readCommitMessage(cwd: string, hash: string): Promise<string> {
+    const result = await this.runner.run(['cat-file', 'commit', validateHash(hash)], {
+      cwd,
+      timeoutMs: 30_000,
+      maxStdoutBytes: 100 * 1024,
+    });
+    const separator = result.stdout.indexOf(Buffer.from('\n\n', 'utf8'));
+    if (separator < 0) throw new Error('The commit message could not be read.');
+    return result.stdout.subarray(separator + 2).toString('utf8').replace(/\r?\n$/u, '');
+  }
+
+  private async planUndoLastCommit(
+    repository: RepositorySummary,
+    requestedHash: string,
+  ): Promise<UndoLastCommitPlan> {
+    const cwd = fileURLToPath(repository.rootUri);
+    const headResult = await this.runner.run(['rev-parse', '--verify', 'HEAD'], {
+      cwd,
+      timeoutMs: 30_000,
+      maxStdoutBytes: 4096,
+    });
+    const expectedHead = validateHash(headResult.stdout.toString('utf8').trim());
+    const targetResult = await this.runner.run(
+      ['rev-parse', '--verify', `${validateHash(requestedHash)}^{commit}`],
+      { cwd, timeoutMs: 30_000, maxStdoutBytes: 4096 },
+    );
+    if (targetResult.stdout.toString('utf8').trim() !== expectedHead) {
+      throw new Error('Only the current HEAD commit can be undone; reopen the menu and try again.');
+    }
+    const branch = await this.readCurrentBranch(cwd);
+    if (!branch) throw new Error('Undo is unavailable while HEAD is detached.');
+    await this.assertCommitPatchStillCurrent({ cwd, branch, expectedHead });
+    const parentsResult = await this.runner.run(['rev-list', '-1', '--parents', expectedHead], {
+      cwd, timeoutMs: 30_000, maxStdoutBytes: 4096,
+    });
+    const parent = parentsResult.stdout.toString('utf8').trim().split(/\s+/u)[1];
+    if (!parent) throw new Error('The previous commit is unavailable; HEAD is the root commit.');
+    return {
+      cwd,
+      branch,
+      expectedHead,
+      parent: validateHash(parent),
+      message: await this.readCommitMessage(cwd, expectedHead),
+    };
+  }
+
+  private async assertUndoStillCurrent(plan: UndoLastCommitPlan): Promise<void> {
+    await this.assertCommitPatchStillCurrent(plan);
+    const pushed = await this.inspectPushedRewrite(plan.cwd, [plan.expectedHead]);
+    const guard = assessHistoryGuard(plan.branch, this.protectedBranches,
+      { kind: 'undoLastCommit', hash: plan.expectedHead }, pushed);
+    if (guard.blocked) throw new Error(guard.blocked);
+    await this.assertBranchHeadStillCurrent(plan);
+  }
+
+  private async assertBranchHeadStillCurrent(
+    plan: Pick<CommitPatchPlan, 'cwd' | 'branch' | 'expectedHead'>,
+  ): Promise<void> {
+    const [branch, headResult] = await Promise.all([
+      this.readCurrentBranch(plan.cwd),
+      this.runner.run(['rev-parse', '--verify', 'HEAD'], { cwd: plan.cwd, timeoutMs: 30_000 }),
+    ]);
+    if (branch !== plan.branch || headResult.stdout.toString('utf8').trim() !== plan.expectedHead) {
+      throw new Error('The current branch or HEAD changed during confirmation; select the commits again.');
+    }
   }
 
   private async planCommitRangeRewrite(
@@ -1395,7 +1529,7 @@ export class GitOperationService {
     const cwd = fileURLToPath(repository.rootUri);
     const branch = await this.readCurrentBranch(cwd);
     if (!branch) throw new Error('Commit history rewriting is unavailable while HEAD is detached.');
-    if (operation.kind !== 'editCommitMessages' && operation.kind !== 'rewriteAuthorIdentity') {
+    if (operation.kind !== 'editCommitMessages' && operation.kind !== 'rewriteAuthorIdentity' && operation.kind !== 'fixupCommit') {
       throw new Error('Invalid commit history rewrite operation.');
     }
     const headResult = await this.runner.run(['rev-parse', '--verify', 'HEAD'], {
@@ -1403,6 +1537,40 @@ export class GitOperationService {
       timeoutMs: 30_000,
     });
     const expectedHead = validateHash(headResult.stdout.toString('utf8').trim());
+    if (operation.kind === 'fixupCommit') {
+      await this.assertCommitPatchStillCurrent({ cwd, branch, expectedHead });
+      const targetResult = await this.runner.run(
+        ['rev-parse', '--verify', `${validateHash(operation.hash)}^{commit}`],
+        { cwd, timeoutMs: 30_000, maxStdoutBytes: 4096 },
+      );
+      const child = validateHash(targetResult.stdout.toString('utf8').trim());
+      const historyResult = await this.runner.run(['rev-list', '--first-parent', '--parents', expectedHead], {
+        cwd, timeoutMs: 30_000,
+      });
+      const rows = historyResult.stdout.toString('utf8').trim().split(/\r?\n/u)
+        .filter(Boolean).map((line) => line.split(/\s+/u));
+      const index = rows.findIndex(([hash]) => hash === child);
+      if (index < 0) throw new Error('Fixup must select a commit on the current branch first-parent history.');
+      const parent = rows[index]?.[1];
+      if (!parent) throw new Error('The selected commit has no parent to fix up into.');
+      const affected = rows.slice(0, index + 2);
+      if (affected.some((row) => row.length > 2)) {
+        throw new Error('Commit history rewriting is unavailable across merge commits.');
+      }
+      if (rows[index + 1]?.[0] !== parent) throw new Error('The parent commit is unavailable.');
+      const treeResult = await this.runner.run(['rev-parse', `${child}^{tree}`], {
+        cwd, timeoutMs: 30_000, maxStdoutBytes: 4096,
+      });
+      return {
+        cwd,
+        branch: validateToken(branch, 'branch name'),
+        expectedHead,
+        messageEdits: new Map(),
+        identityEdits: new Map(),
+        fixup: { child, parent, tree: validateHash(treeResult.stdout.toString('utf8').trim()),
+          affected: affected.map(([hash]) => validateHash(hash ?? '')) },
+      };
+    }
     const logResult = await this.runner.run(['log', '-100', '--format=%H', expectedHead], {
       cwd,
       timeoutMs: 30_000,
@@ -1470,6 +1638,7 @@ export class GitOperationService {
       if (
         plan.messageEdits.has(oid) ||
         plan.identityEdits.has(oid) ||
+        plan.fixup?.parent === oid ||
         parents.some((parent) => affected.has(parent))
       ) {
         affected.add(oid);
@@ -1478,6 +1647,12 @@ export class GitOperationService {
     }
     const mapping = new Map<string, string>();
     for (const oid of work) {
+      if (plan.fixup?.child === oid) {
+        const parent = mapping.get(plan.fixup.parent);
+        if (!parent) throw new Error('The fixup parent could not be rewritten.');
+        mapping.set(oid, parent);
+        continue;
+      }
       const rawResult = await this.runner.run(['cat-file', 'commit', oid], {
         cwd: plan.cwd,
         timeoutMs: 30_000,
@@ -1502,7 +1677,9 @@ export class GitOperationService {
           headerLineStartsWith(line, 'gpgsig-sha256 ') ||
           headerLineStartsWith(line, 'mergetag ');
         if (skip) continue;
-        if (headerLineStartsWith(line, 'parent ')) {
+        if (plan.fixup?.parent === oid && headerLineStartsWith(line, 'tree ')) {
+          output.push(Buffer.from(`tree ${plan.fixup.tree}\n`, 'utf8'));
+        } else if (headerLineStartsWith(line, 'parent ')) {
           const parent = line.subarray('parent '.length).toString('latin1');
           const mapped = mapping.get(parent);
           output.push(
@@ -1535,7 +1712,9 @@ export class GitOperationService {
     return { affected: work, mapping };
   }
 
-  private async assertCommitPatchStillCurrent(plan: CommitPatchPlan): Promise<void> {
+  private async assertCommitPatchStillCurrent(
+    plan: Pick<CommitPatchPlan, 'cwd' | 'branch' | 'expectedHead'>,
+  ): Promise<void> {
     const [branch, headResult, shallowResult, conflictsResult] = await Promise.all([
       this.readCurrentBranch(plan.cwd),
       this.runner.run(['rev-parse', '--verify', 'HEAD'], { cwd: plan.cwd, timeoutMs: 30_000 }),
@@ -1572,7 +1751,7 @@ export class GitOperationService {
       });
       const markerPath = pathResult.stdout.toString('utf8').trim();
       if (markerPath.includes('..')) throw new Error(`Unusable Git marker path: ${marker}`);
-      if (await this.pathExists(normalize(join(plan.cwd, markerPath)))) {
+      if (await this.pathExists(resolve(plan.cwd, markerPath))) {
         throw new Error('Finish the active Git operation before rewriting.');
       }
     }
@@ -1614,8 +1793,29 @@ export class GitOperationService {
     return `${prefix}/${stamp}-${randomBytes(3).toString('hex')}`;
   }
 
+  private async assertFixupGuardStillCurrent(plan: CommitPatchPlan): Promise<void> {
+    if (!plan.fixup) return;
+    const pushed = await this.inspectPushedRewrite(plan.cwd, plan.fixup.affected);
+    const guard = assessHistoryGuard(plan.branch, this.protectedBranches,
+      { kind: 'fixupCommit', hash: plan.fixup.child }, pushed);
+    if (guard.blocked) throw new Error(guard.blocked);
+    const confirmed = plan.confirmedPushed;
+    if (!confirmed || !pushed) throw new Error('Fixup requires a confirmed pushed-history assessment.');
+    if (!confirmed.uncertain && (
+      pushed.uncertain || pushed.count > confirmed.count ||
+      pushed.commits?.some((commit) => {
+        const previous = confirmed.commits?.find((entry) => entry.hash === commit.hash);
+        return !previous || commit.branches.some((branch) => !previous.branches.includes(branch));
+      })
+    )) {
+      throw new Error('Remote tracking state changed during confirmation; review the pushed commits again.');
+    }
+  }
+
   private async applyCommitPatch(plan: CommitPatchPlan): Promise<void> {
     await this.assertCommitPatchStillCurrent(plan);
+    await this.assertFixupGuardStillCurrent(plan);
+    await this.assertBranchHeadStillCurrent(plan);
     const backup = this.timestampedBranchName(
       plan.identityEdits.size > 0 ? 'identity-rewrite-backup' : 'commit-rewrite-backup',
     );
@@ -1630,7 +1830,10 @@ export class GitOperationService {
     const newTip = mapping.get(plan.expectedHead);
     if (!newTip) throw new Error('The current branch tip could not be rewritten.');
     await this.assertCommitPatchStillCurrent(plan);
-    const label = plan.identityEdits.size > 0 ? 'rewrite author identity' : 'rewrite commit messages';
+    await this.assertFixupGuardStillCurrent(plan);
+    await this.assertBranchHeadStillCurrent(plan);
+    const label = plan.fixup ? 'fixup into parent'
+      : plan.identityEdits.size > 0 ? 'rewrite author identity' : 'rewrite commit messages';
     await this.runner.run(
       ['update-ref', '-m', `Git Log: ${label} (backup ${backup})`, `refs/heads/${plan.branch}`, newTip, plan.expectedHead],
       { cwd: plan.cwd, timeoutMs: 30_000 },

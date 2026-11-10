@@ -1463,11 +1463,32 @@ export class WorkbenchController {
       });
       return;
     }
+    let completionMessage = result.message;
+    if (result.clipboardText !== undefined) {
+      let copied = false;
+      if (this.options.copyToClipboard) {
+        try {
+          await this.options.copyToClipboard(result.clipboardText);
+          copied = true;
+        } catch {
+          // Clipboard failure must not turn a completed Git operation into a retryable failure.
+        }
+      }
+      completionMessage += copied
+        ? ' The commit message was copied to the clipboard.'
+        : ' The commit message could not be copied.';
+      completionMessage += ` Original message:\n${result.clipboardText}`;
+      try {
+        this.options.showInformationMessage?.(completionMessage);
+      } catch {
+        // Notification failure must not make a completed Git operation retryable.
+      }
+    }
     await this.options.postMessage({
       type: 'operationCompleted',
       requestId: message.requestId,
       repositoryId: repository.id,
-      message: result.message,
+      message: completionMessage,
     });
   }
 

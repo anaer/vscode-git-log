@@ -19,7 +19,7 @@ async function readWebviewSources(): Promise<string> {
 }
 
 describe('reduced feature surface', () => {
-  it('keeps only stash management and Amend HEAD from the current feature work', async () => {
+  it('keeps supported history actions without restoring deferred features', async () => {
     const [app, protocol, packageJson] = await Promise.all([
       readWebviewSources(),
       readFile('src/protocol/messages.ts', 'utf8'),
@@ -30,6 +30,10 @@ describe('reduced feature surface', () => {
     expect(app).toContain('Amend HEAD…');
     expect(protocol).toContain("kind: 'createStash'");
     expect(protocol).toContain("kind: 'amendCommit'");
+    expect(protocol).toContain("kind: 'undoLastCommit'");
+    expect(protocol).toContain("kind: 'fixupCommit'");
+    expect(app).toContain('Undo Last Commit');
+    expect(app).toContain('Fixup into Parent…');
 
     for (const removedUi of [
       'Compare revisions',
@@ -43,7 +47,6 @@ describe('reduced feature surface', () => {
 
     for (const removedProtocol of [
       "kind: 'continueOperation'",
-      "kind: 'fixupCommit'",
       "kind: 'interactiveRebase'",
       "type: 'openConflictFile'",
       "type: 'openRevisionComparison'",

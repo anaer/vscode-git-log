@@ -619,6 +619,7 @@ describe('WorkbenchApp', () => {
     expect(within(menu).queryByRole('menuitem', { name: 'Checkout Revision' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Drop Commits…' })).toBeEnabled();
     expect(within(menu).getByRole('menuitem', { name: 'Squash Commits…' })).toBeEnabled();
+    expect(within(menu).getByRole('menuitem', { name: 'Fixup into Parent…' })).toBeDisabled();
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Drop Commits…' }));
 
     expect(postedMessages.at(-1)).toMatchObject({
@@ -712,6 +713,125 @@ describe('WorkbenchApp', () => {
         message: 'combined commit message',
       },
     });
+  });
+
+  it('fixes up a single selected commit into its parent', () => {
+    const { middle } = initializeCommitRangeFixture();
+    const middleRow = screen.getByText('middle commit').closest('[role="row"]') as HTMLElement;
+
+    fireEvent.click(middleRow);
+    fireEvent.contextMenu(middleRow);
+    const menu = screen.getByRole('menu', { name: 'commit actions' });
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Fixup into Parent…' }));
+
+    expect(postedMessages.at(-1)).toMatchObject({
+      type: 'runOperation',
+      repositoryId: 'repo-commit-range',
+      operation: { kind: 'fixupCommit', hash: middle },
+    });
+  });
+
+  it('disables Undo Last Commit once the current branch tip is pushed', () => {
+    const { newest, commits } = initializeCommitRangeFixture();
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'repositoryData',
+            requestId: 'undo-refs',
+            repositoryId: 'repo-commit-range',
+            refs: [
+              {
+                fullName: 'refs/heads/main',
+                shortName: 'main',
+                kind: 'local',
+                target: newest,
+                ahead: 0,
+                behind: 0,
+                isCurrent: true,
+                upstream: 'origin/main',
+              },
+            ],
+            commits,
+            filters: { text: '', branches: [], authors: [], paths: [] },
+            replace: true,
+            hasMore: false,
+          },
+        }),
+      );
+    });
+
+    fireEvent.contextMenu(screen.getByTitle(newest));
+    const menu = screen.getByRole('menu', { name: 'head actions' });
+    const undo = within(menu).getByRole('menuitem', { name: 'Undo Last Commit' });
+    expect(undo).toBeDisabled();
+    expect(undo).toHaveAttribute(
+      'title',
+      'HEAD has already been pushed; create a new branch instead',
+    );
+  });
+
+  it('requests undo for the current HEAD and disables it while an operation is pending', () => {
+    const { newest } = initializeCommitRangeFixture();
+    fireEvent.contextMenu(screen.getByTitle(newest));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Undo Last Commit' }));
+    expect(postedMessages.at(-1)).toMatchObject({
+      type: 'runOperation',
+      repositoryId: 'repo-commit-range',
+      operation: { kind: 'undoLastCommit', hash: newest },
+    });
+    fireEvent.contextMenu(screen.getByTitle(newest));
+    expect(screen.getByRole('menuitem', { name: 'Undo Last Commit' })).toBeDisabled();
+  });
+
+  it('disables undo when a remote ref contains HEAD even without an upstream', () => {
+    const { newest, commits } = initializeCommitRangeFixture();
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          type: 'repositoryData',
+          requestId: 'undo-remote-tip',
+          repositoryId: 'repo-commit-range',
+          refs: [{
+            fullName: 'refs/remotes/origin/topic',
+            shortName: 'origin/topic',
+            kind: 'remote',
+            target: newest,
+          }],
+          commits,
+          filters: { text: '', branches: [], authors: [], paths: [] },
+          replace: true,
+          hasMore: false,
+        },
+      }));
+    });
+    fireEvent.contextMenu(screen.getByTitle(newest));
+    expect(screen.getByRole('menuitem', { name: 'Undo Last Commit' })).toBeDisabled();
+  });
+
+  it('disables fixup for root and merge commits', () => {
+    const { commits, oldest } = initializeCommitRangeFixture();
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          type: 'repositoryData',
+          requestId: 'fixup-boundaries',
+          repositoryId: 'repo-commit-range',
+          refs: [],
+          commits: commits.map((commit, index) => ({
+            ...commit,
+            parents: index === 0 ? [commits[1]!.hash, oldest] : index === 2 ? [] : commit.parents,
+          })),
+          filters: { text: '', branches: [], authors: [], paths: [] },
+          replace: true,
+          hasMore: false,
+        },
+      }));
+    });
+    for (const subject of ['oldest commit', 'newest commit']) {
+      fireEvent.contextMenu(screen.getByText(subject).closest('[role="row"]') as HTMLElement);
+      expect(screen.getByRole('menuitem', { name: 'Fixup into Parent…' })).toBeDisabled();
+    }
   });
 
   it('extends the contiguous commit selection with Shift+Arrow keys', () => {
@@ -5057,6 +5177,7 @@ describe('WorkbenchApp', () => {
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Branch…' })).toBeEnabled();
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Tag…' })).toBeEnabled();
     expect(within(headMenu).getByRole('menuitem', { name: 'Create Orphan Branch…' })).toBeEnabled();
+    expect(within(headMenu).getByRole('menuitem', { name: 'Undo Last Commit' })).toBeDisabled();
 
     completeLatestOperation();
     fireEvent.click(within(headMenu).getByRole('menuitem', { name: 'Create Orphan Branch…' }));

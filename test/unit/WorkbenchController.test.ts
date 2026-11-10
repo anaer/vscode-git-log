@@ -843,6 +843,67 @@ describe('WorkbenchController', () => {
     });
   });
 
+  it.each(['copied', 'failed', 'unavailable', 'cancelled', 'notification-failed'] as const)(
+    'reports undo clipboard outcome without losing operation success: %s',
+    async (outcome) => {
+      const repository = await createRepository();
+      const messages: ExtensionToWebviewMessage[] = [];
+      const showInformationMessage = vi.fn().mockImplementation(() => {
+        if (outcome === 'notification-failed') throw new Error('notification unavailable');
+      });
+      const copyToClipboard = vi.fn().mockImplementation(() => outcome === 'failed'
+        ? Promise.reject(new Error('clipboard busy')) : Promise.resolve());
+      const run = vi.fn().mockResolvedValue(outcome === 'cancelled'
+        ? { message: '', cancelled: true }
+        : { message: 'Undid commit abc1234.', clipboardText: 'subject\n\nfull body' });
+      const runner = new GitRunner();
+      const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({
+        workspaceRoots: [repository],
+        gitService: new GitService(runner),
+        gitRunner: runner,
+        operationService: { run },
+        ...(outcome === 'unavailable' ? {} : { copyToClipboard }),
+        showInformationMessage,
+        scanDepth: 0,
+        initialPageSize: 200,
+        pageSize: 500,
+        initialLayout: { refsWidth: 220, filesWidth: 320, detailsHeight: 156, filesViewMode: 'tree' },
+        postMessage(message) { messages.push(message); return Promise.resolve(true); },
+        persistLayout: () => Promise.resolve(),
+      });
+      await controller.handleMessage({ type: 'ready', requestId: 'ready-undo-clipboard' });
+      const initialized = messages.find((message) => message.type === 'initialize');
+      if (initialized?.type !== 'initialize' || !initialized.selectedRepositoryId) {
+        throw new Error('expected initialize');
+      }
+      await controller.handleMessage({
+        type: 'runOperation', requestId: 'undo-clipboard',
+        repositoryId: initialized.selectedRepositoryId,
+        operation: { kind: 'undoLastCommit', hash: 'a'.repeat(40) },
+      });
+      const result = messages.at(-1);
+      if (outcome === 'cancelled') {
+        expect(copyToClipboard).not.toHaveBeenCalled();
+        expect(showInformationMessage).not.toHaveBeenCalled();
+        expect(result?.type).toBe('operationCancelled');
+        return;
+      }
+      expect(result?.type).toBe('operationCompleted');
+      if (result?.type !== 'operationCompleted') throw new Error('expected operationCompleted');
+      expect(result.message).toContain('Undid commit');
+      expect(showInformationMessage).toHaveBeenCalledWith(result.message);
+      expect(result.message).toContain('subject\n\nfull body');
+      if (outcome === 'copied' || outcome === 'notification-failed') {
+        expect(copyToClipboard).toHaveBeenCalledWith('subject\n\nfull body');
+        expect(result.message).toContain('copied to the clipboard');
+      } else {
+        expect(result.message).toContain('could not be copied');
+        expect(result.message).toContain('subject\n\nfull body');
+        expect(result.message).not.toContain('was copied');
+      }
+    },
+  );
+
   it('opens the VS Code Source Control view on request', async () => {
     const openSourceControl = vi.fn().mockResolvedValue(undefined);
     const controller = new (await import('../../src/webview/WorkbenchController')).WorkbenchController({

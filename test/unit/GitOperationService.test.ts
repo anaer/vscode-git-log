@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -337,6 +337,423 @@ describe('GitOperationService', () => {
     await expect(stat(join(fixture.path, 'oldest.txt'))).resolves.toBeDefined();
     await expect(stat(join(fixture.path, 'newest.txt'))).resolves.toBeDefined();
     await expect(stat(join(fixture.path, 'descendant.txt'))).resolves.toBeDefined();
+  });
+
+  it('undoes the last commit with a soft reset and reports its message', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-undo-');
+    const previous = await git(fixture.path, 'rev-parse', 'HEAD');
+    const undone = await commitFile(
+      fixture.path,
+      'undone.txt',
+      'undone\n',
+      'work to undo\n\nbody line',
+    );
+    const service = new GitOperationService(new RealGitRunner());
+
+    const result = await service.run(
+      fixture.summary,
+      { kind: 'undoLastCommit', hash: undone },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(previous);
+    // The soft reset keeps the file and its staged entry in the index.
+    expect(await git(fixture.path, 'status', '--porcelain')).toBe('A  undone.txt');
+    expect(result.clipboardText).toBe('work to undo\n\nbody line');
+    expect(result.message).toContain('Undid commit');
+    expect(result.message).not.toContain('work to undo');
+  });
+
+  it('refuses to undo the root commit', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-undo-root-');
+    const root = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(
+        fixture.summary,
+        { kind: 'undoLastCommit', hash: root },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow('previous commit is unavailable');
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(root);
+  });
+
+  it('fixes a commit up into its parent while keeping the parent message', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'fixup subject');
+    await commitFile(fixture.path, 'newer.txt', 'newer\n', 'keep newer');
+    const service = new GitOperationService(new RealGitRunner());
+
+    const result = await service.run(
+      fixture.summary,
+      { kind: 'fixupCommit', hash: child },
+      { confirm: () => Promise.resolve(true) },
+    );
+
+    expect((await git(fixture.path, 'log', '--format=%s')).split('\n')).toEqual([
+      'keep newer',
+      'base',
+    ]);
+    // The child's tree survives in the parent's slot, under the parent's message.
+    await expect(stat(join(fixture.path, 'child.txt'))).resolves.toBeDefined();
+    expect(await git(fixture.path, 'log', '--format=%B', 'HEAD^')).toBe('base');
+    expect(result.message).toBe(`Fixed up ${child.slice(0, 7)} into its parent.`);
+  });
+
+  it('refuses to fix up a root commit', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-root-');
+    const root = await git(fixture.path, 'rev-parse', 'HEAD');
+    const service = new GitOperationService(new RealGitRunner());
+
+    await expect(
+      service.run(
+        fixture.summary,
+        { kind: 'fixupCommit', hash: root },
+        { confirm: () => Promise.resolve(true) },
+      ),
+    ).rejects.toThrow('no parent to fix up into');
+  });
+
+  it.each([['feature', ['main', 'master']], ['main', []]] as const)(
+    'blocks pushed undo on %s even without branch protection', async (branch, protectedBranches) => {
+      const { GitOperationService } = await import('../../src/git/GitOperationService');
+      const fixture = await createFixtureRepository('git-operation-undo-pushed-');
+      const head = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+      if (branch !== 'main') await git(fixture.path, 'checkout', '-b', branch);
+      await git(fixture.path, 'update-ref', 'refs/remotes/origin/published', head);
+      const confirm = vi.fn(async () => true);
+      const service = new GitOperationService(new RealGitRunner(), { protectedBranches });
+
+      await expect(service.run(fixture.summary, { kind: 'undoLastCommit', hash: head }, { confirm }))
+        .rejects.toThrow('already-pushed');
+      expect(confirm).not.toHaveBeenCalled();
+      expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(head);
+    },
+  );
+
+  it('blocks undo when remote tracking state cannot be verified', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-undo-unknown-');
+    const head = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    const realRunner = new RealGitRunner();
+    const runner = { run: async (args: readonly string[], options: GitRunOptions) => {
+      if (args.includes('--remotes')) throw new Error('remote inspection failed');
+      return realRunner.run(args, options);
+    } } as GitRunner;
+    const confirm = vi.fn(async () => true);
+    await expect(new GitOperationService(runner, { protectedBranches: [] }).run(
+      fixture.summary, { kind: 'undoLastCommit', hash: head }, { confirm },
+    )).rejects.toThrow(/already-pushed|could not be verified/u);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(head);
+  });
+
+  it('undo preserves the existing index and unstaged content and returns the full raw message', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-undo-dirty-');
+    const parent = await git(fixture.path, 'rev-parse', 'HEAD');
+    const message = 'subject\n\nbody one\nbody two\n\n';
+    const runner = new RealGitRunner();
+    const tree = await git(fixture.path, 'rev-parse', 'HEAD^{tree}');
+    const commit = await runner.run(['commit-tree', tree, '-p', parent], { cwd: fixture.path, input: message });
+    const head = commit.stdout.toString('utf8').trim();
+    await git(fixture.path, 'update-ref', 'HEAD', head);
+    await writeFile(join(fixture.path, 'base.txt'), 'staged\n');
+    await git(fixture.path, 'add', 'base.txt');
+    await writeFile(join(fixture.path, 'base.txt'), 'unstaged\n');
+    await writeFile(join(fixture.path, 'untracked.txt'), 'untracked\n');
+    const index = await git(fixture.path, 'write-tree');
+    const diff = await git(fixture.path, 'diff');
+
+    const result = await new GitOperationService(runner).run(
+      fixture.summary, { kind: 'undoLastCommit', hash: head }, { confirm: async () => true },
+    );
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(parent);
+    expect(await git(fixture.path, 'write-tree')).toBe(index);
+    expect(await git(fixture.path, 'diff')).toBe(diff);
+    expect(await readFile(join(fixture.path, 'untracked.txt'), 'utf8')).toBe('untracked\n');
+    expect(result.clipboardText).toBe(message.slice(0, -1));
+    expect(result.message).not.toContain('Original commit message:');
+    expect(result.message).not.toMatch(/copied|clipboard/iu);
+  });
+
+  it('fixup rebuilds parent metadata and descendant trees without touching dirty files', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-objects-');
+    const parent = await commitFileAs(fixture.path, 'parent.txt', 'parent\n', 'parent subject\n\nfull body\nsecond line',
+      'Original Author', 'original@example.com', '2001-02-03T04:05:06+08:00');
+    const child = await commitFile(fixture.path, 'parent.txt', 'child version\n', 'child');
+    const middle = await commitFile(fixture.path, 'parent.txt', 'later version\n', 'middle');
+    const tip = await commitFile(fixture.path, 'tip.txt', 'tip\n', 'tip');
+    await git(fixture.path, 'branch', 'untouched', tip);
+    await writeFile(join(fixture.path, 'base.txt'), 'staged\n');
+    await git(fixture.path, 'add', 'base.txt');
+    await writeFile(join(fixture.path, 'base.txt'), 'unstaged\n');
+    await writeFile(join(fixture.path, 'untracked.txt'), 'untracked\n');
+    const index = await git(fixture.path, 'write-tree');
+    const diff = await git(fixture.path, 'diff');
+    const rawParent = await git(fixture.path, 'cat-file', 'commit', parent);
+    const realRunner = new RealGitRunner();
+    const run = vi.fn((args: readonly string[], options: GitRunOptions) => realRunner.run(args, options));
+
+    await new GitOperationService({ run } as unknown as GitRunner).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm: async () => true },
+    );
+
+    const rawFixed = await git(fixture.path, 'cat-file', 'commit', 'HEAD~2');
+    expect(rawFixed.replace(/^tree .+\n/u, '')).toBe(rawParent.replace(/^tree .+\n/u, ''));
+    expect(await git(fixture.path, 'rev-parse', 'HEAD~2^{tree}')).toBe(await git(fixture.path, 'rev-parse', `${child}^{tree}`));
+    for (const [oldHash, newRef] of [[middle, 'HEAD^'], [tip, 'HEAD']] as const) {
+      const oldRaw = await git(fixture.path, 'cat-file', 'commit', oldHash);
+      const newRaw = await git(fixture.path, 'cat-file', 'commit', newRef);
+      expect(newRaw.replace(/^parent .+\n/mu, '')).toBe(oldRaw.replace(/^parent .+\n/mu, ''));
+    }
+    expect(await git(fixture.path, 'rev-list', '--count', 'HEAD')).toBe('4');
+    expect(await git(fixture.path, 'write-tree')).toBe(index);
+    expect(await git(fixture.path, 'diff')).toBe(diff);
+    expect(await readFile(join(fixture.path, 'untracked.txt'), 'utf8')).toBe('untracked\n');
+    expect(await git(fixture.path, 'rev-parse', 'untouched')).toBe(tip);
+    expect(await git(fixture.path, 'for-each-ref', '--format=%(objectname)', 'refs/heads/commit-rewrite-backup')).toBe(tip);
+    expect(run.mock.calls.filter(([args]) => args[0] === 'hash-object')).toHaveLength(3);
+    expect(run.mock.calls.some(([args]) => args.includes('rebase') || args[0] === 'commit-tree' || args[0] === 'reset')).toBe(false);
+    expect(run.mock.calls.find(([args]) => args[0] === 'update-ref' && args.includes('refs/heads/main'))?.[0].at(-1)).toBe(tip);
+  });
+
+  it('fixup blocks a local child whose parent is already pushed on a protected branch', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-pushed-parent-');
+    const parent = await commitFile(fixture.path, 'parent.txt', 'parent\n', 'parent');
+    await git(fixture.path, 'update-ref', 'refs/remotes/origin/main', parent);
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'local child');
+    const confirm = vi.fn(async () => true);
+    await expect(new GitOperationService(new RealGitRunner()).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm },
+    )).rejects.toThrow('already-pushed');
+    expect(confirm).not.toHaveBeenCalled();
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(child);
+  });
+
+  it('fixup warns about every affected pushed commit and its tracking branches', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-warning-');
+    await git(fixture.path, 'checkout', '-b', 'feature');
+    const parent = await commitFile(fixture.path, 'parent.txt', 'parent\n', 'parent');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    const tip = await commitFile(fixture.path, 'tip.txt', 'tip\n', 'tip');
+    await git(fixture.path, 'update-ref', 'refs/remotes/origin/parent', parent);
+    await git(fixture.path, 'update-ref', 'refs/remotes/fork/tip', tip);
+    const confirm = vi.fn<(confirmation: { detail: string }) => Promise<boolean>>().mockResolvedValue(true);
+    await new GitOperationService(new RealGitRunner()).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm },
+    );
+    const detail = confirm.mock.calls[0]?.[0]?.detail;
+    expect(detail).toContain('3 of these commits are already pushed');
+    for (const hash of [parent, child, tip]) expect(detail).toContain(hash.slice(0, 7));
+    expect(detail).toContain('origin/parent');
+    expect(detail).toContain('fork/tip');
+  });
+
+  for (const kind of ['undoLastCommit', 'fixupCommit'] as const) {
+    it.each(['branch', 'head', 'remote', 'unknown', 'operation'] as const)(`${kind} rejects confirmation races: %s`, async (race) => {
+      const { GitOperationService } = await import('../../src/git/GitOperationService');
+      const fixture = await createFixtureRepository('git-operation-confirm-race-');
+      await commitFile(fixture.path, 'parent.txt', 'parent\n', 'parent');
+      const head = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+      await git(fixture.path, 'branch', 'other', head);
+      let remoteUnavailable = false;
+      const realRunner = new RealGitRunner();
+      const runner = { run: async (args: readonly string[], options: GitRunOptions) => {
+        if (remoteUnavailable && args.includes('--remotes')) throw new Error('Remote state unavailable');
+        return realRunner.run(args, options);
+      } } as GitRunner;
+      const service = new GitOperationService(runner, { protectedBranches: [] });
+      await expect(service.run(fixture.summary, { kind, hash: head }, {
+        confirm: async () => {
+          if (race === 'branch') await git(fixture.path, 'checkout', 'other');
+          if (race === 'head') await commitFile(fixture.path, 'new.txt', 'new\n', 'concurrent');
+          if (race === 'remote') await git(fixture.path, 'update-ref', 'refs/remotes/origin/main', head);
+          if (race === 'unknown') remoteUnavailable = true;
+          if (race === 'operation') await writeFile(join(fixture.path, '.git', 'CHERRY_PICK_HEAD'), `${head}\n`);
+          return true;
+        },
+      })).rejects.toThrow(/changed|current HEAD|already-pushed|active Git operation/u);
+      expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).toBe('');
+      if (race !== 'head') expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(head);
+      else expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('concurrent');
+    });
+
+    it(`${kind} cancellation performs no object writes or ref/index changes`, async () => {
+      const { GitOperationService } = await import('../../src/git/GitOperationService');
+      const fixture = await createFixtureRepository('git-operation-cancel-');
+      await commitFile(fixture.path, 'parent.txt', 'parent\n', 'parent');
+      const head = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+      const realRunner = new RealGitRunner();
+      const run = vi.fn((args: readonly string[], options: GitRunOptions) => realRunner.run(args, options));
+      const result = await new GitOperationService({ run } as unknown as GitRunner).run(
+        fixture.summary, { kind, hash: head }, { confirm: async () => false },
+      );
+      expect(result).toEqual({ message: '', cancelled: true });
+      expect(run.mock.calls.some(([args]) => ['update-ref', 'hash-object', 'reset', 'commit-tree', 'rebase'].includes(args[0]!))).toBe(false);
+      expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(head);
+    });
+  }
+
+  it.each(['undoLastCommit', 'fixupCommit'] as const)('%s rejects a same-HEAD branch switch during final safety checks', async (kind) => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-final-branch-race-');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    await git(fixture.path, 'branch', 'other', child);
+    const realRunner = new RealGitRunner();
+    let confirmed = false;
+    let wroteObject = false;
+    const runner = { run: async (args: readonly string[], options: GitRunOptions) => {
+      const result = await realRunner.run(args, options);
+      if (args[0] === 'hash-object') wroteObject = true;
+      if (args[0] === 'worktree' && confirmed && (kind === 'undoLastCommit' || wroteObject)) {
+        await git(fixture.path, 'checkout', 'other');
+      }
+      return result;
+    } } as GitRunner;
+    await expect(new GitOperationService(runner).run(
+      fixture.summary, { kind, hash: child }, { confirm: async () => { confirmed = true; return true; } },
+    )).rejects.toThrow('changed during confirmation');
+    expect(await git(fixture.path, 'rev-parse', 'main')).toBe(child);
+    expect(await git(fixture.path, 'rev-parse', 'other')).toBe(child);
+  });
+
+  it('fixup of HEAD into the root creates only the replacement parent object', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-root-tip-');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    const realRunner = new RealGitRunner();
+    const run = vi.fn((args: readonly string[], options: GitRunOptions) => realRunner.run(args, options));
+    await new GitOperationService({ run } as unknown as GitRunner).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm: async () => true },
+    );
+    expect(await git(fixture.path, 'rev-list', '--count', 'HEAD')).toBe('1');
+    expect(await git(fixture.path, 'log', '-1', '--format=%s')).toBe('base');
+    expect(await git(fixture.path, 'rev-parse', 'HEAD^{tree}')).toBe(await git(fixture.path, 'rev-parse', `${child}^{tree}`));
+    expect(run.mock.calls.filter(([args]) => args[0] === 'hash-object')).toHaveLength(1);
+    expect(await git(fixture.path, 'for-each-ref', '--format=%(objectname)', 'refs/heads/commit-rewrite-backup')).toBe(child);
+  });
+
+  it.each(['selected', 'parent', 'descendant', 'side'] as const)('fixup rejects merge paths and non-first-parent selection: %s', async (selection) => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-merge-');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    await git(fixture.path, 'checkout', '-b', 'side');
+    const side = await commitFile(fixture.path, 'side.txt', 'side\n', 'side');
+    await git(fixture.path, 'checkout', 'main');
+    await commitFile(fixture.path, 'main.txt', 'main\n', 'main');
+    await git(fixture.path, 'merge', '--no-ff', 'side', '-m', 'merge');
+    const merge = await git(fixture.path, 'rev-parse', 'HEAD');
+    const tip = await commitFile(fixture.path, 'tip.txt', 'tip\n', 'tip');
+    const hash = { selected: merge, parent: tip, descendant: child, side }[selection];
+    const confirm = vi.fn(async () => true);
+    await expect(new GitOperationService(new RealGitRunner()).run(
+      fixture.summary, { kind: 'fixupCommit', hash }, { confirm },
+    )).rejects.toThrow(selection === 'side' ? 'first-parent' : 'merge commits');
+    expect(confirm).not.toHaveBeenCalled();
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(tip);
+    expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).toBe('');
+  });
+
+  it.each(['shallow', 'conflicts', 'worktree'] as const)('fixup retains commit-patch preflight protection: %s', async (state) => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-preflight-');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    if (state === 'shallow') await writeFile(join(fixture.path, '.git', 'shallow'), `${child}\n`);
+    if (state === 'conflicts') {
+      const blob = await git(fixture.path, 'rev-parse', 'HEAD:base.txt');
+      await new RealGitRunner().run(['update-index', '--index-info'], {
+        cwd: fixture.path, input: `100644 ${blob} 1\tbase.txt\n100644 ${blob} 2\tbase.txt\n100644 ${blob} 3\tbase.txt\n`,
+      });
+    }
+    if (state === 'worktree') {
+      const other = await mkdtemp(join(tmpdir(), 'git-operation-other-worktree-'));
+      temporaryDirectories.push(other);
+      await git(fixture.path, 'worktree', 'add', '--force', other, 'main');
+    }
+    const confirm = vi.fn(async () => true);
+    await expect(new GitOperationService(new RealGitRunner()).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm },
+    )).rejects.toThrow({ shallow: 'shallow', conflicts: 'conflicts', worktree: 'another worktree' }[state]);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(child);
+  });
+
+  it('fixup rejects changed remote branch evidence even when the pushed count stays the same', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-remote-evidence-');
+    const parent = await git(fixture.path, 'rev-parse', 'HEAD');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    await git(fixture.path, 'update-ref', 'refs/remotes/origin/known', parent);
+    await expect(new GitOperationService(new RealGitRunner(), { protectedBranches: [] }).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm: async () => {
+        await git(fixture.path, 'update-ref', 'refs/remotes/fork/new', parent);
+        await git(fixture.path, 'update-ref', '-d', 'refs/remotes/origin/known');
+        return true;
+      } },
+    )).rejects.toThrow('Remote tracking state changed');
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(child);
+    expect(await git(fixture.path, 'branch', '--list', 'commit-rewrite-backup/*')).toBe('');
+  });
+
+  it('fixup rechecks remote state after rebuilding objects and before CAS', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-late-push-');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    const realRunner = new RealGitRunner();
+    const runner = { run: async (args: readonly string[], options: GitRunOptions) => {
+      const result = await realRunner.run(args, options);
+      if (args[0] === 'hash-object') await git(fixture.path, 'update-ref', 'refs/remotes/origin/main', child);
+      return result;
+    } } as GitRunner;
+    await expect(new GitOperationService(runner, { protectedBranches: [] }).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm: async () => true },
+    )).rejects.toThrow('Remote tracking state changed');
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(child);
+    expect(await git(fixture.path, 'for-each-ref', '--format=%(objectname)', 'refs/heads/commit-rewrite-backup')).toBe(child);
+  });
+
+  it.each(['undoLastCommit', 'fixupCommit'] as const)('%s does not disguise failed Git reads as root-commit errors', async (kind) => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-read-error-');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    const realRunner = new RealGitRunner();
+    const runner = { run: async (args: readonly string[], options: GitRunOptions) => {
+      if (args[0] === 'rev-list' && args.includes('--parents')) throw new Error('Cannot read commit parents: access denied');
+      return realRunner.run(args, options);
+    } } as GitRunner;
+    await expect(new GitOperationService(runner).run(
+      fixture.summary, { kind, hash: child }, { confirm: async () => true },
+    )).rejects.toThrow('Cannot read commit parents: access denied');
+  });
+
+  it('fixup CAS refuses to overwrite a concurrently advanced branch and retains the backup', async () => {
+    const { GitOperationService } = await import('../../src/git/GitOperationService');
+    const fixture = await createFixtureRepository('git-operation-fixup-cas-');
+    await commitFile(fixture.path, 'parent.txt', 'parent\n', 'parent');
+    const child = await commitFile(fixture.path, 'child.txt', 'child\n', 'child');
+    const realRunner = new RealGitRunner();
+    let concurrent: string | undefined;
+    const runner = { run: async (args: readonly string[], options: GitRunOptions) => {
+      if (args[0] === 'update-ref' && args.includes('refs/heads/main')) {
+        concurrent = await commitFile(fixture.path, 'concurrent.txt', 'concurrent\n', 'concurrent');
+      }
+      return realRunner.run(args, options);
+    } } as GitRunner;
+    await expect(new GitOperationService(runner).run(
+      fixture.summary, { kind: 'fixupCommit', hash: child }, { confirm: async () => true },
+    )).rejects.toThrow();
+    expect(concurrent).toBeDefined();
+    expect(await git(fixture.path, 'rev-parse', 'HEAD')).toBe(concurrent);
+    expect(await git(fixture.path, 'for-each-ref', '--format=%(objectname)', 'refs/heads/commit-rewrite-backup')).toBe(child);
   });
 
   it('rewrites selected commit messages and affected descendants on the current branch', async () => {
@@ -695,6 +1112,12 @@ describe('GitOperationService', () => {
         message: 'combined',
       }),
     ).toMatchObject({ destructive: true, confirmLabel: 'Squash Commits' });
+    expect(
+      getOperationConfirmation(repository, { kind: 'undoLastCommit', hash: hashes[1]! }),
+    ).toMatchObject({ destructive: true, confirmLabel: 'Undo Commit' });
+    expect(
+      getOperationConfirmation(repository, { kind: 'fixupCommit', hash: hashes[1]! }),
+    ).toMatchObject({ destructive: true, confirmLabel: 'Fix Up Commit' });
   });
 
   it('maps supported operations to shell-free Git argument arrays', async () => {

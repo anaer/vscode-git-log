@@ -213,6 +213,8 @@ export type GitOperationRequest =
   | { kind: 'squashCommits'; hashes: string[]; message: string }
   | { kind: 'editCommitMessages'; edits: Array<{ hash: string; message: string }> }
   | { kind: 'rewriteAuthorIdentity'; hashes: string[]; name: string; email: string }
+  | { kind: 'undoLastCommit'; hash: string }
+  | { kind: 'fixupCommit'; hash: string }
   | { kind: 'abortCherryPick' }
   | { kind: 'abortRevert' }
   | { kind: 'mergeAbort' };
@@ -766,6 +768,9 @@ function isGitOperationRequest(value: unknown): value is GitOperationRequest {
         isAuthorIdentity(value.name) &&
         isAuthorIdentity(value.email)
       );
+    case 'undoLastCommit':
+    case 'fixupCommit':
+      return isHash(value.hash);
     case 'abortCherryPick':
     case 'abortRevert':
     case 'mergeAbort':

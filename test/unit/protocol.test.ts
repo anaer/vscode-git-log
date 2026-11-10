@@ -159,6 +159,11 @@ describe('parseWebviewMessage', () => {
     expect(operation({ kind: 'pull', strategy: 'rebase' })).toBeDefined();
     expect(operation({ kind: 'pull', strategy: 'fast' })).toBeUndefined();
     expect(operation({ kind: 'mergeAbort' })).toBeDefined();
+    const hash = 'a'.repeat(40);
+    expect(operation({ kind: 'undoLastCommit', hash })).toBeDefined();
+    expect(operation({ kind: 'undoLastCommit', hash: '-oops' })).toBeUndefined();
+    expect(operation({ kind: 'fixupCommit', hash })).toBeDefined();
+    expect(operation({ kind: 'fixupCommit', hash: 'not-a-hash' })).toBeUndefined();
     expect(
       parseWebviewMessage({
         type: 'applyPatch',

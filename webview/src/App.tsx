@@ -366,6 +366,9 @@ function Workbench() {
   // branch is missing from that snapshot we assume it is tracked and keep the plain Push action.
   const currentBranchRef = state.refs.find((ref) => ref.kind === 'local' && ref.isCurrent);
   const currentBranchHasUpstream = currentBranchRef ? Boolean(currentBranchRef.upstream) : true;
+  const headIsPushed =
+    (Boolean(currentBranchRef?.upstream) && currentBranchRef?.ahead === 0) ||
+    state.refs.some((ref) => ref.kind === 'remote' && ref.target === selectedRepository?.head);
   const canCreateOrphanBranch = state.gitCapabilities?.createOrphanBranch === true;
   const refsCollapsed = Boolean(
     state.layout.refsCollapsed || (responsiveCollapse.refs && !responsiveExpanded.refs),
@@ -2178,6 +2181,7 @@ function Workbench() {
           hasContiguousCommitRange={hasContiguousCommitRange}
           selectedOperationInFlight={selectedOperationInFlight}
           currentBranchHasUpstream={currentBranchHasUpstream}
+          headIsPushed={headIsPushed}
           refsCollapsed={refsCollapsed}
           filesCollapsed={filesCollapsed}
           onToggleRefsPane={() => toggleResponsivePane('refs')}

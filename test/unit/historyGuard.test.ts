@@ -46,6 +46,8 @@ describe('history guard', () => {
       { kind: 'squashCommits', hashes, message: 'combined' },
       { kind: 'editCommitMessages', edits: [{ hash: hashes[0]!, message: 'rewritten' }] },
       { kind: 'rewriteAuthorIdentity', hashes: [hashes[0]!], name: 'A', email: 'a@example.com' },
+      { kind: 'undoLastCommit', hash: hashes[0]! },
+      { kind: 'fixupCommit', hash: hashes[0]! },
       forcePush,
     ];
     const unguarded: GitOperationRequest[] = [
@@ -66,6 +68,10 @@ describe('history guard', () => {
         edits: [{ hash: hashes[0]!, message: 'rewritten' }],
       }),
     ).toEqual([hashes[0]]);
+    expect(operationTargetHashes({ kind: 'undoLastCommit', hash: hashes[0]! })).toEqual([
+      hashes[0],
+    ]);
+    expect(operationTargetHashes({ kind: 'fixupCommit', hash: hashes[1]! })).toEqual([hashes[1]]);
     expect(operationTargetHashes(forcePush)).toEqual([]);
     expect(operationTargetHashes(amend)).toEqual([]);
   });
@@ -91,6 +97,14 @@ describe('history guard', () => {
       assessHistoryGuard('main', DEFAULT_PROTECTED_BRANCHES, drop, clean).blocked,
     ).toBeUndefined();
     expect(assessHistoryGuard('main', [], drop, pushed).pushedRewrite).toEqual(pushed);
+    expect(
+      assessHistoryGuard('main', DEFAULT_PROTECTED_BRANCHES, { kind: 'undoLastCommit', hash: hashes[0]! }, pushed)
+        .blocked,
+    ).toContain('already-pushed');
+    expect(
+      assessHistoryGuard('main', DEFAULT_PROTECTED_BRANCHES, { kind: 'fixupCommit', hash: hashes[0]! }, pushed)
+        .blocked,
+    ).toContain('already-pushed');
   });
 
   it('falls back to "all pushed" when remote detection is uncertain', () => {
@@ -100,6 +114,22 @@ describe('history guard', () => {
     expect(
       assessHistoryGuard('feature', DEFAULT_PROTECTED_BRANCHES, drop, uncertain).pushedRewrite,
     ).toEqual(uncertain);
+  });
+
+  it.each([
+    ['feature', DEFAULT_PROTECTED_BRANCHES, pushed],
+    ['main', [], pushed],
+    ['feature', [], uncertain],
+    ['feature', [], { count: 0, branches: [], uncertain: true }],
+    ['feature', [], undefined],
+  ] as const)('blocks undo of pushed or unknown HEAD on %s regardless of protection', (branch, protection, info) => {
+    const result = assessHistoryGuard(branch, protection, { kind: 'undoLastCommit', hash: hashes[0]! }, info);
+    expect(result.blocked).toMatch(/already-pushed|could not be verified/u);
+    expect(result.pushedRewrite).toBeUndefined();
+  });
+
+  it('allows undo only when HEAD is known to be unpushed', () => {
+    expect(assessHistoryGuard('main', DEFAULT_PROTECTED_BRANCHES, { kind: 'undoLastCommit', hash: hashes[0]! }, clean)).toEqual({});
   });
 
   it('never guards Amend HEAD and renders a readable pushed warning', () => {

@@ -7,6 +7,8 @@ const HISTORY_REWRITE_KINDS = new Set<GitOperationRequest['kind']>([
   'squashCommits',
   'editCommitMessages',
   'rewriteAuthorIdentity',
+  'undoLastCommit',
+  'fixupCommit',
 ]);
 
 export interface PushedRewriteInfo {
@@ -16,6 +18,8 @@ export interface PushedRewriteInfo {
   branches: readonly string[];
   /** Remote state could not be verified; every target was treated as pushed. */
   uncertain: boolean;
+  /** Per-commit evidence for confirmations and post-confirmation revalidation. */
+  commits?: readonly { hash: string; branches: readonly string[] }[];
 }
 
 export interface GuardAssessment {
@@ -23,7 +27,7 @@ export interface GuardAssessment {
   pushedRewrite?: PushedRewriteInfo;
 }
 
-/** An empty list disables every guard; a detached HEAD is treated as protected. */
+/** An empty list disables branch protection; a detached HEAD is treated as protected. */
 export function isProtectedBranch(
   branch: string | undefined,
   protectedBranches: readonly string[],
@@ -52,6 +56,9 @@ export function operationTargetHashes(operation: GitOperationRequest): readonly 
       return operation.hashes;
     case 'editCommitMessages':
       return operation.edits.map((edit) => edit.hash);
+    case 'undoLastCommit':
+    case 'fixupCommit':
+      return [operation.hash];
     default:
       return [];
   }
@@ -62,7 +69,10 @@ export function pushedRewriteWarning(info: PushedRewriteInfo): string {
   const uncertainty = info.uncertain ? ' (remote state could not be verified)' : '';
   return (
     `Warning: ${String(info.count)} of these commits are already pushed${branches}${uncertainty}. ` +
-    'Rewriting them requires a force push and affects other users.'
+    'Rewriting them requires a force push and affects other users.' +
+    (info.commits?.map((commit) =>
+      `\n${commit.hash.slice(0, 7)}: ${commit.branches.join(', ') || 'remote state unknown'}`,
+    ).join('') ?? '')
   );
 }
 
@@ -81,6 +91,14 @@ export function assessHistoryGuard(
       ? {
           blocked: `Force Push with Lease is blocked on protected branch “${branchLabel}”. Create a new branch instead.`,
         }
+      : {};
+  }
+  if (operation.kind === 'undoLastCommit') {
+    if (!pushedRewrite || pushedRewrite.uncertain) {
+      return { blocked: 'Undo is unavailable: remote state could not be verified; HEAD is treated as already-pushed.' };
+    }
+    return pushedRewrite.count > 0
+      ? { blocked: 'Undo is unavailable for an already-pushed HEAD commit.' }
       : {};
   }
   if (!pushedRewrite || pushedRewrite.count === 0) return {};

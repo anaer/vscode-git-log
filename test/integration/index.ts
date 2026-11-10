@@ -13,6 +13,7 @@ const TAB_WAIT_TIMEOUT_MS = 10_000;
 async function waitForTab(
   predicate: (tab: vscode.Tab) => boolean,
   message: string,
+  onWait?: () => Thenable<unknown>,
 ): Promise<vscode.Tab> {
   const deadline = Date.now() + TAB_WAIT_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -20,13 +21,14 @@ async function waitForTab(
       .flatMap((group) => group.tabs)
       .find(predicate);
     if (tab) return tab;
+    await onWait?.();
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   assert.fail(message);
 }
 
 export async function run(): Promise<void> {
-  const extension = vscode.extensions.getExtension('ascenx.git-log');
+  const extension = vscode.extensions.getExtension('anaer.git-log-0');
   assert.ok(extension, 'the Git Log extension should be installed in the test host');
 
   await extension.activate();
@@ -178,16 +180,14 @@ export async function run(): Promise<void> {
 
     editor = await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('gitLogWorkbench.editor.compareFileWithRef');
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
-    assert.equal(document.isDirty, true, 'Branch/Tag comparison must not save the active document');
-
     await waitForTab(
       (tab) =>
         tab.label.startsWith('Compare: editor-history.ts') &&
         tab.input instanceof vscode.TabInputTextDiff,
       'the Branch/Tag comparison command should open a native VS Code diff tab',
+      () => vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem'),
     );
+    assert.equal(document.isDirty, true, 'Branch/Tag comparison must not save the active document');
 
     const editorTabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
     assert.ok(

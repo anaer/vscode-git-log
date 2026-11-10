@@ -36,6 +36,7 @@ interface ContextMenuProps {
   hasContiguousCommitRange: boolean;
   selectedOperationInFlight: boolean;
   currentBranchHasUpstream: boolean;
+  headIsPushed: boolean;
   refsCollapsed: boolean;
   filesCollapsed: boolean;
   onToggleRefsPane(): void;
@@ -69,6 +70,7 @@ export function ContextMenu(props: ContextMenuProps) {
     hasContiguousCommitRange,
     selectedOperationInFlight,
     currentBranchHasUpstream,
+    headIsPushed,
     refsCollapsed,
     filesCollapsed,
     onToggleRefsPane,
@@ -349,6 +351,29 @@ export function ContextMenu(props: ContextMenuProps) {
           !selectedRepository?.isBare &&
           !selectedRepository?.operationState ? (
             <>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={
+                  !selectedRepository?.currentBranch ||
+                  selectedOperationInFlight ||
+                  contextMenu.commits.length !== 1 ||
+                  contextMenu.commit.parents.length !== 1
+                }
+                title={
+                  contextMenu.commits.length !== 1 || contextMenu.commit.parents.length !== 1
+                    ? t('webview.menu.fixupCommitTitle')
+                    : undefined
+                }
+                onClick={() =>
+                  runOperation(
+                    { kind: 'fixupCommit', hash: contextMenu.commit.hash },
+                    contextMenu.repositoryId,
+                  )
+                }
+              >
+                {t('webview.menu.fixupCommit')}
+              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -1001,6 +1026,20 @@ export function ContextMenu(props: ContextMenuProps) {
           </button>
           {!selectedRepository?.isBare && !selectedRepository?.operationState ? (
             <>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={headIsPushed || selectedOperationInFlight}
+                title={headIsPushed ? t('webview.menu.undoLastCommitPushedTitle') : undefined}
+                onClick={() =>
+                  runOperation(
+                    { kind: 'undoLastCommit', hash: contextMenu.hash },
+                    contextMenu.repositoryId,
+                  )
+                }
+              >
+                {t('webview.menu.undoLastCommit')}
+              </button>
               <button
                 type="button"
                 role="menuitem"
